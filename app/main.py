@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from app.config import PROJECT_ROOT, get_settings
 from app.db import connect, init_db
 from app.agent import answer_question
+from app.brief import brief_to_markdown, generate_brief
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
@@ -229,3 +230,22 @@ def run_log(run_id: str, conn=Depends(get_db)):
     if not log:
         raise HTTPException(404, f"Run {run_id} not found.")
     return log
+
+
+# --- one-click brief ----------------------------------------------------------------
+
+class BriefIn(BaseModel):
+    requirements: str = ""
+
+
+@app.post("/api/companies/{company_id}/brief")
+def brief(company_id: int, body: BriefIn, conn=Depends(get_db), llm: LLMClient = Depends(get_chat_llm)):
+    require_company(conn, company_id)
+    try:
+        result = generate_brief(conn, company_id, body.requirements, llm)
+    except LLMError as e:
+        raise llm_http_error(e) from None
+    except EmbeddingError as e:
+        raise HTTPException(503, str(e)) from None
+    result["markdown"] = brief_to_markdown(result)
+    return result

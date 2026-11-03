@@ -94,3 +94,16 @@ def test_real_agent_conflict_after_fourth_file(db):
     text = " ".join(c["text"] for c in r["claims"])
     assert "60" in text and "80" in text
     assert [c["values"] for c in r["conflicts"]] == [[60, 80]]
+
+
+def test_real_brief_focus_traction_and_risks(db):
+    from app.brief import brief_to_markdown, generate_brief
+    from tests.helpers import load_samples
+
+    cid = load_samples(db, include_update=True)["Tidewell Insurance"]
+    brief = generate_brief(db, cid, "focus on traction and risks", get_llm("chat"))
+    print("\nstatus tools:", [t["tool"] for t in brief["tool_calls"]])
+    print(brief_to_markdown(brief))
+    assert brief["sections"] and all(i["citations"] for s in brief["sections"] for i in s["items"])
+    assert [m["metric"] for m in brief["missing"]] == ["revenue"]
+    assert [c["values"] for c in brief["conflicts"]] == [[60, 80]]

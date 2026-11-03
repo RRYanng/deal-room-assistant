@@ -205,3 +205,52 @@ Q: How many paying customers ...（上传第 4 份之后）
 **开发中修过的问题**：第一次跑 live 测试时，revenue 问题把 6 步全用在搜索上，状态是 `step_limit`。测试当时显示通过，只是因为 step-limit 提示里有 "not found" 这几个字，那次通过不算数。加上"最后一步提醒"之后，模型正常给出了答案，live 测试现在也会断言 `status == "ok"`。
 
 **全部离线测试**：`118 passed, 6 deselected`。
+
+---
+
+## P5 一键简报
+
+### 改了什么
+- 新增 `app/brief.py` 和接口 `POST /api/companies/{id}/brief {"requirements": "focus on traction and risks"}`，返回 JSON，外加一个 `markdown` 字段，方便复制或下载。
+
+### 输入 → 输出
+- **输入**：company_id 和用户的要求。要求为空时，使用默认要求："General overview: traction, recent communications, risks and open questions."
+- **程序生成的部分（确定性的，每条都带出处）**：
+  - `key_metrics`：4 个关键指标里有统计日、有数值的记录，带 quote 和位置。
+  - `recent_communications`：最近 3 条 CRM 记录（从新到旧），quote 是整行原文。
+  - `missing`：缺失的关键指标，例如 `revenue: Not found in the provided materials`。
+  - `conflicts`：所有矛盾，列出全部数值和来源。
+  - `unclear_basis`：没有统计日的指标。
+- **模型写的部分**：用和问答相同的 tool 循环（`run_agent`，最多 6 步），只是 system prompt 不同。模型按要求写 2–4 个 section，每条 bullet 都必须带 chunk_id 和逐字 quote。程序用 `verify_items` 逐条校验，不通过的 bullet 被丢弃；一个 section 里的 bullet 全被丢弃时，整个 section 也去掉。
+- **输出**：`sections, key_metrics, recent_communications, missing, conflicts, unclear_basis, open_items, tool_calls, run_id, markdown`。
+
+### 错误处理
+- 没有 key：503 "API key missing"；其他模型错误：502。
+- 模型写的部分没能完成（step_limit / refused / unparseable）时：程序生成的部分照常返回，`open_items` 里说明写作部分不完整。
+
+### 怎么验证的
+**FakeLLM 测试（`tests/test_brief.py`）**：
+- 用户的要求出现在发给模型的 prompt 里。
+- 编造的 bullet（"Revenue grew 3x."）和没有引用的 bullet 被丢弃；整节都无效的 "Risks" section 不显示。
+- 程序部分：关键指标是 {注册 100, 付费 60, 付费 80}；CRM 记录按 07-22、07-15、06-05 排序；缺失项 = revenue；矛盾 = paying_customers [60, 80]；unclear basis = funding_raised。
+- **"每条都带出处"**：遍历简报里所有带来源的条目（section bullet、指标、CRM、unclear、矛盾的每个来源），逐一检查 quote 确实出现在对应的 chunk 里。
+- Markdown 导出包含所有出处；接口能正常返回。
+
+**真实模型测试（Sonnet 5.5，要求 "focus on traction and risks"，4 份文件都已上传）**，输出节选：
+```
+## Traction
+- The deck reports 100 registered small businesses on the platform as of June 30, 2026; this is a registration count, not a paying-customer count. [tidewell_deck.pdf p.3 ¶2: "..."]
+- Paying customers as of June 30, 2026 are 60 in the meeting notes. [tidewell_meeting_notes.md ¶3: "..."]
+- The August 2026 update gives 80 paying customers as of the same date, so the two sources conflict. [tidewell_update_2026-08.txt ¶2: "..."]
+## Risks
+- The paying-customer count is inconsistent across company materials (60 vs 80). ...
+- Revenue figures and loss ratio data had not yet been provided. ... [tidewell_crm.csv row 3: "Ask for revenue figures and loss ratio data."]
+## Missing information
+- revenue: Not found in the provided materials
+## Conflicting information
+- paying_customers as of 2026-06-30: values differ, not resolved: 60 [...¶3] / 80 [...¶2]
+1 passed, 129 deselected in 18.24s
+```
+模型主动区分了注册数和付费数，矛盾两边都列出，没有替人选择。这次模型调用了一个不存在的工具 `json`，收到错误后自己恢复，继续完成了简报。
+
+**全部离线测试**：`123 passed, 7 deselected`。
