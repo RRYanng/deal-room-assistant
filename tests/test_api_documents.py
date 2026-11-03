@@ -138,3 +138,31 @@ def test_replacement_never_reuses_document_or_chunk_ids(client):
     assert second["document_id"] != first["document_id"]
     assert new_chunk != old_chunk
     assert client.get(f"/api/documents/{first['document_id']}/chunks").status_code == 404
+
+
+def test_search_endpoint_returns_ranked_results(client):
+    cid = make_company(client)
+    upload_sample(client, cid, "company_a/tidewell_meeting_notes.md", "notes")
+    r = client.get(f"/api/companies/{cid}/search", params={"q": "paying customers", "k": 3})
+    assert r.status_code == 200
+    results = r.json()["results"]
+    assert len(results) == 3
+    assert {"chunk_id", "text", "loc_label", "bm25_rank", "vector_rank", "score"} <= set(results[0])
+    assert results[0]["score"] >= results[1]["score"] >= results[2]["score"]
+
+
+def test_search_endpoint_errors(client, monkeypatch):
+    cid = make_company(client)
+    assert client.get(f"/api/companies/{cid}/search", params={"q": " "}).status_code == 400
+    assert client.get("/api/companies/999/search", params={"q": "x"}).status_code == 404
+
+    from app import ingest, rag
+
+    def broken():
+        raise rag.EmbeddingError("Could not load embedding model 'x'.")
+    monkeypatch.setattr(rag, "get_embedder", broken)
+    monkeypatch.setattr(ingest, "get_embedder", broken)
+    r = client.get(f"/api/companies/{cid}/search", params={"q": "x"})
+    assert r.status_code == 503 and "Could not load embedding model" in r.json()["detail"]
+    r = upload(client, cid, "a.md", b"Hello.", "notes")
+    assert r.status_code == 503

@@ -18,6 +18,8 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
+from app.rag import Embedder, get_embedder, to_blob
+
 DOC_TYPES = ("deck", "notes", "crm")
 CRM_COLUMNS = ("date", "contact", "summary", "next_steps")
 TEXT_EXTENSIONS = (".pdf", ".txt", ".md")
@@ -201,13 +203,17 @@ def _split_long(text: str) -> list[str]:
 # --- storing --------------------------------------------------------------------
 
 def ingest_document(conn: sqlite3.Connection, company_id: int, filename: str, doc_type: str,
-                    doc_date: str | None, data: bytes) -> dict:
-    """Validate, parse and store one file. Same filename for the same company replaces the old one.
+                    doc_date: str | None, data: bytes, embedder: Embedder | None = None) -> dict:
+    """Validate, parse, embed and store one file. Same filename for the same company replaces
+    the old one.
 
-    Parsing happens before any write, so a bad replacement file leaves the old version intact.
+    Parsing and embedding happen before any write, so a bad replacement file (or a failing
+    embedding model) leaves the old version intact.
     """
     filename = validate_upload(filename, doc_type, doc_date)
     parsed = parse_file(filename, data)
+    embedder = embedder or get_embedder()
+    vectors = embedder.embed([c.text for c in parsed.chunks])
 
     with conn:  # one transaction: either everything is stored or nothing changes
         old = conn.execute("SELECT id FROM documents WHERE company_id = ? AND filename = ?",
@@ -220,9 +226,10 @@ def ingest_document(conn: sqlite3.Connection, company_id: int, filename: str, do
         ).lastrowid
         for index, chunk in enumerate(parsed.chunks):
             chunk_id = conn.execute(
-                "INSERT INTO chunks(document_id, company_id, chunk_index, text, page, para, row_num, loc_label)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (doc_id, company_id, index, chunk.text, chunk.page, chunk.para, chunk.row_num, chunk.loc_label),
+                "INSERT INTO chunks(document_id, company_id, chunk_index, text, page, para, row_num,"
+                " loc_label, embedding, embedding_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (doc_id, company_id, index, chunk.text, chunk.page, chunk.para, chunk.row_num,
+                 chunk.loc_label, to_blob(vectors[index]), embedder.model_name),
             ).lastrowid
             if parsed.crm_rows:
                 r = parsed.crm_rows[index]

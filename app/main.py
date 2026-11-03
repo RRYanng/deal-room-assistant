@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from app.config import PROJECT_ROOT, get_settings
 from app.db import connect, init_db
 from app.ingest import IngestError, ingest_document
+from app.rag import DEFAULT_TOP_K, EmbeddingError, search
 
 STATIC_DIR = PROJECT_ROOT / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -115,6 +116,8 @@ async def upload_document(
                                (doc_date or "").strip() or None, data)
     except IngestError as e:
         raise HTTPException(400, str(e)) from None
+    except EmbeddingError as e:
+        raise HTTPException(503, str(e)) from None
 
 
 @app.get("/api/documents/{document_id}/chunks")
@@ -127,3 +130,17 @@ def list_chunks(document_id: int, conn=Depends(get_db)):
     if not rows and not conn.execute("SELECT 1 FROM documents WHERE id = ?", (document_id,)).fetchone():
         raise HTTPException(404, f"Document {document_id} not found.")
     return [dict(r) for r in rows]
+
+
+# --- retrieval (debug) ----------------------------------------------------------
+
+@app.get("/api/companies/{company_id}/search")
+def search_company(company_id: int, q: str, k: int = DEFAULT_TOP_K, conn=Depends(get_db)):
+    """Hybrid search inside one company's materials, with both rankings shown for debugging."""
+    require_company(conn, company_id)
+    if not q.strip():
+        raise HTTPException(400, "Query 'q' must not be empty.")
+    try:
+        return {"query": q, "results": search(conn, company_id, q, top_k=max(1, min(k, 50)))}
+    except EmbeddingError as e:
+        raise HTTPException(503, str(e)) from None

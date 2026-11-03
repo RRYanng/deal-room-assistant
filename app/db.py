@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS chunks (
     para         INTEGER,                    -- paragraph number (1-based, per page for PDF)
     row_num      INTEGER,                    -- CSV data row (1-based, header excluded)
     loc_label    TEXT NOT NULL,              -- human-readable, e.g. "deck.pdf p.3 ¶2"
-    embedding    BLOB                        -- float32 vector, L2-normalized
+    embedding    BLOB,                       -- float32 vector, L2-normalized
+    embedding_model TEXT                     -- model that produced the vector
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_company ON chunks(company_id);
 
