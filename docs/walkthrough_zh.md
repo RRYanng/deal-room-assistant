@@ -302,3 +302,68 @@ Kitebridge Finance   kitebridge_crm.csv                 2 chunks, metrics kept 0
 最后把 demo 数据库恢复到初始状态（删掉第 4 份），方便演示时现场上传。
 
 **全部离线测试**：`124 passed, 7 deselected`。
+
+---
+
+## P7 收尾：真实模型验证、README、演示提纲
+
+### 改了什么
+- `scripts/verify.py`：通过 HTTP API，在一个全新的临时数据库上依次完成"建公司 → 上传示例 → 提问 → 上传第 4 份 → 生成简报 → 重启 app → 再提问"，逐条判断 7 项必过验证，并**自动生成** `docs/verification.md`（报告里所有回答和引用都来自这次实际运行）。`--fake` 参数可以用 FakeLLM 离线跑前 6 项。
+- `README.md`（英文）：产品目标、运行方式、配置、支持格式、架构图（文字版）、模型和程序的分工表、数据存在哪里、为什么用混合检索（附真实排名例子）、API 列表、已知局限、next steps。
+- `docs/demo_script.md`：约 2 分钟的英文演示提纲，包括 Tidewell 的 4 个问题场景和 Generate Brief。
+- `app/agent.py`：prompt 里写明当前选中的公司；如果问题问的是别家公司，不作答，只列一条 open item。
+
+### 真实模型验证结果（全部用真实模型：抽取 `claude-opus-5-5`，问答/简报 `claude-sonnet-5-5`）
+```
+PASS 1. Registered customers are never reported as paying customers
+PASS 2. Missing revenue is shown explicitly as missing
+PASS 3. A same-basis conflict keeps both sources
+PASS 4. Citations point to source text that supports the answer
+PASS 5. Other companies' materials never enter retrieval, answers or briefs
+PASS 6. New uploads change later answers; saved data is read back after a restart
+PASS 7. Every brief entry has a source
+```
+每一项的证据和完整对话记录都在 `docs/verification.md`。7 项都是用真实模型跑的；同样的行为另外也有 FakeLLM 的离线测试覆盖（报告末尾列出了对应的测试文件）。
+
+### 验证中发现并修复的问题
+第一次跑验证脚本时 7 项都显示 PASS，但我检查报告时发现第 5 项有问题：在 Tidewell 下问 "Kitebridge 融了多少钱、有多少付费客户"，模型拿 Tidewell 自己的 $1.2M 和 60/80 来回答，只在 open item 里提醒"公司名对不上"。Kitebridge 的数据确实没有泄露，但这个回答会误导人。修复方法：
+1. 在 prompt 里写明选中的公司，并加规则：问别家公司的问题不作答。
+2. 把第 5 项改严：这种情况下必须是 0 条 claim。
+
+重跑后，模型的回答是："The question is about Kitebridge Finance, not the selected company, Tidewell Insurance. Only Tidewell Insurance's materials are available, so I can't answer it."，第 5 项在新标准下通过。
+
+### 其他验证
+- `pytest -m live`：`7 passed, 124 deselected in 45.44s`（真实模型：JSON 输出、抽取、4 个问答场景、简报）。
+- `pytest`：`124 passed, 7 deselected`。
+- 用一个全新的 Python 3.11 venv，只按 `requirements-dev.txt` 安装，跑完整测试：`124 passed`，说明依赖清单是完整的。
+
+---
+
+## 总结
+
+### 完成了什么
+- P0–P7 全部完成，每个阶段都有一次英文 commit。没有部署，也没有推送。
+- 5 个核心功能都能对真实上传的文件端到端运行，没有硬编码任何答案：
+  - 导入：PDF/TXT/MD/CSV，带位置信息，同名文件替换，可删除。
+  - 整理：混合检索（BM25 + 向量 + RRF，先按公司过滤）；指标抽取，程序校验 quote 是否逐字出现。
+  - 问答：4 个工具，company_id 由服务端注入，最多 6 步，所有步骤记日志，每条引用都由程序校验。
+  - 一键简报：按要求写的 section 加上程序生成的指标、CRM、缺失、矛盾，每条都带出处。
+  - 缺失和矛盾：完全由程序判断，并在答案、面板、简报里明确显示。
+- 7 项必过验证全部用真实模型通过（`docs/verification.md`）。
+- 文档：README（英文）、`docs/decisions.md`（40 条决定和理由）、`docs/demo_script.md`、本讲解。
+
+### 没完成或需要注意的
+- **没有对真实（非合成）的 deal 材料测过**：扫描件 PDF、表格、多栏排版都不支持或效果未知（见 README 的 Known limitations）。
+- **模型输出每次会有差异**：引用一定经过校验，但措辞、提到哪些事实会变化。live 测试和 verify 脚本断言的是关键事实，不是原句。
+- **live 测试出现过一次偶发的网络超时**（Sonnet，P3 期间），重跑后通过，之后没有再出现。
+- **前端没有自动化测试**，是在内置浏览器里手动走查的（截图在 `docs/`）。
+- `data/deal_room.db` 现在是 demo 初始状态（两家公司，Tidewell 3 份文件），不在 git 里。
+- 一个小提醒：`.env` 里有你的 key，已被 `.gitignore` 排除，不会被提交。
+
+### 你回来后第一件该做的事
+**按 `docs/demo_script.md` 亲手走一遍 demo**（约 2 分钟）：
+```bash
+cd deal-room-assistant
+.venv/bin/uvicorn app.main:app --port 8000
+```
+打开 http://localhost:8000 → 选 Tidewell → 依次点 3 个建议问题 → 上传 `samples/company_a/tidewell_update_2026-08.txt` → Generate Brief。走完之后看 `docs/verification.md` 和 `docs/decisions.md`，对哪条决定有不同意见就告诉我。

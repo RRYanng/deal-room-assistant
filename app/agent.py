@@ -28,8 +28,8 @@ LAST_STEP_NOTE = ("You have one step left. Do not call any more tools. Reply now
                   "JSON answer, based on what you have found; list anything unresolved as open items.")
 
 SYSTEM_PROMPT = f"""You are a research assistant for a venture capital investment team.
-You answer questions about ONE company, using only its materials, which you can reach
-through the tools. The company is already selected; you do not need to name it.
+You answer questions about ONE selected company (named in the user message), using only its
+materials, which you can reach through the tools.
 
 How to work:
 - Use the tools before answering. search_documents finds passages; get_metrics returns
@@ -46,6 +46,9 @@ Rules for the answer:
 - Keep metrics separate: registered customers are not paying customers; never present one as
   the other.
 - If sources disagree, state every value with its source in separate claims. Do not pick one.
+- If the question is about a different company than the selected one, do not answer it with the
+  selected company's data. Write no claims; add one open item saying the question is about another
+  company and only the selected company's materials are available.
 - If something asked is not in the materials, do not write a claim for it. Add an open item
   in the form "<topic>: {NOT_FOUND}".
 
@@ -207,7 +210,8 @@ def related_checks(conn: sqlite3.Connection, company_id: int, chunk_ids: set[int
 
 
 def answer_question(conn: sqlite3.Connection, company_id: int, question: str, llm: LLMClient) -> dict:
-    run = run_agent(conn, company_id, question, llm)
+    company = conn.execute("SELECT name FROM companies WHERE id = ?", (company_id,)).fetchone()["name"]
+    run = run_agent(conn, company_id, f"Selected company: {company}\nQuestion: {question}", llm)
     final = run["final"] or {}
     claims = verify_items(conn, company_id, run["run_id"], final.get("claims"), "claim")
     open_items = [str(o).strip() for o in final.get("open_items") or [] if str(o).strip()]

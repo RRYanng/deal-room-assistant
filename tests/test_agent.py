@@ -63,6 +63,8 @@ def test_full_loop_with_valid_citation(sample):
     assert claim["citations"][0]["loc_label"] == "tidewell_meeting_notes.md ¶3"
     assert "60 paying customers" in claim["citations"][0]["chunk_text"]
     assert fake.calls[0]["tools"] == ["search_documents", "get_metrics", "get_conflicts", "get_crm_history"]
+    assert fake.calls[0]["messages"][0]["content"] == \
+        "Selected company: Tidewell Insurance\nQuestion: How many paying customers?"
 
 
 def test_company_id_from_model_is_ignored(sample):
