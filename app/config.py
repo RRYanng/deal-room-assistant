@@ -24,7 +24,9 @@ class Settings:
 
 def get_settings() -> Settings:
     """Build settings from the current environment. Called at use time so tests can override env vars."""
-    db_path = Path(os.getenv("DB_PATH", PROJECT_ROOT / "data" / "deal_room.db"))
+    db_path = Path(os.getenv("DB_PATH", "data/deal_room.db"))
+    if not db_path.is_absolute():  # relative to the project, not to wherever the server was started
+        db_path = PROJECT_ROOT / db_path
     return Settings(
         db_path=db_path,
         llm_provider=os.getenv("LLM_PROVIDER", "anthropic").lower(),

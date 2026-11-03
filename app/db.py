@@ -2,6 +2,8 @@
 
 Deleting a document cascades to its chunks, metrics and CRM records, so re-uploading
 a file with the same name is just "delete old document row, insert new one".
+IDs use AUTOINCREMENT so a replaced document never hands its old IDs to new rows
+(a stale citation can then never point at different text).
 Conflicts are not stored: they are computed from the metrics table on demand.
 """
 
@@ -16,7 +18,7 @@ CREATE TABLE IF NOT EXISTS companies (
 );
 
 CREATE TABLE IF NOT EXISTS documents (
-    id           INTEGER PRIMARY KEY,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     filename     TEXT NOT NULL,
     doc_type     TEXT NOT NULL CHECK (doc_type IN ('deck', 'notes', 'crm')),
@@ -26,7 +28,7 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
-    id           INTEGER PRIMARY KEY,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     chunk_index  INTEGER NOT NULL,           -- order within the document
@@ -40,7 +42,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 CREATE INDEX IF NOT EXISTS idx_chunks_company ON chunks(company_id);
 
 CREATE TABLE IF NOT EXISTS metrics (
-    id           INTEGER PRIMARY KEY,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     chunk_id     INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
@@ -58,7 +60,7 @@ CREATE TABLE IF NOT EXISTS metrics (
 CREATE INDEX IF NOT EXISTS idx_metrics_company ON metrics(company_id);
 
 CREATE TABLE IF NOT EXISTS crm_records (
-    id           INTEGER PRIMARY KEY,
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     chunk_id     INTEGER REFERENCES chunks(id) ON DELETE CASCADE,

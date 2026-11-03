@@ -1,0 +1,51 @@
+[
+  {
+    "company": "Tidewell Insurance",
+    "path": "company_a/tidewell_deck.pdf",
+    "doc_type": "deck",
+    "doc_date": "2026-07-15",
+    "initial": true
+  },
+  {
+    "company": "Tidewell Insurance",
+    "path": "company_a/tidewell_meeting_notes.md",
+    "doc_type": "notes",
+    "doc_date": "2026-07-22",
+    "initial": true
+  },
+  {
+    "company": "Tidewell Insurance",
+    "path": "company_a/tidewell_crm.csv",
+    "doc_type": "crm",
+    "doc_date": "2026-07-22",
+    "initial": true
+  },
+  {
+    "company": "Tidewell Insurance",
+    "path": "company_a/tidewell_update_2026-08.txt",
+    "doc_type": "notes",
+    "doc_date": "2026-08-10",
+    "initial": false
+  },
+  {
+    "company": "Kitebridge Finance",
+    "path": "company_b/kitebridge_deck.pdf",
+    "doc_type": "deck",
+    "doc_date": "2026-04-10",
+    "initial": true
+  },
+  {
+    "company": "Kitebridge Finance",
+    "path": "company_b/kitebridge_meeting_notes.md",
+    "doc_type": "notes",
+    "doc_date": "2026-04-20",
+    "initial": true
+  },
+  {
+    "company": "Kitebridge Finance",
+    "path": "company_b/kitebridge_crm.csv",
+    "doc_type": "crm",
+    "doc_date": "2026-04-20",
+    "initial": true
+  }
+]
