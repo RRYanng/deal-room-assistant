@@ -15,7 +15,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 class Settings:
     db_path: Path
     llm_provider: str  # "anthropic" or "fake"
-    llm_model: str
+    llm_extract_model: str  # metric extraction
+    llm_chat_model: str  # Q&A agent and briefs
     llm_effort: str  # "low" | "medium" | "high" | "xhigh" | "max"
     llm_fallbacks: str  # "default" enables server-side refusal fallback; "" disables it
     embedding_model: str
@@ -30,7 +31,8 @@ def get_settings() -> Settings:
     return Settings(
         db_path=db_path,
         llm_provider=os.getenv("LLM_PROVIDER", "anthropic").lower(),
-        llm_model=os.getenv("LLM_MODEL", "claude-opus-5-5"),
+        llm_extract_model=os.getenv("LLM_EXTRACT_MODEL", "claude-opus-5-5"),
+        llm_chat_model=os.getenv("LLM_CHAT_MODEL", "claude-sonnet-5-5"),
         llm_effort=os.getenv("LLM_EFFORT", "medium"),
         llm_fallbacks=os.getenv("LLM_FALLBACKS", "default"),
         embedding_model=os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),

@@ -21,8 +21,9 @@ Reply = LLMResponse | dict[str, Any] | Callable[[dict[str, Any]], Any]
 class FakeLLM(LLMClient):
     model = "fake"
 
-    def __init__(self, replies: list[Reply] | None = None):
+    def __init__(self, replies: list[Reply] | None = None, default: Reply | None = None):
         self.replies: list[Reply] = list(replies or [])
+        self.default = default  # used for every call once the script is empty
         self.calls: list[dict[str, Any]] = []
 
     # --- reply builders ---------------------------------------------------
@@ -69,7 +70,10 @@ class FakeLLM(LLMClient):
 
     def _next(self, call: dict[str, Any]) -> Any:
         self.calls.append(call)
-        if not self.replies:
+        if self.replies:
+            reply = self.replies.pop(0)
+        elif self.default is not None:
+            reply = self.default
+        else:
             raise LLMError(f"FakeLLM: no scripted reply left for call #{len(self.calls)}")
-        reply = self.replies.pop(0)
         return reply(call) if callable(reply) else reply

@@ -99,7 +99,7 @@ def backfill_embeddings(conn: sqlite3.Connection, company_id: int, embedder: Emb
 def tokenize(text: str) -> list[str]:
     """Lowercase; keep dates and numbers as whole tokens; drop stopwords; light plural folding."""
     text = text.lower()
-    tokens = _iso_dates(text)
+    tokens = iso_dates(text)
     for tok in TOKEN_RE.findall(text):
         if tok[0].isdigit():
             tokens.append(tok.replace(",", ""))  # "1,250" -> "1250"
@@ -108,7 +108,7 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
-def _iso_dates(text: str) -> list[str]:
+def iso_dates(text: str) -> list[str]:
     found = []
     for m in WORD_DATE_RE.finditer(text):
         month = m["m1"] or m["m2"]

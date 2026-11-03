@@ -15,6 +15,10 @@ class LLMError(Exception):
     """Raised when the model call fails or returns something unusable."""
 
 
+class LLMAuthError(LLMError):
+    """No usable credentials (e.g. ANTHROPIC_API_KEY is empty)."""
+
+
 @dataclass
 class ToolSpec:
     name: str

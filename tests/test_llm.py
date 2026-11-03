@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.config import get_settings
-from app.llm import FakeLLM, LLMError, ToolResult, ToolSpec, get_llm
+from app.llm import FakeLLM, LLMAuthError, LLMError, ToolResult, ToolSpec, get_llm
 from app.llm.anthropic_client import AnthropicLLM
 
 SEARCH = ToolSpec("search_documents", "Search", {"type": "object", "properties": {}})
@@ -42,6 +42,32 @@ def test_fake_raises_when_script_runs_out():
         FakeLLM().chat("sys", [])
 
 
+def test_fake_default_reply_used_when_script_is_empty():
+    fake = FakeLLM(default={"metrics": []})
+    assert fake.complete_json("s", "p", {}) == {"metrics": []}
+    assert fake.complete_json("s", "p", {}) == {"metrics": []}
+
+
+def test_get_llm_uses_model_per_purpose(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("LLM_EXTRACT_MODEL", "extract-model")
+    monkeypatch.setenv("LLM_CHAT_MODEL", "chat-model")
+    assert get_llm("extract").model == "extract-model"
+    assert get_llm("chat").model == "chat-model"
+    with pytest.raises(ValueError):
+        get_llm("other")
+
+
+def test_missing_credentials_become_llm_auth_error(monkeypatch):
+    class NoKeySDK:
+        def _fail(**kw):
+            raise TypeError('"Could not resolve authentication method. Expected one of api_key..."')
+        messages = SimpleNamespace(create=_fail)
+        beta = SimpleNamespace(messages=SimpleNamespace(create=_fail))
+    with pytest.raises(LLMAuthError, match="API key missing"):
+        AnthropicLLM("m", client=NoKeySDK()).chat("sys", [])
+
+
 def test_get_llm_picks_provider_from_env(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "fake")
     assert isinstance(get_llm(), FakeLLM)
@@ -51,10 +77,12 @@ def test_get_llm_picks_provider_from_env(monkeypatch):
 
 
 def test_settings_read_model_names_from_env(monkeypatch):
-    monkeypatch.setenv("LLM_MODEL", "some-other-model")
+    monkeypatch.setenv("LLM_EXTRACT_MODEL", "extract-model")
+    monkeypatch.setenv("LLM_CHAT_MODEL", "chat-model")
     monkeypatch.setenv("EMBEDDING_MODEL", "my-embedder")
     s = get_settings()
-    assert (s.llm_model, s.embedding_model) == ("some-other-model", "my-embedder")
+    assert (s.llm_extract_model, s.llm_chat_model, s.embedding_model) == \
+        ("extract-model", "chat-model", "my-embedder")
     monkeypatch.delenv("EMBEDDING_MODEL")
     assert get_settings().embedding_model == "sentence-transformers/all-MiniLM-L6-v2"
 

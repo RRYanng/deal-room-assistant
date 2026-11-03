@@ -77,3 +77,67 @@ P2 新增的测试（`tests/test_rag.py` 和 API 测试）：
 - **替换**：同名文件替换后，旧 chunk_id 和旧文本都不再出现在结果里。
 - **RRF 数学**：用一个确定性的 stub embedder，验证每条结果的 score 都等于公式算出的值。
 - **其他**：vector 是 384 维且归一化；缺失的 vector 在搜索时会被补算；模型名错误时报 `Could not load embedding model '...'`；接口的 400/404/503。
+
+---
+
+## P3 指标抽取 + 引用校验 + 矛盾/缺失规则
+
+### 改了什么
+- `app/llm/`：模型分成两套配置：`LLM_EXTRACT_MODEL`（默认 `claude-opus-5-5`，用于抽取）和 `LLM_CHAT_MODEL`（默认 `claude-sonnet-5-5`，用于问答和简报）。调用 `get_llm("extract")` 或 `get_llm("chat")` 取对应模型。
+- 缺少凭证时，SDK 抛的 `TypeError` 和 401 都转成 `LLMAuthError("API key missing ...")`。
+- 新增 `app/numbers.py`（数字标准化）、`app/citations.py`（引用逐字校验）、`app/extract.py`（指标抽取）、`app/rules.py`（矛盾/缺失/unclear basis）、`app/logs.py`（写 `agent_logs`）。
+- 新接口：
+  - `GET /api/companies/{id}/metrics`
+  - `GET /api/companies/{id}/checks`（返回 conflicts / unclear_basis / missing）
+  - `POST /api/documents/{id}/extract`（重新抽取）
+- 上传接口在存好文件后自动抽取指标，响应里带 `extraction` 字段。
+
+### 输入 → 输出（一次抽取）
+1. **输入**：一个 document 的全部 chunk。prompt 里每段写成 `[chunk_id=16] (tidewell_meeting_notes.md ¶3)` 加原文。一个文档只调用模型一次（`complete_json`，用 JSON schema 强制输出格式）。
+2. **模型返回**：每条指标包含 `chunk_id, metric, metric_label, value_raw, unit, currency, as_of_date, quote`。
+3. **程序校验，任何一条不通过就丢弃，并写入 `agent_logs`**：
+   - `chunk_id` 必须属于这个文档。
+   - `quote` 在空白规范化后必须**逐字**出现在该 chunk 里（大小写、用词都不能改）。
+   - `value_raw` 必须出现在 `quote` 里。
+4. **程序补全和标准化**：
+   - `value` 由程序根据 `value_raw` 计算（`$1.2M` → 1200000，`sixty` → 60，`1,250` → 1250）；算不出来就是 NULL。
+   - unit：客户数统一为 `count`；金额类用币种（USD）。
+   - `as_of_date` 只有当这个日期确实写在同一个 chunk 里时才保留，否则为 NULL，即 unclear basis。
+   - company、document、位置都从数据库取，不信任模型给的值。
+5. **输出**：替换这个文档原有的 metrics，并返回 `{proposed, kept, dropped:[{item, reason}]}`。
+
+### 程序规则（`app/rules.py`）
+- **矛盾**：同公司 + 同 metric（`other` 还要同 label）+ 同 as_of_date + 同 unit/currency + 数值不同。返回所有数值和每个来源（quote、loc_label、文件），不替人选哪个是对的。
+- **不同 metric 永远不比较**：注册 100 和付费 60 不会被判为矛盾。
+- **unclear basis**：没有 as_of_date，或数值读不出来。在界面上显示，但不参与矛盾判断。
+- **缺失**：4 个关键指标里一条记录都没有的。只有 unclear basis 的指标不算缺失。
+
+### 错误处理
+- 抽取时模型失败（没有 key、网络、API 错误）：文件仍然保存，响应是 `extraction: {"status": "failed", "error": "API key missing: ..."}`，之后可以调用 `/extract` 重试。
+- 模型给出编造的 quote、错误的 chunk_id、引文里不包含的数值：这条被丢弃，并写一条 `metric_dropped` 日志。
+
+### 怎么验证的
+- **FakeLLM 测试**：`tests/helpers.py` 里的 `fake_extractor` 模拟一个"认真的模型"，从 prompt 里找到真实的 chunk_id 再返回指标。用它在示例数据上跑完整的 API 流程：
+  - 注册 100 vs 付费 60 → `conflicts == []`。
+  - 上传第 4 份后 → 1 个矛盾：`paying_customers`，2026-06-30，values `[60, 80]`，两个来源分别是 `tidewell_meeting_notes.md ¶3` 和 `tidewell_update_2026-08.txt ¶2`。
+  - `$1.2M` → unclear basis，值 1200000，原因 "no as-of date stated"，位置 `tidewell_deck.pdf p.4 ¶2`。
+  - `missing == ["revenue"]`。
+  - Kitebridge 的指标不会混进 Tidewell，反之亦然。
+  - 替换第 4 份文件后，矛盾消失。
+  - 模型没有 key 时，上传仍然成功。
+- **校验单元测试**：编造的 quote、`value_raw` 不在 quote 里、chunk 属于别的文档 → 都被丢弃并有日志；日期没写在 chunk 里 → 变为 NULL；数字标准化有 13 个正例和 3 个"拒绝猜测"的例子。
+- **真实模型测试（Opus 5.5，`pytest -m live`）**：对 Tidewell 的 deck、notes 和第 4 份做真实抽取，提出的 6 条指标全部通过校验，0 条被丢弃：
+```
+tidewell_deck.pdf {'status': 'ok', 'proposed': 4, 'kept': 4} []
+tidewell_meeting_notes.md {'status': 'ok', 'proposed': 1, 'kept': 1} []
+tidewell_update_2026-08.txt {'status': 'ok', 'proposed': 1, 'kept': 1} []
+registered_customers 100.0 2026-06-30 tidewell_deck.pdf p.3 ¶2
+paying_customers 60.0 2026-06-30 tidewell_meeting_notes.md ¶3
+paying_customers 80.0 2026-06-30 tidewell_update_2026-08.txt ¶2
+funding_raised 1200000.0 None tidewell_deck.pdf p.4 ¶2
+conflicts: paying_customers 2026-06-30 values [60.0, 80.0]（两个来源）; missing: ['revenue']
+1 passed, 104 deselected in 18.49s
+```
+  模型另外抽出了两条 `other`（"4 minutes"、"two states"），它们没有统计日，因此显示在 unclear basis 里。
+- **全部离线测试**：`103 passed, 1 deselected`。
+- **一个偶发问题**：同一轮 live 测试里，小的 JSON 测试（Sonnet 5.5）报了一次网络超时 "Request timed out or interrupted"。单独重跑通过，直接调用 Sonnet 也正常，判断是网络偶发问题，不是代码问题。

@@ -10,8 +10,11 @@ from pydantic import BaseModel
 
 from app.config import PROJECT_ROOT, get_settings
 from app.db import connect, init_db
+from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
+from app.llm import LLMClient, LLMError, get_llm
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
+from app.rules import company_checks, get_metrics
 
 STATIC_DIR = PROJECT_ROOT / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -39,6 +42,14 @@ def get_db(request: Request):
         conn.close()
 
 
+def get_extract_llm() -> LLMClient:
+    return get_llm("extract")
+
+
+def get_chat_llm() -> LLMClient:
+    return get_llm("chat")
+
+
 def require_company(conn: sqlite3.Connection, company_id: int) -> sqlite3.Row:
     row = conn.execute("SELECT id, name FROM companies WHERE id = ?", (company_id,)).fetchone()
     if not row:
@@ -54,7 +65,8 @@ def index():
 @app.get("/api/health")
 def health():
     settings = get_settings()
-    return {"status": "ok", "llm_provider": settings.llm_provider, "llm_model": settings.llm_model}
+    return {"status": "ok", "llm_provider": settings.llm_provider,
+            "llm_extract_model": settings.llm_extract_model, "llm_chat_model": settings.llm_chat_model}
 
 
 # --- companies ----------------------------------------------------------------
@@ -100,24 +112,46 @@ def list_documents(company_id: int, conn=Depends(get_db)):
 
 
 @app.post("/api/companies/{company_id}/documents", status_code=201)
-async def upload_document(
+def upload_document(
     company_id: int,
     file: UploadFile = File(...),
     doc_type: str = Form(...),
     doc_date: str | None = Form(None),
     conn=Depends(get_db),
+    llm: LLMClient = Depends(get_extract_llm),
 ):
+    """Store the file (chunks + embeddings), then extract metrics.
+
+    If extraction fails (e.g. no API key), the document stays stored and the response
+    says so; extraction can be retried with POST /api/documents/{id}/extract.
+    """
     require_company(conn, company_id)
-    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File is larger than 20 MB.")
     try:
-        return ingest_document(conn, company_id, file.filename or "", doc_type.strip().lower(),
-                               (doc_date or "").strip() or None, data)
+        result = ingest_document(conn, company_id, file.filename or "", doc_type.strip().lower(),
+                                 (doc_date or "").strip() or None, data)
     except IngestError as e:
         raise HTTPException(400, str(e)) from None
     except EmbeddingError as e:
         raise HTTPException(503, str(e)) from None
+    result["extraction"] = run_extraction(conn, result["document_id"], llm)
+    return result
+
+
+def run_extraction(conn: sqlite3.Connection, document_id: int, llm: LLMClient) -> dict:
+    try:
+        return extract_metrics(conn, document_id, llm)
+    except LLMError as e:
+        return {"status": "failed", "error": str(e)}
+
+
+@app.post("/api/documents/{document_id}/extract")
+def reextract_document(document_id: int, conn=Depends(get_db), llm: LLMClient = Depends(get_extract_llm)):
+    if not conn.execute("SELECT 1 FROM documents WHERE id = ?", (document_id,)).fetchone():
+        raise HTTPException(404, f"Document {document_id} not found.")
+    return run_extraction(conn, document_id, llm)
 
 
 @app.get("/api/documents/{document_id}/chunks")
@@ -144,3 +178,18 @@ def search_company(company_id: int, q: str, k: int = DEFAULT_TOP_K, conn=Depends
         return {"query": q, "results": search(conn, company_id, q, top_k=max(1, min(k, 50)))}
     except EmbeddingError as e:
         raise HTTPException(503, str(e)) from None
+
+
+# --- metrics and program checks -------------------------------------------------
+
+@app.get("/api/companies/{company_id}/metrics")
+def list_metrics(company_id: int, conn=Depends(get_db)):
+    require_company(conn, company_id)
+    return get_metrics(conn, company_id)
+
+
+@app.get("/api/companies/{company_id}/checks")
+def get_checks(company_id: int, conn=Depends(get_db)):
+    """Conflicts, unclear-basis metrics and missing key metrics, all decided by program rules."""
+    require_company(conn, company_id)
+    return company_checks(conn, company_id)
