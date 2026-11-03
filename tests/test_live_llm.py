@@ -52,3 +52,45 @@ def test_real_extraction_on_tidewell_samples(db):
     assert paying and paying[0]["values"] == [60, 80]
     assert "revenue" in checks["missing"]
     assert any(u["metric"] == "funding_raised" and u["value"] == 1_200_000 for u in checks["unclear_basis"])
+
+
+def _ask_live(db, question, include_update=False):
+    from app.agent import answer_question
+    from tests.helpers import load_samples
+
+    cid = load_samples(db, include_update=include_update)["Tidewell Insurance"]
+    result = answer_question(db, cid, question, get_llm("chat"))
+    print(f"\nQ: {question}\nstatus={result['status']} tools={[t['tool'] for t in result['tool_calls']]}")
+    for c in result["claims"]:
+        print("  CLAIM:", c["text"], "|", [x["loc_label"] for x in c["citations"]])
+    print("  OPEN:", result["open_items"])
+    print("  CONFLICTS:", [(c["metric"], c["values"]) for c in result["conflicts"]])
+    return result
+
+
+def test_real_agent_paying_customers(db):
+    r = _ask_live(db, "How many paying customers does the company have?")
+    labels = {x["loc_label"] for c in r["claims"] for x in c["citations"]}
+    assert "tidewell_meeting_notes.md ¶3" in labels
+    assert any("60" in c["text"] for c in r["claims"])
+    assert not any("100" in c["text"] and "paying" in c["text"].lower() for c in r["claims"])
+
+
+def test_real_agent_last_conversation(db):
+    r = _ask_live(db, "When was our last conversation with the company, and what are the next steps?")
+    labels = {x["loc_label"] for c in r["claims"] for x in c["citations"]}
+    assert "tidewell_crm.csv row 3" in labels
+
+
+def test_real_agent_revenue_missing(db):
+    r = _ask_live(db, "What is the company's revenue?")
+    assert r["status"] == "ok"
+    assert any("not found in the provided materials" in o.lower() for o in r["open_items"])
+    assert not any("$" in c["text"] and "revenue" in c["text"].lower() for c in r["claims"])
+
+
+def test_real_agent_conflict_after_fourth_file(db):
+    r = _ask_live(db, "How many paying customers does the company have?", include_update=True)
+    text = " ".join(c["text"] for c in r["claims"])
+    assert "60" in text and "80" in text
+    assert [c["values"] for c in r["conflicts"]] == [[60, 80]]

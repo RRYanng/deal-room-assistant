@@ -65,8 +65,8 @@ class FakeLLM(LLMClient):
             raise LLMError("FakeLLM: complete_json() reply must be a dict")
         return reply
 
-    def tool_results_message(self, results: list[ToolResult]) -> dict[str, Any]:
-        return {"role": "user", "tool_results": [vars(r) for r in results]}
+    def tool_results_message(self, results: list[ToolResult], note: str | None = None) -> dict[str, Any]:
+        return {"role": "user", "tool_results": [vars(r) for r in results], "note": note}
 
     def _next(self, call: dict[str, Any]) -> Any:
         self.calls.append(call)

@@ -48,15 +48,14 @@ class AnthropicLLM(LLMClient):
         except json.JSONDecodeError as e:
             raise LLMError(f"Model returned invalid JSON: {e}") from e
 
-    def tool_results_message(self, results: list[ToolResult]) -> dict[str, Any]:
-        return {
-            "role": "user",
-            "content": [
-                {"type": "tool_result", "tool_use_id": r.tool_call_id,
-                 "content": r.content, "is_error": r.is_error}
-                for r in results
-            ],
-        }
+    def tool_results_message(self, results: list[ToolResult], note: str | None = None) -> dict[str, Any]:
+        content: list[dict[str, Any]] = [
+            {"type": "tool_result", "tool_use_id": r.tool_call_id, "content": r.content, "is_error": r.is_error}
+            for r in results
+        ]
+        if note:
+            content.append({"type": "text", "text": note})  # text must come after the tool results
+        return {"role": "user", "content": content}
 
     # --- helpers ----------------------------------------------------------
 

@@ -131,6 +131,8 @@ def test_anthropic_tool_results_message_format():
     assert msg["content"][0] == {"type": "tool_result", "tool_use_id": "tu_1",
                                  "content": '{"ok": true}', "is_error": False}
     assert msg["content"][1]["is_error"] is True
+    with_note = AnthropicLLM("m", client=StubSDK(None)).tool_results_message([ToolResult("tu_1", "{}")], "stop")
+    assert with_note["content"][-1] == {"type": "text", "text": "stop"}
 
 
 def test_anthropic_complete_json_parses_and_sends_schema():

@@ -10,9 +10,11 @@ from pydantic import BaseModel
 
 from app.config import PROJECT_ROOT, get_settings
 from app.db import connect, init_db
+from app.agent import answer_question
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
-from app.llm import LLMClient, LLMError, get_llm
+from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
+from app.logs import get_run_log
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
 from app.rules import company_checks, get_metrics
 
@@ -193,3 +195,37 @@ def get_checks(company_id: int, conn=Depends(get_db)):
     """Conflicts, unclear-basis metrics and missing key metrics, all decided by program rules."""
     require_company(conn, company_id)
     return company_checks(conn, company_id)
+
+
+# --- Q&A agent ----------------------------------------------------------------------
+
+class QuestionIn(BaseModel):
+    question: str
+
+
+def llm_http_error(e: LLMError) -> HTTPException:
+    if isinstance(e, LLMAuthError):
+        return HTTPException(503, f"API key missing. {e}")
+    return HTTPException(502, f"Model call failed: {e}")
+
+
+@app.post("/api/companies/{company_id}/ask")
+def ask(company_id: int, body: QuestionIn, conn=Depends(get_db), llm: LLMClient = Depends(get_chat_llm)):
+    require_company(conn, company_id)
+    if not body.question.strip():
+        raise HTTPException(400, "Question is required.")
+    try:
+        return answer_question(conn, company_id, body.question.strip(), llm)
+    except LLMError as e:
+        raise llm_http_error(e) from None
+    except EmbeddingError as e:
+        raise HTTPException(503, str(e)) from None
+
+
+@app.get("/api/runs/{run_id}/log")
+def run_log(run_id: str, conn=Depends(get_db)):
+    """Every logged step of one agent run: question, tool calls with inputs/outputs, drops, final."""
+    log = get_run_log(conn, run_id)
+    if not log:
+        raise HTTPException(404, f"Run {run_id} not found.")
+    return log

@@ -65,8 +65,9 @@ class LLMClient(ABC):
         """Single call whose output must be a JSON object matching `schema`."""
 
     @abstractmethod
-    def tool_results_message(self, results: list[ToolResult]) -> dict[str, Any]:
-        """Build the next user message carrying tool results, in this provider's format."""
+    def tool_results_message(self, results: list[ToolResult], note: str | None = None) -> dict[str, Any]:
+        """Build the next user message carrying tool results (plus an optional text note),
+        in this provider's format."""
 
     @staticmethod
     def user_message(text: str) -> dict[str, Any]:
