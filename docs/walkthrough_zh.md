@@ -254,3 +254,51 @@ Q: How many paying customers ...（上传第 4 份之后）
 模型主动区分了注册数和付费数，矛盾两边都列出，没有替人选择。这次模型调用了一个不存在的工具 `json`，收到错误后自己恢复，继续完成了简报。
 
 **全部离线测试**：`123 passed, 7 deselected`。
+
+---
+
+## P6 前端
+
+### 改了什么
+- `static/index.html`、`static/style.css`、`static/app.js`：英文单页，原生 JavaScript，不用任何构建工具，由 FastAPI 直接提供。支持浅色和深色模式（跟随系统设置）。
+- **左栏**：公司列表、新建公司、上传表单（文件、材料类型、材料日期）、文档列表（每个文档有 re-extract / remove）。
+- **中栏**：问答区。有 3 个建议问题；每条 claim 下方有 "Show evidence"，展开后显示文件名、位置、材料日期、chunk 全文，并高亮 quote。矛盾显示在红框里，open items 和 unclear basis 显示在黄框里。底部显示用了哪些工具，以及 "View agent log" 链接。
+- **右栏**：Generate Brief（带要求输入框）、Conflicts & missing 面板、Key metrics 表（鼠标悬停 Source 可以看到原文 quote）。
+- 简报在弹窗里显示，可以 Copy Markdown 或 Download .md。
+- 新增 `DELETE /api/documents/{id}`（删除文档时连带删除它的 chunk、metric、CRM 记录）和 `scripts/load_samples.py`（一条命令准备好 demo 数据）。
+
+### 输入 → 输出
+- 前端所有数据都通过 `/api/*` 获取。前端本身不做任何判断：矛盾、缺失、引用校验的结果都直接来自后端。
+- 上传后会显示 "Stored X: N chunks. Metrics: K extracted"；如果抽取失败，会显示失败原因（例如 "API key missing"）。
+
+### 错误处理
+- 所有接口错误都显示后端返回的 `detail`，例如格式不支持、CRM 缺列、"API key missing: set ANTHROPIC_API_KEY in .env."。
+- 所有文本都经过 HTML 转义（`esc()`），文件里的内容不会被当成 HTML 执行。
+- 切换公司时，还没返回的请求结果不会写到新公司的页面上。
+
+### 怎么验证的
+在内置浏览器里，用真实模型、真实服务器操作了一遍：
+1. 用 `scripts/load_samples.py` 加载初始示例（真实 Opus 抽取）：
+```
+Tidewell Insurance   tidewell_deck.pdf                 13 chunks, metrics kept 3, dropped 0
+Tidewell Insurance   tidewell_meeting_notes.md          7 chunks, metrics kept 1, dropped 0
+Tidewell Insurance   tidewell_crm.csv                   3 chunks, metrics kept 0, dropped 0
+Kitebridge Finance   kitebridge_deck.pdf                6 chunks, metrics kept 2, dropped 0
+Kitebridge Finance   kitebridge_meeting_notes.md        4 chunks, metrics kept 1, dropped 0
+Kitebridge Finance   kitebridge_crm.csv                 2 chunks, metrics kept 0, dropped 0
+```
+2. 选中 Tidewell，点建议问题 "How many paying customers…" → 回答 "As of June 30, 2026, Tidewell had 60 paying customers…"。展开证据，看到 `tidewell_meeting_notes.md · ¶3`，原句被高亮（截图 `docs/screenshot_answer.jpg`）。
+3. 上传第 4 份文件后，右栏出现 "Conflicts (1)"：60 和 80 两个值，各带来源和原文（截图 `docs/screenshot_main.jpg`）。
+4. 输入 "focus on traction and risks"，点 Generate Brief → 弹窗显示 Traction / Risks / Key metrics / Recent communications / Missing / Conflicting，每条都带来源（截图 `docs/screenshot_brief.jpg`）。
+5. 浏览器 console 没有错误。手机宽度下自动变成单列。
+6. 另起一个 key 为空的服务器：提问返回 503 "API key missing: set ANTHROPIC_API_KEY in .env."；上传仍然成功，抽取状态是 failed，并写明原因。
+
+**测试中发现并修复的问题**：
+- 我把第 4 份文件误传到了 Kitebridge，界面上却没有办法撤销 → 新增删除功能。
+- 右栏指标表的 Source 列被截断 → 改成允许换行。
+- 没有 key 时，提示文字重复成 "API key missing. API key missing: …" → 修正。
+- 简报里出现了一条推测（"may need more capital soon"）→ prompt 加上"不做材料以外的推测"。
+
+最后把 demo 数据库恢复到初始状态（删掉第 4 份），方便演示时现场上传。
+
+**全部离线测试**：`124 passed, 7 deselected`。

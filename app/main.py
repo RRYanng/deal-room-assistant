@@ -157,6 +157,16 @@ def reextract_document(document_id: int, conn=Depends(get_db), llm: LLMClient = 
     return run_extraction(conn, document_id, llm)
 
 
+@app.delete("/api/documents/{document_id}")
+def delete_document(document_id: int, conn=Depends(get_db)):
+    """Remove a document; its chunks, metrics and CRM rows are deleted with it (cascade)."""
+    with conn:
+        deleted = conn.execute("DELETE FROM documents WHERE id = ?", (document_id,)).rowcount
+    if not deleted:
+        raise HTTPException(404, f"Document {document_id} not found.")
+    return {"deleted": document_id}
+
+
 @app.get("/api/documents/{document_id}/chunks")
 def list_chunks(document_id: int, conn=Depends(get_db)):
     rows = conn.execute(
@@ -206,7 +216,7 @@ class QuestionIn(BaseModel):
 
 def llm_http_error(e: LLMError) -> HTTPException:
     if isinstance(e, LLMAuthError):
-        return HTTPException(503, f"API key missing. {e}")
+        return HTTPException(503, str(e))  # already starts with "API key missing"
     return HTTPException(502, f"Model call failed: {e}")
 
 

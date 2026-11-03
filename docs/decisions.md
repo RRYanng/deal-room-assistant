@@ -35,3 +35,9 @@ Choices made without waiting for confirmation, with reasons. Newest at the botto
 | 29 | P5 | The key metrics table shows only key metrics that have an as-of date and a numeric value; the others appear under "Unclear basis". | A number without a basis should not sit in the main table as if it were comparable. |
 | 30 | P5 | A brief is not stored; it is returned as JSON plus a Markdown version (`markdown` field) for copy/download. | Keeps the data model small; a brief is cheap to regenerate from stored materials. |
 | 31 | P5 | Recent communications cite the full CRM row text as their quote. | The row is the smallest unit of a CSV source; quoting it whole is always verbatim. |
+| 32 | P6 | Three-column layout (companies/upload/documents · Q&A · brief/checks/metrics); the brief opens in an overlay with "Copy Markdown" and "Download .md". Columns stack below 1100px width. | Matches the requested layout; the brief needs more width than a side panel offers. |
+| 33 | P6 | Evidence = file name, location, material date, and the full chunk text with the quote highlighted. Metric sources show the exact quote on hover. | The reader sees the quote in its context, not only the snippet. |
+| 34 | P6 | Chat history is kept per company in browser memory only (not persisted). | Answers are cheap to regenerate; persistence was not requested. |
+| 35 | P6 | Added `DELETE /api/documents/{id}` and a "remove" link per document. | During UI testing a file was uploaded to the wrong company and there was no way to undo it in the app. Deleting cascades to the file's chunks, metrics and CRM rows. |
+| 36 | P6 | Brief prompt: risks must be shown by the materials or be stated gaps, never predictions. | A live brief contained "may need more capital soon": sourced, but speculative. |
+| 37 | P6 | `scripts/load_samples.py` loads the initial sample files through the real pipeline (with `--with-update` for the 4th file). | One command to prepare the demo database. |

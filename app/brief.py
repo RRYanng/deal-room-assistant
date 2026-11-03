@@ -27,6 +27,8 @@ title and 1 to 5 bullets. Each bullet is one factual sentence and must cite at l
 the chunk_id and a quote copied character for character from that chunk's text (or the quote
 field of a metric). Keep metrics separate: registered customers are not paying customers.
 If sources disagree, state each value with its source; do not pick one.
+Do not speculate beyond the materials: a risk is something the materials show, or a gap
+they leave ("X is not stated"), never a prediction.
 
 The system automatically adds a key-metrics table, recent communications, missing information
 and conflicts to the brief, so you do not need to list those mechanically; use your sections for

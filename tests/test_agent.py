@@ -191,4 +191,4 @@ def test_ask_without_api_key_says_api_key_missing(client):
             raise LLMAuthError("API key missing: set ANTHROPIC_API_KEY in .env.")
     app.dependency_overrides[get_chat_llm] = lambda: NoKey()
     r = client.post(f"/api/companies/{cid}/ask", json={"question": "q"})
-    assert r.status_code == 503 and r.json()["detail"].startswith("API key missing")
+    assert r.status_code == 503 and r.json()["detail"] == "API key missing: set ANTHROPIC_API_KEY in .env."

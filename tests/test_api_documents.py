@@ -166,3 +166,15 @@ def test_search_endpoint_errors(client, monkeypatch):
     assert r.status_code == 503 and "Could not load embedding model" in r.json()["detail"]
     r = upload(client, cid, "a.md", b"Hello.", "notes")
     assert r.status_code == 503
+
+
+def test_delete_document_removes_derived_rows(client, db_path):
+    cid = make_company(client)
+    doc = upload_sample(client, cid, "company_a/tidewell_crm.csv", "crm").json()
+    assert client.delete(f"/api/documents/{doc['document_id']}").json() == {"deleted": doc["document_id"]}
+    assert client.get(f"/api/companies/{cid}/documents").json() == []
+    conn = connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM crm_records").fetchone()[0] == 0
+    conn.close()
+    assert client.delete(f"/api/documents/{doc['document_id']}").status_code == 404

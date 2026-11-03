@@ -4,9 +4,109 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Deal Room Assistant</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <h1>Deal Room Assistant</h1>
-  <p>UI coming in a later phase. API health: <a href="/api/health">/api/health</a></p>
+  <header class="topbar">
+    <div class="brand">Deal Room Assistant</div>
+    <div class="topbar-meta" id="health"></div>
+  </header>
+
+  <main class="layout">
+    <!-- Left: companies, upload, documents -->
+    <aside class="panel left">
+      <section>
+        <h2>Companies</h2>
+        <ul id="company-list" class="company-list"></ul>
+        <form id="new-company-form" class="inline-form">
+          <input id="new-company-name" type="text" placeholder="New company name" autocomplete="off">
+          <button type="submit">Add</button>
+        </form>
+      </section>
+
+      <section id="upload-section" class="disabled">
+        <h2>Upload material</h2>
+        <form id="upload-form" class="stack">
+          <input id="upload-file" type="file" accept=".pdf,.txt,.md,.csv" required>
+          <label>Type
+            <select id="upload-type">
+              <option value="deck">Pitch deck (PDF / TXT / MD)</option>
+              <option value="notes">Meeting notes (TXT / MD / PDF)</option>
+              <option value="crm">CRM records (CSV)</option>
+            </select>
+          </label>
+          <label>Material date
+            <input id="upload-date" type="date">
+          </label>
+          <button type="submit" id="upload-button">Upload</button>
+          <div id="upload-status" class="status"></div>
+        </form>
+      </section>
+
+      <section>
+        <h2>Documents</h2>
+        <ul id="document-list" class="document-list"><li class="muted">Select a company.</li></ul>
+      </section>
+    </aside>
+
+    <!-- Center: Q&A -->
+    <section class="panel center">
+      <div class="center-head">
+        <h1 id="company-title">Select a company</h1>
+        <div class="muted small">Answers come only from this company's materials. Every claim shows its source.</div>
+      </div>
+      <div id="chat" class="chat">
+        <div class="empty-state">Pick a company on the left, then ask a question.</div>
+      </div>
+      <form id="ask-form" class="ask-form">
+        <div class="suggestions" id="suggestions">
+          <button type="button" class="chip">How many paying customers does the company have?</button>
+          <button type="button" class="chip">When was our last conversation and what are the next steps?</button>
+          <button type="button" class="chip">What is the company's revenue?</button>
+        </div>
+        <div class="ask-row">
+          <textarea id="question" rows="2" placeholder="Ask about this company…" disabled></textarea>
+          <button type="submit" id="ask-button" disabled>Ask</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Right: metrics, checks, brief -->
+    <aside class="panel right">
+      <section>
+        <h2>Generate brief</h2>
+        <form id="brief-form" class="stack">
+          <input id="brief-requirements" type="text" placeholder="e.g. focus on traction and risks" disabled>
+          <button type="submit" id="brief-button" disabled>Generate Brief</button>
+          <div id="brief-status" class="status"></div>
+        </form>
+      </section>
+      <section>
+        <h2>Conflicts &amp; missing</h2>
+        <div id="checks"><div class="muted">No company selected.</div></div>
+      </section>
+      <section>
+        <h2>Key metrics</h2>
+        <div id="metrics"><div class="muted">No company selected.</div></div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Brief overlay -->
+  <div id="brief-overlay" class="overlay" hidden>
+    <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="brief-title">
+      <div class="overlay-head">
+        <h2 id="brief-title">Company brief</h2>
+        <div class="overlay-actions">
+          <button type="button" id="brief-copy" class="secondary">Copy Markdown</button>
+          <button type="button" id="brief-download" class="secondary">Download .md</button>
+          <button type="button" id="brief-close" aria-label="Close">Close</button>
+        </div>
+      </div>
+      <div id="brief-body" class="brief-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>
