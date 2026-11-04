@@ -49,3 +49,12 @@ def test_asset_url_changes_when_the_file_changes(tmp_path):
     assert asset_url("app.js", tmp_path) == first
     (tmp_path / "app.js").write_text("two")
     assert asset_url("app.js", tmp_path) != first
+
+
+def test_ui_does_not_use_native_dialogs():
+    """Some browsers block confirm(), alert() and prompt(); a blocked confirm() looks like a dead button."""
+    import re
+
+    from app.main import STATIC_DIR
+
+    assert not re.search(r"(?<![\w.])(confirm|alert|prompt)\(", (STATIC_DIR / "app.js").read_text(encoding="utf-8"))

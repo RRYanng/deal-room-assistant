@@ -115,3 +115,12 @@ def test_real_model_finds_the_company_of_an_unmatched_file():
     text = ("SYNTHETIC SAMPLE. Northwind Dental - seed deck.\n\nNorthwind Dental sells scheduling software to "
             "dentists. Our largest customer is Bright Smiles Clinic, and our investor is Oak Fund.")
     assert guess_company_with_model("deck.txt", text, get_llm("chat")) == "Northwind Dental"
+
+
+def test_real_model_tells_unrelated_questions_from_company_questions():
+    from app.agent import is_out_of_scope
+
+    llm = get_llm("chat")
+    assert is_out_of_scope("What's the weather?", llm) is True
+    assert is_out_of_scope("What is the revenue?", llm) is False
+    assert is_out_of_scope("How is the team doing?", llm) is False

@@ -47,13 +47,6 @@ const DOC_TYPES = { deck: "Deck", notes: "Notes", crm: "CRM" };
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const locationOf = (s) => s.loc_label.replace(s.filename, "").trim();
 
-function formatValue(m) {
-  if (m.value === null || m.value === undefined) return esc(m.value_raw);
-  const n = Number(m.value).toLocaleString("en-US", { maximumFractionDigits: 2 });
-  if (m.currency) return `${esc(m.currency)} ${n}`;
-  return n;
-}
-
 // Highlight the quotes inside the chunk text, tolerating whitespace differences. Quotes may overlap.
 function highlight(text, quotes) {
   const ranges = [];
@@ -152,6 +145,7 @@ function entryHtml(e) {
   if (e.kind === "user") return `<div class="question">${esc(e.text)}</div>`;
   if (e.pending) return `<div class="answer pending">${esc(e.pending)}</div>`;
   if (e.error) return `<div class="answer error">${esc(e.error)}</div>`;
+  if (e.kind === "message") return `<div class="answer">${esc(e.text)}</div>`;
   if (e.kind === "answer") {
     return `<div class="turn"><div class="answering-about">Answering about: <b>${esc(e.company.name)}</b></div>
       ${answerHtml(e.answer, e.id)}</div>`;
@@ -201,7 +195,7 @@ function claimGroupHtml(a, group, id) {
 
 function conflictHtml(c) {
   const sources = c.sources.map((s) => `
-    <div class="conflict-source"><b>${esc(s.value_raw)}</b> — ${sourceSpan(s)}
+    <div class="conflict-source"><b>${esc(s.display_value)}</b> — ${sourceSpan(s)}
       <div class="quote">“${esc(s.quote)}”</div></div>`).join("");
   return `<div><b>${esc(metricName(c.metric, c.metric_label))}</b> as of ${esc(c.as_of_date)}:
     ${c.values.length} different values. Not resolved — check the sources.${sources}</div>`;
@@ -214,10 +208,10 @@ function answerHtml(a, entryId) {
   const conflicts = a.conflicts.length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
     ${a.conflicts.map(conflictHtml).join("<hr>")}</div>` : "";
   const unclear = a.unclear_basis.length ? `<div class="box warn"><div class="box-title">Unclear basis</div>
-    <ul>${a.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.value_raw)} — ${esc(u.reason)}</li>`).join("")}</ul></div>` : "";
+    <ul>${a.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)}</li>`).join("")}</ul></div>` : "";
   const tools = [...new Set(a.tool_calls.map((t) => t.tool))].join(", ") || "none";
   return `<div class="answer">
-    ${claims || '<div class="muted">No supported claims.</div>'}
+    ${claims || '<div class="muted">No answer found in this company\'s materials.</div>'}
     ${conflicts}${unclear}${open}
     <div class="answer-foot"><span>Tools: ${esc(tools)}</span>
       <a href="/api/runs/${esc(a.run_id)}/log" target="_blank" rel="noopener">View agent log</a></div>
@@ -257,7 +251,9 @@ async function ask(question) {
   setAsking(true);
   try {
     const r = await postJson("/api/ask", { question, last_company_id: state.current ? state.current.id : null });
-    if (r.resolution === "answered") {
+    if (r.resolution === "out_of_scope") {
+      updateEntry(entry, { kind: "message", text: r.message });
+    } else if (r.resolution === "answered") {
       setCurrent(r.company);
       updateEntry(entry, { company: r.company, answer: r.answer });
     } else {
@@ -280,7 +276,8 @@ async function chooseCompany(entryId, companyId) {
   setAsking(true);
   try {
     const answer = await postJson(`/api/companies/${company.id}/ask`, { question: choice.question });
-    updateEntry(entry, { company, answer });
+    if (answer.out_of_scope) updateEntry(entry, { kind: "message", text: "I can only answer questions about the uploaded company materials." });
+    else updateEntry(entry, { company, answer });
   } catch (err) {
     updateEntry(entry, { error: err.message });
   } finally {
@@ -404,8 +401,13 @@ $("upload-new-company").oninput = () => {
   clearTimeout(newCompanyTimer);
   newCompanyTimer = setTimeout(refreshUploadWarnings, 250);
 };
-$("upload-cancel").onclick = () => $("upload-dialog").close();
-$("upload-dialog").addEventListener("close", () => { state.upload = null; });
+function closeUploadDialog() {
+  state.upload = null;
+  $("upload-dialog").close();
+}
+
+$("upload-cancel").onclick = closeUploadDialog;
+$("upload-dialog").addEventListener("cancel", closeUploadDialog); // Escape
 
 $("upload-form").onsubmit = (e) => {
   e.preventDefault();
@@ -418,7 +420,7 @@ $("upload-form").onsubmit = (e) => {
     docType: $("upload-type").value,
     docDate: $("upload-date").value,
   };
-  $("upload-dialog").close();
+  closeUploadDialog();
   storeFile(details);
 };
 
@@ -509,6 +511,26 @@ async function renderDrawer() {
   }
 }
 
+// Answers come from the buttons, not the dialog's close event: browsers deliver that event with the
+// next painted frame, so it can arrive after the dialog has already been opened again.
+let answerDelete = null;
+
+function confirmDelete(name) {
+  $("delete-message").textContent = `Delete ${name}? Its chunks and metrics are deleted too.`;
+  $("delete-dialog").showModal();
+  return new Promise((resolve) => { answerDelete = resolve; });
+}
+
+function finishDelete(answer) {
+  $("delete-dialog").close();
+  if (answerDelete) answerDelete(answer);
+  answerDelete = null;
+}
+
+$("delete-cancel").onclick = () => finishDelete(false);
+$("delete-confirm").onclick = () => finishDelete(true);
+$("delete-dialog").addEventListener("cancel", () => finishDelete(false)); // Escape
+
 async function libraryHtml() {
   await loadCompanies();
   if (!state.companies.length) return '<div class="muted">No companies yet. Switch to Upload to add a file.</div>';
@@ -547,7 +569,7 @@ function metricsHtml(metrics) {
   const rows = metrics.map((m) => `
     <tr>
       <td>${esc(metricName(m.metric, m.metric_label))}</td>
-      <td class="num">${formatValue(m)}</td>
+      <td class="num">${esc(m.display_value)}</td>
       <td class="num">${m.as_of_date ? esc(m.as_of_date) : '<span class="badge warn">unclear basis</span>'}</td>
       <td>${sourceSpan(m)}</td>
     </tr>`).join("");
@@ -570,7 +592,7 @@ async function issueListHtml() {
 
 function sourceLine(s, extra = "") {
   return `<div class="source-line">
-    <span class="source-value">${esc(s.value_raw)}</span> ${extra}
+    <span class="source-value">${esc(s.display_value)}</span> ${extra}
     <div class="source-loc">${esc(s.filename)} · ${esc(locationOf(s))}</div>
     <div class="quote">“${esc(s.quote)}”</div>
   </div>`;
@@ -619,7 +641,7 @@ $("drawer-body").addEventListener("click", async (e) => {
   } else if (data.issuesBack) {
     openDrawer({ view: "issues" });
   } else if (data.delete) {
-    if (!confirm(`Delete ${data.name}? Its chunks and metrics are deleted too.`)) return;
+    if (!await confirmDelete(data.name)) return;
     try {
       await api(`/api/documents/${data.delete}`, { method: "DELETE" });
       pushEntry({ kind: "note", lines: [{ text: `Deleted ${data.name}.` }] });
@@ -702,9 +724,9 @@ function cites(citations) {
 function showBrief(b) {
   state.lastBrief = b;
   const sections = b.sections.map((s) => `<h3>${esc(s.title)}</h3><ul>${s.items.map((i) =>
-    `<li>${esc(i.text)} ${i.note ? `<span class="conflict-note">${esc(i.note)}</span> ` : ""}<span class="cite">[${cites(i.citations)}]</span></li>`).join("")}</ul>`).join("");
+    `<li>${esc(i.text)} ${i.calculated ? '<span class="calculated-note">(calculated)</span> ' : ""}${i.note ? `<span class="conflict-note">${esc(i.note)}</span> ` : ""}<span class="cite">[${cites(i.citations)}]</span></li>`).join("")}</ul>`).join("");
   const metrics = b.key_metrics.length ? `<table><thead><tr><th>Metric</th><th>Value</th><th>As of</th><th>Source</th></tr></thead>
-    <tbody>${b.key_metrics.map((m) => `<tr><td>${esc(metricName(m.metric))}</td><td class="num">${formatValue(m)}</td>
+    <tbody>${b.key_metrics.map((m) => `<tr><td>${esc(metricName(m.metric))}</td><td class="num">${esc(m.display_value)}</td>
     <td class="num">${esc(m.as_of_date)}</td><td>${sourceSpan(m)}</td></tr>`).join("")}</tbody></table>`
     : '<div class="muted">No key metric with a stated as-of date.</div>';
   const comms = b.recent_communications.length ? `<ul>${b.recent_communications.map((c) =>
@@ -715,7 +737,7 @@ function showBrief(b) {
     : '<div class="muted">None of the key metrics are missing.</div>';
   const conflicts = b.conflicts.length ? b.conflicts.map(conflictHtml).join("<hr>") : '<div class="muted">No conflicts detected.</div>';
   const unclear = b.unclear_basis.length ? `<h3>Unclear basis</h3><ul>${b.unclear_basis.map((u) =>
-    `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.value_raw)} — ${esc(u.reason)} <span class="cite">[${sourceSpan(u)}]</span></li>`).join("")}</ul>` : "";
+    `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)} <span class="cite">[${sourceSpan(u)}]</span></li>`).join("")}</ul>` : "";
   const open = b.open_items.length ? `<h3>Open items</h3><ul>${b.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>` : "";
 
   $("brief-title").textContent = `Company brief: ${b.company}`;

@@ -111,12 +111,13 @@ def test_question_without_a_name_keeps_the_previous_company(client, ids):
 
 @pytest.mark.parametrize("last", [None, 99999])
 def test_no_name_and_no_valid_previous_company_asks_which(client, ids, last):
-    fake = use_fake()
+    fake = FakeLLM([{"out_of_scope": False}])
+    app.dependency_overrides[get_chat_llm] = lambda: fake
     r = client.post("/api/ask", json={"question": "What is the revenue?", "last_company_id": last}).json()
     assert r["resolution"] == "needs_company" and r["reason"] == "unknown"
     assert r["message"] == "Which company do you mean?"
     assert {c["name"] for c in r["companies"]} == set(ids)
-    assert fake.calls == []  # no model call before the company is known
+    assert [c["method"] for c in fake.calls] == ["complete_json"]  # only the scope check, no agent run
 
 
 def test_several_companies_in_one_question_asks_to_choose_one(client, ids):
@@ -145,3 +146,37 @@ def test_company_id_is_chosen_by_the_server_not_the_model(client, ids):
     found = json.loads(fake.calls[1]["messages"][-1]["tool_results"][0]["content"])
     assert r["company"]["name"] == "Tidewell Insurance"
     assert found and all(row["filename"] == "tidewell.txt" for row in found)
+
+
+# --- questions unrelated to the materials ---------------------------------------------
+
+OUT_OF_SCOPE = "I can only answer questions about the uploaded company materials."
+
+
+def test_unrelated_question_with_no_company_gets_a_direct_reply(client, ids):
+    fake = FakeLLM([{"out_of_scope": True}])
+    app.dependency_overrides[get_chat_llm] = lambda: fake
+    r = client.post("/api/ask", json={"question": "What's the weather?"}).json()
+    assert r == {"resolution": "out_of_scope", "message": OUT_OF_SCOPE}
+    assert [c["method"] for c in fake.calls] == ["complete_json"]
+    assert fake.calls[0]["prompt"] == "What's the weather?"
+
+
+def test_unrelated_question_with_a_previous_company_gets_the_same_reply(client, ids):
+    fake = FakeLLM([FakeLLM.text('{"claims": [], "open_items": [], "out_of_scope": true}')])
+    app.dependency_overrides[get_chat_llm] = lambda: fake
+    r = client.post("/api/ask", json={"question": "What's the weather?",
+                                      "last_company_id": ids["Tidewell Insurance"]}).json()
+    assert r == {"resolution": "out_of_scope", "message": OUT_OF_SCOPE}
+
+
+def test_failed_scope_check_falls_back_to_asking_which_company(client, ids):
+    app.dependency_overrides[get_chat_llm] = lambda: FakeLLM()  # no script: the call raises LLMError
+    r = client.post("/api/ask", json={"question": "What's the weather?"}).json()
+    assert r["resolution"] == "needs_company"
+
+
+def test_named_company_skips_the_scope_check(client, ids):
+    fake = use_fake()
+    client.post("/api/ask", json={"question": "What did Kitebridge raise?"})
+    assert [c["method"] for c in fake.calls] == ["chat"]

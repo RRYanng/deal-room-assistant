@@ -87,6 +87,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 button.secondary { background: transparent; color: var(--accent); }
 button.link { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 500; }
 button.danger-link { color: var(--danger); }
+button.danger-button { background: var(--danger); border-color: var(--danger); color: var(--panel); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .stack { display: grid; gap: 12px; }
 .hint { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); }
@@ -114,6 +115,7 @@ button.danger-link { color: var(--danger); }
 .claim-text + .claim-text { margin-top: 6px; }
 .claim-num { font-size: 12px; font-weight: 600; color: var(--muted); }
 .conflict-note { color: var(--danger); font-weight: 600; }
+.calculated-note { color: var(--warn); font-weight: 600; }
 .evidence { margin-top: 6px; display: grid; gap: 6px; }
 .evidence[hidden] { display: none; }
 .evidence-item { background: var(--bg); border-radius: 6px; padding: 8px 10px; font-size: 13px; }

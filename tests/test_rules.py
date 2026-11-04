@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.llm import FakeLLM, LLMAuthError
 from app.main import app, get_extract_llm
-from app.rules import find_conflicts, missing_metrics
+from app.rules import display_value, find_conflicts, missing_metrics
 from tests.helpers import KITEBRIDGE_RULES, TIDEWELL_RULES, fake_extractor
 
 SAMPLES = Path(__file__).resolve().parent.parent / "samples"
@@ -136,3 +136,22 @@ def test_rule_edge_cases(seeded):
     insert_metric(db, cid, did, chid, "other", 7, "2026-06-30", "%", label="growth")  # different label
     assert find_conflicts(db, cid) == []
     assert missing_metrics(db, cid) == ["registered_customers", "funding_raised"]
+
+
+# --- values with units ------------------------------------------------------------
+
+@pytest.mark.parametrize("metric, value, raw, unit, currency, expected", [
+    ("other", 4.0, "4", "minutes", None, "4 minutes"),
+    ("paying_customers", 60.0, "sixty", "count", None, "60 customers"),
+    ("registered_customers", 1250.0, "1,250", "count", None, "1,250 customers"),
+    ("funding_raised", 1_200_000.0, "$1.2M", "USD", "USD", "USD 1,200,000"),
+    ("revenue", 5_000_000.0, "5M", "unknown currency", None, "5,000,000 (currency not stated)"),
+    ("other", 12.5, "12.5%", "%", None, "12.5%"),
+    ("other", 3.0, "3", None, None, "3"),
+    ("other", 3.0, "3", "count", None, "3"),
+    ("other", None, "about 4", "minutes", None, "about 4 minutes"),
+    ("funding_raised", None, "$1-2M", "USD", "USD", "$1-2M"),
+])
+def test_display_value(metric, value, raw, unit, currency, expected):
+    assert display_value({"metric": metric, "value": value, "value_raw": raw, "unit": unit,
+                          "currency": currency}) == expected

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from app.config import PROJECT_ROOT, get_settings
 from app.db import connect, init_db
-from app.agent import answer_question
+from app.agent import OUT_OF_SCOPE_MESSAGE, answer_question, is_out_of_scope
 from app.brief import brief_to_markdown, generate_brief
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
@@ -302,10 +302,14 @@ NEEDS_COMPANY_MESSAGES = {
 def ask_any_company(body: ChatQuestionIn, conn=Depends(get_db), llm: LLMClient = Depends(get_chat_llm)):
     """Work out the company from the question, then answer. The server picks the company_id."""
     resolved = resolve_question_company(conn, body.question, body.last_company_id)
+    if resolved["status"] == "unknown" and is_out_of_scope(body.question, llm):
+        return {"resolution": "out_of_scope", "message": OUT_OF_SCOPE_MESSAGE}
     if resolved["status"] != "resolved":
         return {"resolution": "needs_company", "reason": resolved["status"],
                 "message": NEEDS_COMPANY_MESSAGES[resolved["status"]], "companies": resolved["companies"]}
     answer = ask(resolved["company"]["id"], QuestionIn(question=body.question), conn, llm)
+    if answer["out_of_scope"]:
+        return {"resolution": "out_of_scope", "message": OUT_OF_SCOPE_MESSAGE}
     return {"resolution": "answered", "company": resolved["company"], "company_source": resolved["source"],
             "answer": answer}
 

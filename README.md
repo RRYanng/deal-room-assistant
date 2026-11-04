@@ -50,8 +50,8 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (206 tests)
-.venv/bin/python -m pytest -m live         # calls the real models (8 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (231 tests)
+.venv/bin/python -m pytest -m live         # calls the real models (9 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
 
@@ -115,6 +115,8 @@ has a clear rule.
 | Reading a document and proposing metrics (`value_raw`, quote, as-of date) | Checking every quote is verbatim in the cited chunk; dropping and logging failures |
 | Choosing which tools to call and writing claims | Normalizing numbers (`$1.2M` → 1,200,000; `sixty` → 60) and units |
 | Writing brief sections that follow the user's requirements | Conflicts (same company + metric + as-of date + unit, different values) |
+| Simple one-step calculations in a brief, with the working shown and flagged | "(calculated)" mark, also added for a percentage or multiple not in the cited passage |
+| Deciding whether a question is unrelated to company materials | The fixed reply to unrelated questions, with no open items |
 | | Unclear basis (no as-of date), missing key metrics, company isolation |
 | | Key-metrics table, recent communications, missing/conflict lists in the brief |
 
@@ -202,6 +204,8 @@ FakeLLM tests that run offline on every `pytest`.
   are not recognized as the same basis, and units for `other` metrics come from the model.
 - **Company matching only knows names.** It finds exact names and small typos of companies already in
   the system, not abbreviations or nicknames. A company whose name is a common word can match by accident.
+- **Calculations are marked, not re-computed.** "(calculated)" tells the reader to check the working
+  shown in the bullet; the program does not redo the arithmetic.
 - **Date suggestions are heuristics.** A file name with only a month gives the 1st of that month, so
   check the date in the confirmation.
 - **The number parser is English-only** ("sixty", "1.2M"); ranges such as "50–60" are not parsed.

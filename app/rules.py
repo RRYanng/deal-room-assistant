@@ -23,7 +23,25 @@ def get_metrics(conn: sqlite3.Connection, company_id: int, metric: str | None = 
         sql += " AND m.metric = ?"
         params.append(metric)
     sql += " ORDER BY m.metric, m.as_of_date, d.doc_date, m.id"
-    return [dict(r) for r in conn.execute(sql, params)]
+    return [dict(r) | {"display_value": display_value(r)} for r in conn.execute(sql, params)]
+
+
+def display_value(m) -> str:
+    """The value as people read it, with its unit: "4 minutes", "60 customers", "USD 1,200,000"."""
+    if m["value"] is None:
+        number = m["value_raw"]
+        if m["currency"]:
+            return number
+    else:
+        number = f"{m['value']:,.2f}".rstrip("0").rstrip(".")
+        if m["currency"]:
+            return f"{m['currency']} {number}"
+    unit = "customers" if m["metric"] in ("registered_customers", "paying_customers") else m["unit"]
+    if not unit or unit == "count":
+        return number
+    if unit == "unknown currency":
+        return f"{number} (currency not stated)"
+    return f"{number}{unit}" if unit == "%" else f"{number} {unit}"
 
 
 def find_conflicts(conn: sqlite3.Connection, company_id: int) -> list[dict]:
@@ -87,7 +105,8 @@ def issue_counts(conn: sqlite3.Connection, company_id: int) -> dict:
 
 
 def _source(m: dict) -> dict:
-    return {"metric_id": m["id"], "value": m["value"], "value_raw": m["value_raw"], "unit": m["unit"],
+    return {"metric_id": m["id"], "value": m["value"], "value_raw": m["value_raw"],
+            "display_value": m["display_value"], "unit": m["unit"],
             "currency": m["currency"], "as_of_date": m["as_of_date"], "quote": m["quote"],
             "chunk_id": m["chunk_id"], "loc_label": m["loc_label"], "filename": m["filename"],
             "doc_date": m["doc_date"]}

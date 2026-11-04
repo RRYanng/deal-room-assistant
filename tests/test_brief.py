@@ -5,7 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.brief import _quotes_value, brief_to_markdown, generate_brief
+from app.brief import BRIEF_SYSTEM_PROMPT, _quotes_value, brief_to_markdown, generate_brief
 from app.db import connect, init_db
 from app.llm import FakeLLM
 from app.main import app, get_chat_llm
@@ -187,3 +187,71 @@ def test_no_conflict_means_no_note():
 ])
 def test_quotes_value(quote, raw, expected):
     assert _quotes_value(quote, raw) is expected
+
+
+# --- calculated figures -------------------------------------------------------------------
+
+def calc_bullet(metrics, text, **fields):
+    m = next(m for m in metrics if m["metric"] == "registered_customers")
+    return {"text": text, "citations": [{"chunk_id": m["chunk_id"], "quote": m["quote"]}]} | fields
+
+
+def traction(item_builder):
+    def sections(metrics):
+        return [{"title": "Traction", "items": [item_builder(metrics)]}]
+    return brief_with(sections)
+
+
+def test_bullet_flagged_as_calculated_is_marked_in_markdown(tidewell):
+    conn, cid = tidewell
+    brief = generate_brief(conn, cid, "", traction(
+        lambda m: calc_bullet(m, "Half of the 100 registered businesses (100 / 2).", calculated=True)))
+    assert brief["sections"][0]["items"][0]["calculated"] is True
+    assert "- Half of the 100 registered businesses (100 / 2). (calculated) [tidewell_deck.pdf" in brief_to_markdown(brief)
+
+
+def test_percentage_not_in_the_source_is_marked_even_if_the_model_did_not_flag_it(tidewell):
+    conn, cid = tidewell
+    brief = generate_brief(conn, cid, "", traction(lambda m: calc_bullet(m, "60% of registered businesses pay.")))
+    assert brief["sections"][0]["items"][0]["calculated"] is True
+
+
+def test_multiple_not_in_the_source_is_marked(tidewell):
+    conn, cid = tidewell
+    brief = generate_brief(conn, cid, "", traction(lambda m: calc_bullet(m, "Registrations are 1.7x paying customers.")))
+    assert brief["sections"][0]["items"][0]["calculated"] is True
+
+
+def test_stated_figures_are_not_marked(tidewell):
+    conn, cid = tidewell
+    brief = generate_brief(conn, cid, "", traction(lambda m: calc_bullet(m, "100 small businesses have registered.")))
+    assert "calculated" not in brief["sections"][0]["items"][0]
+    assert "(calculated)" not in brief_to_markdown(brief)
+
+
+def test_percentage_stated_in_the_source_is_not_marked(db):
+    from app.agent import verify_items
+    from app.brief import mark_calculated
+
+    cid = db.execute("INSERT INTO companies(name) VALUES ('Acme')").lastrowid
+    doc = db.execute("INSERT INTO documents(company_id, filename, doc_type) VALUES (?, 'a.txt', 'notes')", (cid,)).lastrowid
+    chunk = db.execute("INSERT INTO chunks(document_id, company_id, chunk_index, text, loc_label)"
+                       " VALUES (?, ?, 0, 'Gross margin is 40 percent this year.', 'a.txt ¶1')", (doc, cid)).lastrowid
+    items = verify_items(db, cid, "run", [{"text": "Gross margin is 40%.",
+                                           "citations": [{"chunk_id": chunk, "quote": "Gross margin is 40 percent"}]}], "brief_item")
+    sections = [{"title": "Traction", "items": items}]
+    mark_calculated(sections)
+    assert "calculated" not in items[0]
+
+
+def test_prompt_limits_calculations_to_simple_checkable_ones():
+    assert "one simple step" in BRIEF_SYSTEM_PROMPT and "check by hand" in BRIEF_SYSTEM_PROMPT
+    assert '"calculated"' in BRIEF_SYSTEM_PROMPT
+
+
+def test_markdown_shows_values_with_units(tidewell):
+    conn, cid = tidewell
+    md = brief_to_markdown(generate_brief(conn, cid, "", fake_brief_llm()))
+    assert "- paying_customers: 60 customers as of 2026-06-30" in md
+    assert "  - 80 customers [tidewell_update_2026-08.txt" in md
+    assert "- funding_raised: USD 1,200,000 (no as-of date stated)" in md

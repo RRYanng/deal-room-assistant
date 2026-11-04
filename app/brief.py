@@ -19,6 +19,7 @@ from app.logs import log_event
 from app.rules import KEY_METRICS, find_conflicts, get_metrics, missing_metrics, unclear_basis
 
 RECENT_CRM_ROWS = 3
+_DERIVED_FIGURE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s?(?:%|x\b|percent\b|times\b)", re.IGNORECASE)
 DEFAULT_REQUIREMENTS = "General overview: traction, recent communications, risks and open questions."
 
 BRIEF_SYSTEM_PROMPT = f"""You write a one-page company brief for a venture capital investment team.
@@ -29,8 +30,15 @@ title and 1 to 5 bullets. Each bullet is one factual sentence and must cite at l
 the chunk_id and a quote copied character for character from that chunk's text (or the quote
 field of a metric). Keep metrics separate: registered customers are not paying customers.
 If sources disagree, state each value with its source; do not pick one.
+Never mention chunk ids in the text of a bullet or open item.
 Do not speculate beyond the materials: a risk is something the materials show, or a gap
 they leave ("X is not stated"), never a prediction.
+
+You may do a calculation only if it is one simple step on figures stated in the materials (a ratio,
+percentage, difference or sum) that a reader can check by hand. Show the working in the bullet, as in
+"60% of registered businesses pay (60 / 100)", cite the source of every figure, and set "calculated"
+to true on that bullet. Do not estimate, forecast or chain calculations, and do not calculate from a
+figure the sources disagree on.
 
 The system automatically adds a key-metrics table, recent communications, missing information
 and conflicts to the brief, so you do not need to list those mechanically; use your sections for
@@ -38,7 +46,7 @@ analysis that follows the requirements. Anything relevant you could not find goe
 open_items as "<topic>: {NOT_FOUND}".
 
 Be efficient: a few tool calls are enough. When done, reply with only this JSON object:
-{{"sections": [{{"title": "...", "items": [{{"text": "...", "citations": [{{"chunk_id": 123, "quote": "..."}}]}}]}}],
+{{"sections": [{{"title": "...", "items": [{{"text": "...", "calculated": false, "citations": [{{"chunk_id": 123, "quote": "..."}}]}}]}}],
  "open_items": ["..."]}}"""
 
 
@@ -61,6 +69,7 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
         open_items.append(f"The written sections are incomplete (agent status: {run['status']}).")
     conflicts = find_conflicts(conn, company_id)
     mark_traction_conflicts(sections, conflicts)
+    mark_calculated(sections)
 
     brief = {
         "run_id": run["run_id"],
@@ -113,9 +122,19 @@ def mark_traction_conflicts(sections: list[dict], conflicts: list[dict]) -> None
                     item["note"] = f"(conflicting — see {target})"
 
 
+def mark_calculated(sections: list[dict]) -> None:
+    """Catch calculated figures the model did not flag: a percentage or multiple not in any cited passage."""
+    for section in sections:
+        for item in section["items"]:
+            sources = " ".join(c["chunk_text"] for c in item["citations"])
+            for number in _DERIVED_FIGURE.findall(item["text"]):
+                if not re.search(rf"(?<![\d.]){re.escape(number)}\s?(?:%|x\b|percent\b|times\b)", sources, re.IGNORECASE):
+                    item["calculated"] = True
+
+
 def key_metrics(conn: sqlite3.Connection, company_id: int) -> list[dict]:
     """Key metrics with a stated as-of date, each with its source. Unclear ones are listed separately."""
-    keys = ("metric", "value", "value_raw", "unit", "currency", "as_of_date", "quote", "chunk_id",
+    keys = ("metric", "value", "value_raw", "display_value", "unit", "currency", "as_of_date", "quote", "chunk_id",
             "loc_label", "filename")
     return [{k: m[k] for k in keys} for m in get_metrics(conn, company_id)
             if m["metric"] in KEY_METRICS and m["as_of_date"] and m["value"] is not None]
@@ -135,21 +154,18 @@ def recent_communications(conn: sqlite3.Connection, company_id: int) -> list[dic
 
 def brief_to_markdown(brief: dict) -> str:
     """Plain Markdown version for copy / download. Every line keeps its source in brackets."""
-    def fmt_value(m):
-        return m["value_raw"] + (f" ({m['currency']})" if m.get("currency") else "")
-
     lines = [f"# Company brief: {brief['company']}", "",
              f"_Requirements: {brief['requirements']}_  ", f"_Generated: {brief['generated_at']}_", ""]
     for section in brief["sections"]:
         lines.append(f"## {section['title']}")
         for item in section["items"]:
             sources = "; ".join(f"{c['loc_label']}: \"{c['quote']}\"" for c in item["citations"])
-            note = f" {item['note']}" if item.get("note") else ""
-            lines.append(f"- {item['text']}{note} [{sources}]")
+            notes = (" (calculated)" if item.get("calculated") else "") + (f" {item['note']}" if item.get("note") else "")
+            lines.append(f"- {item['text']}{notes} [{sources}]")
         lines.append("")
     lines.append("## Key metrics")
     for m in brief["key_metrics"]:
-        lines.append(f"- {m['metric']}: {fmt_value(m)} as of {m['as_of_date']} [{m['loc_label']}: \"{m['quote']}\"]")
+        lines.append(f"- {m['metric']}: {m['display_value']} as of {m['as_of_date']} [{m['loc_label']}: \"{m['quote']}\"]")
     if not brief["key_metrics"]:
         lines.append("- No key metric with a stated as-of date.")
     lines += ["", "## Recent communications"]
@@ -162,12 +178,12 @@ def brief_to_markdown(brief: dict) -> str:
     lines += ["", "## Conflicting information"]
     for c in brief["conflicts"]:
         lines.append(f"- {c['metric']} as of {c['as_of_date']}: values differ, not resolved:")
-        lines += [f"  - {s['value_raw']} [{s['loc_label']}: \"{s['quote']}\"]" for s in c["sources"]]
+        lines += [f"  - {s['display_value']} [{s['loc_label']}: \"{s['quote']}\"]" for s in c["sources"]]
     if not brief["conflicts"]:
         lines.append("- No conflicts detected.")
     if brief["unclear_basis"]:
         lines += ["", "## Unclear basis"]
-        lines += [f"- {u['metric_label'] or u['metric']}: {u['value_raw']} ({u['reason']}) "
+        lines += [f"- {u['metric_label'] or u['metric']}: {u['display_value']} ({u['reason']}) "
                   f"[{u['loc_label']}: \"{u['quote']}\"]" for u in brief["unclear_basis"]]
     if brief["open_items"]:
         lines += ["", "## Open items"] + [f"- {o}" for o in brief["open_items"]]

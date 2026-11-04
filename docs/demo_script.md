@@ -91,6 +91,8 @@ Click **Generate Brief** at the top right. Type **"focus on traction and risks"*
 
 - *Which company?* Reload the page and click a shortcut: it asks **"Which company do you mean?"** with buttons.
 - *One company at a time:* Ask **"Compare Tidewell and Kitebridge"**: it asks which one to answer about.
+- *Off-topic:* Ask **"What's the weather?"**: it says it only answers questions about the uploaded materials.
+- *Calculation:* With no conflict in the files, ask the brief for "the share of registered businesses that pay": the figure is marked **(calculated)** and shows its working.
 - *Library:* Click **Library**, then a company name, to see its key metrics. Each file has a delete
   link, and the Issues count updates after a delete.
 

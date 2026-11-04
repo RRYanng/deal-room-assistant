@@ -252,3 +252,30 @@ def test_answer_without_claims_has_no_groups(sample):
     conn, a, _ = sample
     fake = FakeLLM([FakeLLM.text(json.dumps({"claims": [], "open_items": ["x: Not found in the provided materials"]}))])
     assert answer_question(conn, a, "x?", fake)["evidence_groups"] == []
+
+
+# --- unrelated questions ----------------------------------------------------------
+
+def test_out_of_scope_answer_has_no_open_items(sample):
+    conn, a, _ = sample
+    fake = FakeLLM([FakeLLM.text(json.dumps({"claims": [], "open_items": ["weather: not found"], "out_of_scope": True}))])
+    result = answer_question(conn, a, "What's the weather?", fake)
+    assert result["out_of_scope"] is True
+    assert result["open_items"] == [] and result["claims"] == []
+
+
+def test_verified_claim_outranks_the_out_of_scope_flag(sample):
+    conn, a, _ = sample
+    chunk = chunk_id_of(conn, "Ask for revenue figures")
+    fake = FakeLLM([FakeLLM.text(json.dumps({"out_of_scope": True, "open_items": [], "claims": [
+        {"text": "Next step is revenue.", "citations": [{"chunk_id": chunk, "quote": "Ask for revenue figures"}]}]}))])
+    result = answer_question(conn, a, "Next step?", fake)
+    assert result["out_of_scope"] is False and len(result["claims"]) == 1
+
+
+def test_question_the_materials_cannot_answer_is_still_listed_as_open(sample):
+    conn, a, _ = sample
+    fake = FakeLLM([FakeLLM.text('{"claims": [], "open_items": []}')])
+    result = answer_question(conn, a, "What is the churn?", fake)
+    assert result["out_of_scope"] is False
+    assert result["open_items"] == ["What is the churn?: Not found in the provided materials"]

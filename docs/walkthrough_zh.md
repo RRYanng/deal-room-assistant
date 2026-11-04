@@ -453,3 +453,40 @@ cd deal-room-assistant
 - 系统文件选择框和真正的拖拽没测，文件是脚本放进上传控件的。
 - Company 选择器是通过页面表单接口设置的，不是真实鼠标展开下拉框。
 - delete 的确认框被替换成了自动确认；Download .md 拦截了保存这一步，只确认生成了正确的文件内容和文件名。
+
+---
+
+## 测试反馈修复：delete、无关问题、单位、计算标注
+
+**1. Library 的 delete 点了没反应**
+- 原因：用的是浏览器原生 `confirm()`。内置浏览器禁用了原生对话框，它直接返回 false，只在 console 留一条警告，所以不报错、也不发请求。上次走查时我把 `confirm` 换成了自动确认，这个问题被掩盖了。
+- 修复：改成页面内的确认框（`#delete-dialog`），由按钮直接返回结果。
+- 修复过程中又发现一个 bug：第一版用了对话框的 `close` 事件，这个事件要等下一帧绘制才派发。窗格不在前台时事件会延后，导致先取消再确认时发出两次 DELETE，第二次报 "Document 5 not found"。上传对话框也去掉了对 `close` 事件的依赖。
+- 新增测试：`app.js` 里不允许出现 `confirm(`、`alert(`、`prompt(`。
+
+**2. 与公司资料无关的问题**
+- 还不知道公司时：先做一次很小的模型判断（`is_out_of_scope`），无关就直接回复。判断失败时回到 "Which company do you mean?"。
+- 已知公司时：不多调用一次模型，由 agent 在最终 JSON 里返回 `out_of_scope`。程序清空 open items；如果同时有通过校验的 claim，以 claim 为准。
+- `POST /api/ask` 新增 `resolution: "out_of_scope"`。
+- "No supported claims." 改成了 "No answer found in this company's materials."。
+- 顺带修复：prompt 禁止在回答里出现 chunk 编号（真实回答里出现过 "(chunk 12)"）。
+
+**3. 数值带单位**
+- `app/rules.py` 新增 `display_value`，`get_metrics` 和各来源都带这个字段。Issues、Library、回答里的矛盾和不明确数值、简报（界面和 Markdown）都用它。
+- 例子：`4 minutes`、`60 customers`、`USD 1,200,000`、`12.5%`。
+- 单位是显示时算的，已有数据不用重新抽取。
+
+**4. 简报计算标注**
+- Prompt：只允许一步简单计算（比例、百分比、差、和），要写出算式、引用每个数字的来源、设置 `calculated: true`；不允许估算、预测、连续计算，也不允许用有矛盾的数字计算。
+- 程序兜底：要点里的百分比或倍数如果不在引用的段落中，模型没标也会标。
+- 程序不重新验算算式，这一点写进了 README 的 limitations。
+
+**怎么验证的（真实模型，数据库副本）**
+- delete：不做任何替换，真实点击。先 Cancel 没有发请求；再点 Delete 只发一次 DELETE，文件消失，Issues 徽标从 5 变成 7（当时删的是 Kitebridge 最后一份文件）。同一批次节奏也跑过。
+- "What's the weather?"：Auto-detect 和已选 Tidewell 两种情况都直接回复，没有 open items。
+- "What did Tidewell's competitors raise?"：显示 "No answer found in this company's materials."，并列出 open items。
+- 没有矛盾时，简报算出 "60% of registered businesses pay (60 / 100)" 并标注 (calculated)。有 60 对 80 的矛盾时，模型没有计算，说明无法可靠计算。
+
+**没有覆盖的部分**
+- 用户自己的浏览器没有验证，Claude in Chrome 没有连接。
+- 走查时窗格处于 hidden 状态（`document.visibilityState` 为 hidden），因此偶尔截到空白，滚动一下就会重绘。页面元素里内容都在，这不是页面 bug。
