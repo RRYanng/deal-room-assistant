@@ -20,7 +20,16 @@ from app.rules import KEY_METRICS, find_conflicts, get_metrics, missing_metrics,
 
 RECENT_CRM_ROWS = 3
 _DERIVED_FIGURE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s?(?:%|x\b|percent\b|times\b)", re.IGNORECASE)
-DEFAULT_REQUIREMENTS = "General overview: traction, recent communications, risks and open questions."
+DEFAULT_REQUIREMENTS = "General overview: traction, risks and open questions."
+_COMMS_TITLE = re.compile(r"communication|conversation|interaction|touchpoint|contact history|meeting history|\bcrm\b",
+                          re.IGNORECASE)
+_METRIC_WORDS = {
+    "registered_customers": r"registered[\s_-]+(?:customer|business|user)",
+    "paying_customers": r"(?:paying|paid)[\s_-]+(?:customer|business|user)",
+    "revenue": r"revenue",
+    "funding_raised": r"funding|capital raised",
+}
+_CONFLICT_NOUNS = {"registered_customers": "registered-customer count", "paying_customers": "paying-customer count"}
 
 BRIEF_SYSTEM_PROMPT = f"""You write a one-page company brief for a venture capital investment team.
 Use only the company's materials, which you reach through the tools. Never use outside knowledge.
@@ -42,8 +51,12 @@ figure the sources disagree on.
 
 The system automatically adds a key-metrics table, recent communications, missing information
 and conflicts to the brief, so you do not need to list those mechanically; use your sections for
-analysis that follows the requirements. Anything relevant you could not find goes into
-open_items as "<topic>: {NOT_FOUND}".
+analysis that follows the requirements. Never write a section about recent communications, meetings
+or CRM history, even if the requirements ask for them: the system's section covers them.
+
+open_items is a to-do list for the investment team. Each item is one short action that starts with a
+verb, such as "Ask the company for its gross margin". Do not write "not found" statements, and leave
+out anything the request lists as already covered by the system.
 
 Be efficient: a few tool calls are enough. When done, reply with only this JSON object:
 {{"sections": [{{"title": "...", "items": [{{"text": "...", "calculated": false, "citations": [{{"chunk_id": 123, "quote": "..."}}]}}]}}],
@@ -54,20 +67,25 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
     company = conn.execute("SELECT name FROM companies WHERE id = ?", (company_id,)).fetchone()["name"]
     requirements = requirements.strip() or DEFAULT_REQUIREMENTS
     prompt = f"Write the brief for {company}.\nRequirements from the investment team: {requirements}"
+    missing = missing_metrics(conn, company_id)
+    conflicts = find_conflicts(conn, company_id)
+    covered = missing + [c["metric_label"] or c["metric"] for c in conflicts]
+    if covered:
+        prompt += f"\nAlready covered by the system, so leave out of open_items: {', '.join(covered)}"
 
     run = run_agent(conn, company_id, prompt, llm, system=BRIEF_SYSTEM_PROMPT)
     final = run["final"] or {}
     sections = []
     for section in final.get("sections") or []:
-        if not isinstance(section, dict):
+        if not isinstance(section, dict) or _COMMS_TITLE.search(str(section.get("title") or "")):
             continue
         items = verify_items(conn, company_id, run["run_id"], section.get("items"), "brief_item")
         if items:
             sections.append({"title": str(section.get("title") or "Notes").strip(), "items": items})
-    open_items = [str(o).strip() for o in final.get("open_items") or [] if str(o).strip()]
+    open_items = clean_open_items([str(o).strip() for o in final.get("open_items") or [] if str(o).strip()],
+                                  missing, conflicts)
     if run["status"] != "ok":
-        open_items.append(f"The written sections are incomplete (agent status: {run['status']}).")
-    conflicts = find_conflicts(conn, company_id)
+        open_items.append(f"Generate this brief again: the written sections are incomplete (agent status: {run['status']}).")
     mark_traction_conflicts(sections, conflicts)
     mark_calculated(sections)
 
@@ -79,7 +97,7 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
         "sections": sections,
         "key_metrics": key_metrics(conn, company_id),
         "recent_communications": recent_communications(conn, company_id),
-        "missing": [{"metric": m, "text": f"{m}: {NOT_FOUND}"} for m in missing_metrics(conn, company_id)],
+        "missing": [{"metric": m, "text": f"{m}: {NOT_FOUND}"} for m in missing],
         "conflicts": conflicts,
         "unclear_basis": unclear_basis(conn, company_id),
         "open_items": open_items,
@@ -89,6 +107,38 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
               output={"sections": len(sections), "missing": [m["metric"] for m in brief["missing"]],
                       "conflicts": len(brief["conflicts"])})
     return brief
+
+
+def conflict_todo(conflict: dict) -> str:
+    """The decision a conflict leaves open: "Confirm which paying-customer count is correct (60 vs 80)"."""
+    metric = conflict["metric"]
+    noun = _CONFLICT_NOUNS.get(metric) or f"{conflict['metric_label'] or metric.replace('_', ' ')} figure"
+    by_value = {s["value"]: s["display_value"].removesuffix(" customers") for s in conflict["sources"]}
+    return f"Confirm which {noun} is correct ({' vs '.join(by_value[v] for v in sorted(by_value))})"
+
+
+def _as_todo(item: str) -> str:
+    """Turn a "<topic>: Not found in the provided materials" statement into an action; other items stay as written."""
+    found = re.fullmatch(rf"(.*?)(?:\s+(?:is|are))?[\s:.-]*{re.escape(NOT_FOUND.rstrip('.'))}\.?", item, re.IGNORECASE)
+    if not found:
+        return item
+    return f"Ask the company for {found.group(1)}" if found.group(1) else ""
+
+
+def clean_open_items(items: list[str], missing: list[str], conflicts: list[dict]) -> list[str]:
+    """To-dos only: one program-built decision per conflict, then the model's items on anything not already listed."""
+    topics = [_METRIC_WORDS.get(m) for m in missing]
+    topics += [_METRIC_WORDS.get(c["metric"]) or (re.escape(c["metric_label"]) if c["metric_label"] else None)
+               for c in conflicts]
+    covered = "|".join(t for t in topics if t)
+    todos = [conflict_todo(c) for c in conflicts]
+    for item in items:
+        if covered and re.search(covered, item, re.IGNORECASE):
+            continue
+        todo = _as_todo(item)
+        if todo and todo not in todos:
+            todos.append(todo)
+    return todos
 
 
 def _quotes_value(quote: str, value_raw: str) -> bool:

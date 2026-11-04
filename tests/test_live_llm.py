@@ -107,6 +107,9 @@ def test_real_brief_focus_traction_and_risks(db):
     assert brief["sections"] and all(i["citations"] for s in brief["sections"] for i in s["items"])
     assert [m["metric"] for m in brief["missing"]] == ["revenue"]
     assert [c["values"] for c in brief["conflicts"]] == [[60, 80]]
+    assert not any("communication" in s["title"].lower() for s in brief["sections"])
+    assert brief["open_items"][0] == "Confirm which paying-customer count is correct (60 vs 80)"
+    assert not any("not found" in o.lower() or "revenue" in o.lower() for o in brief["open_items"])
 
 
 def test_real_model_finds_the_company_of_an_unmatched_file():

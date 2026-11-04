@@ -78,6 +78,7 @@ Click **Generate Brief** at the top right. Type **"focus on traction and risks"*
 > "It uses the company in the selector. The model writes the traction and risk sections, and each quote was
 > checked word for word against the file. The two conflicting numbers are marked in red. Below that,
 > the program adds the key metrics, the last three CRM touchpoints, what's missing and the conflict.
+> Open items is a to-do list, starting with which of the two numbers to confirm.
 > It can be copied or downloaded as Markdown."
 
 ## 1:55 – Close (5 s)

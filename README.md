@@ -50,7 +50,7 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (239 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (251 tests)
 .venv/bin/python -m pytest -m live         # calls the real models (9 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
@@ -118,7 +118,8 @@ has a clear rule.
 | Simple one-step calculations in a brief, with the working shown and flagged | "(calculated)" mark, also added for a percentage or multiple not in the cited passage |
 | Deciding whether a question is unrelated to company materials | The fixed reply to unrelated questions, with no open items |
 | | Unclear basis (no as-of date), missing key metrics, company isolation |
-| | Key-metrics table, recent communications, missing/conflict lists in the brief |
+| | Key-metrics table, recent communications, missing/conflict lists in the brief; a model section on communications is dropped |
+| Open items in the brief, written as to-dos | One "Confirm which … is correct" to-do per conflict; model items on a missing or conflicting metric are dropped |
 
 **Where data lives**: one SQLite file (`data/deal_room.db`):
 `companies`, `documents`, `chunks` (text, location, float32 vector), `metrics`, `crm_records`,

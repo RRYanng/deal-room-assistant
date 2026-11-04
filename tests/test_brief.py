@@ -5,7 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.brief import BRIEF_SYSTEM_PROMPT, _quotes_value, brief_to_markdown, generate_brief
+from app.brief import BRIEF_SYSTEM_PROMPT, _quotes_value, brief_to_markdown, clean_open_items, generate_brief
 from app.db import connect, init_db
 from app.llm import FakeLLM
 from app.main import app, get_chat_llm
@@ -45,7 +45,8 @@ def test_brief_sections_are_verified(tidewell):
     assert "focus on traction and risks" in fake.calls[0]["messages"][0]["content"]
     assert [s["title"] for s in brief["sections"]] == ["Traction"]  # "Risks" had no valid bullet
     assert [i["text"] for i in brief["sections"][0]["items"]] == ["60 paying customers as of June 30, 2026."]
-    assert brief["open_items"] == ["loss ratio: Not found in the provided materials"]
+    assert brief["open_items"] == ["Confirm which paying-customer count is correct (60 vs 80)",
+                                   "Ask the company for loss ratio"]
 
 
 def test_program_sections(tidewell):
@@ -255,3 +256,69 @@ def test_markdown_shows_values_with_units(tidewell):
     assert "- paying_customers: 60 customers as of 2026-06-30" in md
     assert "  - 80 customers [tidewell_update_2026-08.txt" in md
     assert "- funding_raised: USD 1,200,000 (no as-of date stated)" in md
+
+
+# --- no repeats between model and program sections --------------------------------------------
+
+@pytest.mark.parametrize("title", ["Recent communications", "Recent Conversations", "CRM history", "Last interactions"])
+def test_model_section_on_communications_is_dropped(tidewell, title):
+    conn, cid = tidewell
+
+    def sections(metrics):
+        return [{"title": title, "items": [bullet(metrics, "paying_customers")]},
+                {"title": "Traction", "items": [bullet(metrics, "registered_customers")]}]
+
+    brief = generate_brief(conn, cid, "", brief_with(sections))
+    assert [s["title"] for s in brief["sections"]] == ["Traction"]
+    assert len(brief["recent_communications"]) == 3  # the program's section stays
+    assert brief_to_markdown(brief).count("## Recent communications") == 1
+
+
+def open_items_llm(*items):
+    return FakeLLM([FakeLLM.text(json.dumps({"sections": [], "open_items": list(items)}))])
+
+
+def test_open_items_leave_out_what_missing_and_conflicts_already_list(tidewell):
+    conn, cid = tidewell
+    brief = generate_brief(conn, cid, "", open_items_llm(
+        "revenue: Not found in the provided materials",
+        "Ask the company for its revenue",
+        "Paying customers differ between the notes and the update",
+        "Check the paying-customer definition",
+        "Ask the company for its loss ratio"))
+    assert brief["open_items"] == ["Confirm which paying-customer count is correct (60 vs 80)",
+                                   "Ask the company for its loss ratio"]
+
+
+def test_open_items_keep_topics_that_are_not_listed_elsewhere():
+    conn = connect(":memory:")
+    init_db(conn)
+    cid = load_samples(conn)["Tidewell Insurance"]  # no conflict, so paying customers are not covered
+    brief = generate_brief(conn, cid, "", open_items_llm("Ask how paying customers are counted"))
+    assert brief["open_items"] == ["Ask how paying customers are counted"]
+    conn.close()
+
+
+@pytest.mark.parametrize("item, todo", [
+    ("loss ratio: Not found in the provided materials", "Ask the company for loss ratio"),
+    ("Loss ratio is not found in the provided materials.", "Ask the company for Loss ratio"),
+    ("Not found in the provided materials", None),
+    ("Ask about the renewal rate", "Ask about the renewal rate"),
+])
+def test_open_items_are_written_as_todos(item, todo):
+    assert clean_open_items([item], [], []) == ([todo] if todo else [])
+
+
+def test_conflict_todo_uses_display_values_with_currency():
+    conflict = {"metric": "revenue", "metric_label": None, "sources": [
+        {"value": 200.0, "display_value": "USD 200"}, {"value": 100.0, "display_value": "USD 100"},
+        {"value": 200.0, "display_value": "USD 200"}]}
+    assert clean_open_items([], [], [conflict]) == ["Confirm which revenue figure is correct (USD 100 vs USD 200)"]
+
+
+def test_prompt_lists_what_the_system_already_covers(tidewell):
+    conn, cid = tidewell
+    fake = open_items_llm()
+    generate_brief(conn, cid, "", fake)
+    assert "leave out of open_items: revenue, paying_customers" in fake.calls[0]["messages"][0]["content"]
+    assert "Never write a section about recent communications" in BRIEF_SYSTEM_PROMPT
