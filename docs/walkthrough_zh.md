@@ -409,7 +409,7 @@ cd deal-room-assistant
 - 警告不会阻止上传，按钮变成 "Add anyway"。
 
 **第 7 项的两个小问题**
-上一个 commit（`58ff16e`）已经修好，这次在新界面里重新确认过。简报标注保留了之前的回退规则：Risks 部分没有提到这个矛盾时，改写 "see Conflicting information"。
+上一个 commit（`55c79eb`）已经修好，这次在新界面里重新确认过。简报标注保留了之前的回退规则：Risks 部分没有提到这个矛盾时，改写 "see Conflicting information"。
 
 **怎么验证的**
 - `pytest`：204 passed。`pytest -m live`：8 passed（新增 1 个模型推测公司的测试）。
