@@ -1,14 +1,14 @@
 # Deal Room Assistant
 
-A small, working research assistant for early-stage investment teams. Upload a company's pitch
-deck, meeting notes and CRM log; ask questions and get answers where **every claim links to the
-exact source sentence**; generate a one-page company brief that flags **missing** and
-**conflicting** information instead of hiding it.
+**A research assistant for early-stage investment teams that answers questions about a company's files, with every claim linked to its exact source sentence.**
+
+![The conversation, with the company named above each answer and its evidence open](docs/screenshot_main.jpg)
+
+Upload a company's pitch deck, meeting notes and CRM log, ask questions, and generate a one-page
+brief that flags **missing** and **conflicting** information instead of hiding it.
 
 > Independent prototype, built for my application to the Associate AI Engineer role at Core VC.
 > It was not commissioned by Core. All sample data is synthetic and marked `SYNTHETIC SAMPLE`.
-
-![The conversation, with the company named above each answer and its evidence open](docs/screenshot_main.jpg)
 
 ## What it does
 
