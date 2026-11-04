@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import anthropic
+import httpx
 import pytest
 
 from app.config import get_settings
@@ -64,8 +66,28 @@ def test_missing_credentials_become_llm_auth_error(monkeypatch):
             raise TypeError('"Could not resolve authentication method. Expected one of api_key..."')
         messages = SimpleNamespace(create=_fail)
         beta = SimpleNamespace(messages=SimpleNamespace(create=_fail))
-    with pytest.raises(LLMAuthError, match="API key missing"):
+    with pytest.raises(LLMAuthError, match="API key invalid or missing"):
         AnthropicLLM("m", client=NoKeySDK()).chat("sys", [])
+
+
+def sdk_that_raises(error):
+    def fail(**kw):
+        raise error
+    return SimpleNamespace(messages=SimpleNamespace(create=fail), beta=SimpleNamespace(messages=SimpleNamespace(create=fail)))
+
+
+def test_rejected_key_becomes_llm_auth_error():
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    error = anthropic.AuthenticationError("invalid x-api-key", response=httpx.Response(401, request=request), body=None)
+    with pytest.raises(LLMAuthError, match="API key invalid or missing. Check .env and restart the server."):
+        AnthropicLLM("m", client=sdk_that_raises(error)).complete_json("sys", "prompt", {"type": "object"})
+
+
+def test_network_failure_becomes_llm_error():
+    error = anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    with pytest.raises(LLMError, match="Could not reach Anthropic API") as caught:
+        AnthropicLLM("m", client=sdk_that_raises(error)).complete_json("sys", "prompt", {"type": "object"})
+    assert not isinstance(caught.value, LLMAuthError)
 
 
 def test_get_llm_picks_provider_from_env(monkeypatch):

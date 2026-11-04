@@ -269,9 +269,7 @@ class QuestionIn(BaseModel):
 
 
 def llm_http_error(e: LLMError) -> HTTPException:
-    if isinstance(e, LLMAuthError):
-        return HTTPException(503, str(e))  # already starts with "API key missing"
-    return HTTPException(502, f"Model call failed: {e}")
+    return HTTPException(503 if isinstance(e, LLMAuthError) else 502, f"Model call failed: {e}")
 
 
 @app.post("/api/companies/{company_id}/ask")
@@ -302,8 +300,12 @@ NEEDS_COMPANY_MESSAGES = {
 def ask_any_company(body: ChatQuestionIn, conn=Depends(get_db), llm: LLMClient = Depends(get_chat_llm)):
     """Work out the company from the question, then answer. The server picks the company_id."""
     resolved = resolve_question_company(conn, body.question, body.last_company_id)
-    if resolved["status"] == "unknown" and is_out_of_scope(body.question, llm):
-        return {"resolution": "out_of_scope", "message": OUT_OF_SCOPE_MESSAGE}
+    if resolved["status"] == "unknown":
+        try:
+            if is_out_of_scope(body.question, llm):
+                return {"resolution": "out_of_scope", "message": OUT_OF_SCOPE_MESSAGE}
+        except LLMError as e:  # a failed check says nothing about the question, so report the failure
+            raise llm_http_error(e) from None
     if resolved["status"] != "resolved":
         return {"resolution": "needs_company", "reason": resolved["status"],
                 "message": NEEDS_COMPANY_MESSAGES[resolved["status"]], "companies": resolved["companies"]}

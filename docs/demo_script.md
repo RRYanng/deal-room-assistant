@@ -96,5 +96,5 @@ Click **Generate Brief** at the top right. Type **"focus on traction and risks"*
 - *Library:* Click **Library**, then a company name, to see its key metrics. Each file has a delete
   link, and the Issues count updates after a delete.
 
-**If something goes wrong:** "API key missing" means `ANTHROPIC_API_KEY` is not set in `.env`.
+**If something goes wrong:** "API key invalid or missing" means `ANTHROPIC_API_KEY` in `.env` is wrong or not set. Fix it and restart the server.
 Uploads still work; extraction can be re-run with the *re-extract* link in Library once the key is set.

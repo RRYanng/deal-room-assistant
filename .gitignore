@@ -6,3 +6,4 @@ __pycache__/
 data/*
 !data/.gitkeep
 .claude/
+docs/walkthrough_zh.md

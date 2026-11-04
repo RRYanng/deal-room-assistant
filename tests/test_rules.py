@@ -97,12 +97,12 @@ def test_upload_survives_extraction_failure(client):
     def no_key():
         class NoKey(FakeLLM):
             def complete_json(self, *a, **k):
-                raise LLMAuthError("API key missing: set ANTHROPIC_API_KEY in .env.")
+                raise LLMAuthError("API key invalid or missing. Check .env and restart the server.")
         return NoKey()
     app.dependency_overrides[get_extract_llm] = no_key
     cid = client.post("/api/companies", json={"name": "X"}).json()["id"]
     body = upload(client, cid, "company_a/tidewell_meeting_notes.md", "notes", "2026-07-22")
-    assert body["extraction"] == {"status": "failed", "error": "API key missing: set ANTHROPIC_API_KEY in .env."}
+    assert body["extraction"] == {"status": "failed", "error": "API key invalid or missing. Check .env and restart the server."}
     assert len(client.get(f"/api/companies/{cid}/documents").json()) == 1
 
 

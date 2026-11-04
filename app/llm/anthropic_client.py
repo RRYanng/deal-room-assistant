@@ -75,14 +75,14 @@ class AnthropicLLM(LLMClient):
                     betas=[FALLBACK_BETA], fallbacks=self.fallbacks, **kwargs)
             return self._client.messages.create(**kwargs)
         except anthropic.AuthenticationError as e:
-            raise LLMAuthError("API key missing or invalid: check ANTHROPIC_API_KEY in .env.") from e
+            raise LLMAuthError("API key invalid or missing. Check .env and restart the server.") from e
         except anthropic.APIStatusError as e:
             raise LLMError(f"Anthropic API error {e.status_code}: {e.message}") from e
         except anthropic.APIConnectionError as e:
             raise LLMError(f"Could not reach Anthropic API: {e}") from e
         except TypeError as e:  # the SDK raises TypeError when no credentials are configured
             if "authentication" in str(e).lower():
-                raise LLMAuthError("API key missing: set ANTHROPIC_API_KEY in .env.") from e
+                raise LLMAuthError("API key invalid or missing. Check .env and restart the server.") from e
             raise
 
     @staticmethod

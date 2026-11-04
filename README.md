@@ -50,7 +50,7 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (231 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (236 tests)
 .venv/bin/python -m pytest -m live         # calls the real models (9 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
@@ -59,7 +59,7 @@ Tests:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | – | Claude API key. Without it, uploads still work, but metric extraction, Q&A and briefs report "API key missing". |
+| `ANTHROPIC_API_KEY` | – | Claude API key. Without a valid key, uploads still work, but metric extraction, Q&A and briefs report "Model call failed: API key invalid or missing. Check .env and restart the server." The server reads `.env` only at startup. |
 | `LLM_PROVIDER` | `anthropic` | `anthropic` or `fake` (development only). |
 | `LLM_EXTRACT_MODEL` | `claude-opus-5-5` | Model for metric extraction. |
 | `LLM_CHAT_MODEL` | `claude-sonnet-5-5` | Model for Q&A and briefs. |
@@ -194,6 +194,8 @@ The 7 required checks pass with the real models (`claude-opus-5-5` for extractio
 full run, including every answer and citation. The same behaviours are covered by deterministic
 FakeLLM tests that run offline on every `pytest`.
 
+What went wrong along the way, and how each problem was found and fixed: [docs/lessons_learned.md](docs/lessons_learned.md).
+
 ## Known limitations
 
 - **Text PDFs only**: no OCR. Tables and multi-column layouts in PDFs lose their structure.
@@ -246,5 +248,5 @@ static/           conversation UI (HTML, CSS, JS)
 samples/          SYNTHETIC SAMPLE files + manifest.json
 scripts/          make_samples.py, load_samples.py, verify.py
 tests/            pytest suite (offline + `-m live`)
-docs/             verification, decisions, demo script, walkthrough (Chinese)
+docs/             verification, decisions, lessons learned, demo script, screenshots
 ```

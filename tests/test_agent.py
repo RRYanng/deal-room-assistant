@@ -190,10 +190,10 @@ def test_ask_without_api_key_says_api_key_missing(client):
 
     class NoKey(FakeLLM):
         def chat(self, *a, **k):
-            raise LLMAuthError("API key missing: set ANTHROPIC_API_KEY in .env.")
+            raise LLMAuthError("API key invalid or missing. Check .env and restart the server.")
     app.dependency_overrides[get_chat_llm] = lambda: NoKey()
     r = client.post(f"/api/companies/{cid}/ask", json={"question": "q"})
-    assert r.status_code == 503 and r.json()["detail"] == "API key missing: set ANTHROPIC_API_KEY in .env."
+    assert r.status_code == 503 and r.json()["detail"] == "Model call failed: API key invalid or missing. Check .env and restart the server."
 
 
 # --- evidence groups --------------------------------------------------------------

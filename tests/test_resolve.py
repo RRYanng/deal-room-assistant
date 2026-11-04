@@ -5,7 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.llm import FakeLLM
+from app.llm import FakeLLM, LLMAuthError, LLMError
 from app.main import app, get_chat_llm
 from app.resolve import find_mentions
 
@@ -170,10 +170,33 @@ def test_unrelated_question_with_a_previous_company_gets_the_same_reply(client, 
     assert r == {"resolution": "out_of_scope", "message": OUT_OF_SCOPE}
 
 
-def test_failed_scope_check_falls_back_to_asking_which_company(client, ids):
-    app.dependency_overrides[get_chat_llm] = lambda: FakeLLM()  # no script: the call raises LLMError
-    r = client.post("/api/ask", json={"question": "What's the weather?"}).json()
-    assert r["resolution"] == "needs_company"
+def failing_llm(error):
+    def fail(call):
+        raise error
+    return FakeLLM(default=fail)
+
+
+@pytest.mark.parametrize("error, status, detail", [
+    (LLMAuthError("API key invalid or missing. Check .env and restart the server."), 503,
+     "Model call failed: API key invalid or missing. Check .env and restart the server."),
+    (LLMError("Could not reach Anthropic API: Connection error."), 502,
+     "Model call failed: Could not reach Anthropic API: Connection error."),
+    (LLMError("Anthropic API error 500: Internal error"), 502,
+     "Model call failed: Anthropic API error 500: Internal error"),
+])
+def test_failed_scope_check_reports_the_failure(client, ids, error, status, detail):
+    """Never "Which company do you mean?": the problem is the model call, not the question."""
+    app.dependency_overrides[get_chat_llm] = lambda: failing_llm(error)
+    r = client.post("/api/ask", json={"question": "What's the weather?"})
+    assert r.status_code == status
+    assert r.json() == {"detail": detail}
+
+
+def test_failed_agent_call_reports_the_failure_the_same_way(client, ids):
+    app.dependency_overrides[get_chat_llm] = lambda: failing_llm(LLMAuthError("API key invalid or missing. Check .env and restart the server."))
+    r = client.post("/api/ask", json={"question": "And the revenue?", "last_company_id": ids["Tidewell Insurance"]})
+    assert r.status_code == 503
+    assert r.json()["detail"].startswith("Model call failed: API key invalid or missing.")
 
 
 def test_named_company_skips_the_scope_check(client, ids):

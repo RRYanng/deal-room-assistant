@@ -18,7 +18,7 @@ from typing import Any
 
 from app.citations import verify_citation
 from app.config import get_settings
-from app.llm import LLMClient, LLMError, ToolResult, ToolSpec
+from app.llm import LLMClient, ToolResult, ToolSpec
 from app.logs import log_event
 from app.rag import search
 from app.rules import find_conflicts, get_metrics, unclear_basis
@@ -269,11 +269,8 @@ def group_evidence(claims: list[dict]) -> list[dict]:
 
 
 def is_out_of_scope(question: str, llm: LLMClient) -> bool:
-    """For a question with no company to run the agent on. If the check fails, ask which company."""
-    try:
-        return llm.complete_json(SCOPE_SYSTEM_PROMPT, question, SCOPE_SCHEMA).get("out_of_scope") is True
-    except LLMError:
-        return False
+    """For a question with no company to run the agent on. Raises LLMError if the model call fails."""
+    return llm.complete_json(SCOPE_SYSTEM_PROMPT, question, SCOPE_SCHEMA).get("out_of_scope") is True
 
 
 def answer_question(conn: sqlite3.Connection, company_id: int, question: str, llm: LLMClient) -> dict:
