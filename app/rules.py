@@ -79,6 +79,13 @@ def company_checks(conn: sqlite3.Connection, company_id: int) -> dict:
     }
 
 
+def issue_counts(conn: sqlite3.Connection, company_id: int) -> dict:
+    """Open issues per group, computed from the saved materials each time it is called."""
+    checks = company_checks(conn, company_id)
+    counts = {group: len(items) for group, items in checks.items()}
+    return counts | {"total": sum(counts.values())}
+
+
 def _source(m: dict) -> dict:
     return {"metric_id": m["id"], "value": m["value"], "value_raw": m["value_raw"], "unit": m["unit"],
             "currency": m["currency"], "as_of_date": m["as_of_date"], "quote": m["quote"],

@@ -14,10 +14,12 @@ from app.agent import answer_question
 from app.brief import brief_to_markdown, generate_brief
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
+from app.intake import analyze_upload, consistency_warnings
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
-from app.rules import company_checks, get_metrics
+from app.resolve import resolve_question_company
+from app.rules import company_checks, get_metrics, issue_counts
 
 STATIC_DIR = PROJECT_ROOT / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -34,6 +36,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Deal Room Assistant", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def revalidate_ui_files(request: Request, call_next):
+    """Browsers must check for a newer page and script, or an old page can run with a new script."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def get_db(request: Request):
@@ -143,6 +154,31 @@ def upload_document(
     return result
 
 
+@app.post("/api/uploads/analyze")
+def analyze(file: UploadFile = File(...), conn=Depends(get_db), llm: LLMClient = Depends(get_chat_llm)):
+    """Suggest company, type and date for a file, for the user to confirm. Stores nothing."""
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File is larger than 20 MB.")
+    try:
+        return analyze_upload(conn, file.filename or "", data, llm)
+    except IngestError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+class WarningsIn(BaseModel):
+    chosen_company: str
+    suggested_company: str | None = None
+    mentioned: list[str] = []
+    filename: str = ""
+
+
+@app.post("/api/uploads/warnings")
+def upload_warnings(body: WarningsIn, conn=Depends(get_db)):
+    """Warnings for the company currently chosen in the confirmation dialog."""
+    return consistency_warnings(conn, body.chosen_company, body.suggested_company, body.mentioned, body.filename)
+
+
 def run_extraction(conn: sqlite3.Connection, document_id: int, llm: LLMClient) -> dict:
     try:
         return extract_metrics(conn, document_id, llm)
@@ -208,6 +244,13 @@ def get_checks(company_id: int, conn=Depends(get_db)):
     return company_checks(conn, company_id)
 
 
+@app.get("/api/issues")
+def list_issues(conn=Depends(get_db)):
+    """Every company with its number of open issues, computed live from the saved materials."""
+    rows = conn.execute("SELECT id, name FROM companies ORDER BY name").fetchall()
+    return [{"id": r["id"], "name": r["name"]} | issue_counts(conn, r["id"]) for r in rows]
+
+
 # --- Q&A agent ----------------------------------------------------------------------
 
 class QuestionIn(BaseModel):
@@ -231,6 +274,29 @@ def ask(company_id: int, body: QuestionIn, conn=Depends(get_db), llm: LLMClient 
         raise llm_http_error(e) from None
     except EmbeddingError as e:
         raise HTTPException(503, str(e)) from None
+
+
+class ChatQuestionIn(BaseModel):
+    question: str
+    last_company_id: int | None = None
+
+
+NEEDS_COMPANY_MESSAGES = {
+    "unknown": "Which company do you mean?",
+    "multiple": "I can only answer about one company at a time. Which one should I answer about?",
+}
+
+
+@app.post("/api/ask")
+def ask_any_company(body: ChatQuestionIn, conn=Depends(get_db), llm: LLMClient = Depends(get_chat_llm)):
+    """Work out the company from the question, then answer. The server picks the company_id."""
+    resolved = resolve_question_company(conn, body.question, body.last_company_id)
+    if resolved["status"] != "resolved":
+        return {"resolution": "needs_company", "reason": resolved["status"],
+                "message": NEEDS_COMPANY_MESSAGES[resolved["status"]], "companies": resolved["companies"]}
+    answer = ask(resolved["company"]["id"], QuestionIn(question=body.question), conn, llm)
+    return {"resolution": "answered", "company": resolved["company"], "company_source": resolved["source"],
+            "answer": answer}
 
 
 @app.get("/api/runs/{run_id}/log")

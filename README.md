@@ -8,24 +8,28 @@ exact source sentence**; generate a one-page company brief that flags **missing*
 > Independent prototype, built for my application to the Associate AI Engineer role at Core VC.
 > It was not commissioned by Core. All sample data is synthetic and marked `SYNTHETIC SAMPLE`.
 
-![Q&A with conflict panel](docs/screenshot_main.jpg)
+![The conversation, with the company named above each answer and its evidence open](docs/screenshot_main.jpg)
 
 ## What it does
 
-1. **Import**: per company, upload decks (text PDF, TXT, MD), meeting notes (TXT, MD, PDF) and CRM
-   records (CSV). File name, material type and material date are stored, and data survives restarts.
-   Uploading a file with the same name replaces the old version.
+1. **Import**: upload decks (text PDF, TXT, MD), meeting notes (TXT, MD, PDF) and CRM records (CSV).
+   The system suggests the company, material type and date, and you confirm them. It warns if the
+   file seems to belong to another company. Data survives restarts, and uploading a file with the
+   same name replaces the old version.
 2. **Organize**: files are split into chunks that keep their location (PDF page + paragraph,
    TXT/MD paragraph, CSV row) and are indexed for hybrid search. Key metrics are extracted into a
    table, each with a verbatim quote.
-3. **Q&A**: pick a company, ask a question. An agent searches that company's materials with tools
-   and answers in short claims; each claim can be expanded to show the file, location and quoted
+3. **Q&A**: ask a question that names a company, or follow up on the last one. An agent searches
+   that company's materials with tools and answers in short claims; each claim can be expanded to show the file, location and quoted
    text. Claims that cite the same passage share one evidence panel, so it is shown only once.
 4. **One-click brief**: "focus on traction and risks" → key metrics, recent communications,
    missing information and conflicts, each line with its source.
 5. **Missing and conflicting information** is shown explicitly: "Not found in the provided
    materials", and conflicting values are listed side by side with their sources. The system never
-   picks a winner.
+   picks a winner. The **Issues** panel lists these per company and updates after every upload or delete.
+
+The screen is one conversation, with an Upload / Ask switch above the input. **Library** (files
+and key metrics per company), **Issues** and **Generate Brief** are in the left sidebar.
 
 ## Quick start
 
@@ -45,8 +49,8 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (142 tests)
-.venv/bin/python -m pytest -m live         # calls the real models (7 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (204 tests)
+.venv/bin/python -m pytest -m live         # calls the real models (8 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
 
@@ -119,6 +123,32 @@ has a clear rule.
 `GET /api/runs/{run_id}/log`). Deleting or replacing a document removes its chunks, metrics and
 CRM rows (cascade). The embedding model is cached in `~/.cache/huggingface`.
 
+## How the company is chosen
+
+The server decides, always. The model never chooses a `company_id`.
+
+**Questions** (`POST /api/ask`), by name matching in the program:
+
+| The question… | Result |
+|---|---|
+| names one company ("tidewel" also matches) | Answers about it and shows "Answering about: <company>" |
+| names no company | Keeps the previous company |
+| names no company, and there is no previous one | "Which company do you mean?" with company buttons |
+| names several companies | Says it answers one company at a time and asks which |
+
+The match uses the non-generic words of the name, so "Tidewell" matches Tidewell Insurance but
+"insurance" alone matches nothing.
+
+**Uploads** (`POST /api/uploads/analyze`): the program checks the file name, then the content.
+Only if neither names a known company does the model suggest a name, and that name counts only
+if it literally appears in the file. Material type and date come from program rules. Nothing is
+stored until you confirm. The confirmation warns, without blocking, if:
+
+- the chosen company differs from the suggestion;
+- the file mentions another existing company, or several companies;
+- a file with that name would be replaced;
+- a new company name resembles an existing one.
+
 ## Why hybrid retrieval
 
 Investment questions mix exact tokens and meaning. BM25 is good at exact terms (numbers,
@@ -145,7 +175,11 @@ numpy matrix product; BM25 is rebuilt per query. Both are simple to explain and 
 | GET | `/api/companies/{id}/search?q=…&k=6` | Debug view of hybrid search with both ranks |
 | GET | `/api/companies/{id}/metrics` | Extracted metrics with sources |
 | GET | `/api/companies/{id}/checks` | Conflicts, unclear basis, missing key metrics |
-| POST | `/api/companies/{id}/ask` | Q&A (`{"question": …}`) |
+| POST | `/api/uploads/analyze` | Suggest company, type and date for a file; stores nothing |
+| POST | `/api/uploads/warnings` | Consistency warnings for the company chosen in the confirmation |
+| GET | `/api/issues` | All companies with their issue counts, computed live |
+| POST | `/api/ask` | Q&A that works out the company (`{"question": …, "last_company_id": …}`) |
+| POST | `/api/companies/{id}/ask` | Q&A for a company the user picked (`{"question": …}`) |
 | POST | `/api/companies/{id}/brief` | Brief (`{"requirements": …}`), JSON + Markdown |
 | GET | `/api/runs/{run_id}/log` | Agent log for one question or brief |
 
@@ -164,6 +198,10 @@ FakeLLM tests that run offline on every `pytest`.
 - **One extraction call per document**: very long documents may need splitting.
 - **Conflicts need an exact match** of metric, as-of date and unit. "Q2 2026" vs "June 30, 2026"
   are not recognized as the same basis, and units for `other` metrics come from the model.
+- **Company matching only knows names.** It finds exact names and small typos of companies already in
+  the system, not abbreviations or nicknames. A company whose name is a common word can match by accident.
+- **Date suggestions are heuristics.** A file name with only a month gives the 1st of that month, so
+  check the date in the confirmation.
 - **The number parser is English-only** ("sixty", "1.2M"); ranges such as "50–60" are not parsed.
 - **Model output varies between runs.** Citations are always verified, but wording and which
   facts the model chooses to mention can differ.
@@ -187,6 +225,8 @@ app/
   config.py       settings from environment
   db.py           SQLite schema
   ingest.py       parsing + chunking with locations, upload/replace
+  resolve.py      company name matching; which company a question is about
+  intake.py       upload suggestions (company, type, date) and consistency warnings
   rag.py          embeddings, BM25 tokenizer, hybrid search with RRF
   extract.py      metric extraction + validation
   numbers.py      number normalization
@@ -196,7 +236,7 @@ app/
   brief.py        company brief (program parts + verified model sections)
   logs.py         agent_logs
   llm/            provider-neutral interface, Anthropic client, FakeLLM
-static/           single-page UI (HTML, CSS, JS)
+static/           conversation UI (HTML, CSS, JS)
 samples/          SYNTHETIC SAMPLE files + manifest.json
 scripts/          make_samples.py, load_samples.py, verify.py
 tests/            pytest suite (offline + `-m live`)

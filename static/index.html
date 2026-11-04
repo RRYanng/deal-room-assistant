@@ -7,92 +7,111 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">Deal Room Assistant</div>
-    <div class="topbar-meta" id="health"></div>
-  </header>
-
-  <main class="layout">
-    <!-- Left: companies, upload, documents -->
-    <aside class="panel left">
-      <section>
-        <h2>Companies</h2>
-        <ul id="company-list" class="company-list"></ul>
-        <form id="new-company-form" class="inline-form">
-          <input id="new-company-name" type="text" placeholder="New company name" autocomplete="off">
-          <button type="submit">Add</button>
-        </form>
-      </section>
-
-      <section id="upload-section" class="disabled">
-        <h2>Upload material</h2>
-        <form id="upload-form" class="stack">
-          <input id="upload-file" type="file" accept=".pdf,.txt,.md,.csv" required>
-          <label>Type
-            <select id="upload-type">
-              <option value="deck">Pitch deck (PDF / TXT / MD)</option>
-              <option value="notes">Meeting notes (TXT / MD / PDF)</option>
-              <option value="crm">CRM records (CSV)</option>
-            </select>
-          </label>
-          <label>Material date
-            <input id="upload-date" type="date">
-          </label>
-          <button type="submit" id="upload-button">Upload</button>
-          <div id="upload-status" class="status"></div>
-        </form>
-      </section>
-
-      <section>
-        <h2>Documents</h2>
-        <ul id="document-list" class="document-list"><li class="muted">Select a company.</li></ul>
-      </section>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">Deal Room Assistant</div>
+      <nav class="nav">
+        <button type="button" id="nav-library" class="nav-item">Library</button>
+        <button type="button" id="nav-issues" class="nav-item">Issues <span id="issues-badge" class="count" hidden></span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="current">
+          <div class="eyebrow">Current company</div>
+          <div id="current-company" class="current-name">None yet</div>
+        </div>
+        <button type="button" id="brief-button">Generate Brief</button>
+        <div id="health" class="muted small health"></div>
+      </div>
     </aside>
 
-    <!-- Center: Q&A -->
-    <section class="panel center">
-      <div class="center-head">
-        <h1 id="company-title">Select a company</h1>
-        <div class="muted small">Answers come only from this company's materials. Every claim shows its source.</div>
+    <section id="drawer" class="drawer" aria-labelledby="drawer-title" hidden>
+      <div class="drawer-head">
+        <h1 id="drawer-title"></h1>
+        <button type="button" id="drawer-close" class="secondary">Close</button>
       </div>
-      <div id="chat" class="chat">
-        <div class="empty-state">Pick a company on the left, then ask a question.</div>
-      </div>
-      <form id="ask-form" class="ask-form">
-        <div class="suggestions" id="suggestions">
-          <button type="button" class="chip">How many paying customers does the company have?</button>
-          <button type="button" class="chip">When was our last conversation and what are the next steps?</button>
-          <button type="button" class="chip">What is the company's revenue?</button>
-        </div>
-        <div class="ask-row">
-          <textarea id="question" rows="2" placeholder="Ask about this company…" disabled></textarea>
-          <button type="submit" id="ask-button" disabled>Ask</button>
-        </div>
-      </form>
+      <div id="drawer-body" class="drawer-body"></div>
     </section>
 
-    <!-- Right: metrics, checks, brief -->
-    <aside class="panel right">
-      <section>
-        <h2>Generate brief</h2>
-        <form id="brief-form" class="stack">
-          <input id="brief-requirements" type="text" placeholder="e.g. focus on traction and risks" disabled>
-          <button type="submit" id="brief-button" disabled>Generate Brief</button>
-          <div id="brief-status" class="status"></div>
-        </form>
-      </section>
-      <section>
-        <h2>Conflicts &amp; missing</h2>
-        <div id="checks"><div class="muted">No company selected.</div></div>
-      </section>
-      <section>
-        <h2>Key metrics</h2>
-        <div id="metrics"><div class="muted">No company selected.</div></div>
-      </section>
-    </aside>
-  </main>
+    <main class="main">
+      <div id="chat" class="chat" aria-live="polite"></div>
 
-  <!-- Brief overlay -->
+      <div class="composer">
+        <div class="mode-switch" role="group" aria-label="Choose what to do">
+          <button type="button" id="mode-upload" class="mode">Upload</button>
+          <button type="button" id="mode-ask" class="mode">Ask</button>
+        </div>
+
+        <form id="ask-pane" class="pane">
+          <div class="suggestions" id="suggestions">
+            <button type="button" class="chip">How many paying customers does the company have?</button>
+            <button type="button" class="chip">When was our last conversation and what are the next steps?</button>
+            <button type="button" class="chip">What is the company's revenue?</button>
+          </div>
+          <div class="ask-row">
+            <textarea id="question" rows="2" placeholder="Ask about a company by name, or follow up on the last answer…"></textarea>
+            <button type="submit" id="ask-button">Ask</button>
+          </div>
+        </form>
+
+        <div id="upload-pane" class="pane" hidden>
+          <label id="dropzone" class="dropzone">
+            <input id="upload-file" type="file" accept=".pdf,.txt,.md,.csv">
+            <span id="dropzone-text" class="dropzone-text"><b>Choose a file</b> or drop it here</span>
+            <span class="muted small">PDF, TXT or MD, or CRM records as CSV. You confirm the details before it is stored.</span>
+          </label>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Upload confirmation -->
+  <dialog id="upload-dialog" class="dialog" aria-labelledby="upload-title">
+    <form id="upload-form" class="stack">
+      <div>
+        <h2 id="upload-title" class="dialog-title">Confirm upload</h2>
+        <div id="upload-filename" class="muted small filename"></div>
+      </div>
+      <div id="upload-warnings"></div>
+      <label>Company
+        <select id="upload-company"></select>
+        <input id="upload-new-company" type="text" placeholder="New company name" autocomplete="off" hidden>
+        <span id="upload-company-why" class="hint"></span>
+      </label>
+      <label>Material type
+        <select id="upload-type">
+          <option value="deck">Pitch deck</option>
+          <option value="notes">Meeting notes</option>
+          <option value="crm">CRM records</option>
+        </select>
+        <span id="upload-type-why" class="hint"></span>
+      </label>
+      <label>Material date
+        <input id="upload-date" type="date">
+        <span id="upload-date-why" class="hint"></span>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="upload-cancel" class="secondary">Cancel</button>
+        <button type="submit" id="upload-confirm">Add</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Brief requirements -->
+  <dialog id="brief-dialog" class="dialog" aria-labelledby="brief-dialog-title">
+    <form id="brief-form" class="stack">
+      <h2 id="brief-dialog-title" class="dialog-title">Generate brief</h2>
+      <div id="brief-company"></div>
+      <label id="brief-requirements-label">Requirements
+        <input id="brief-requirements" type="text" placeholder="e.g. focus on traction and risks" autocomplete="off">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="brief-cancel" class="secondary">Cancel</button>
+        <button type="submit" id="brief-generate">Generate</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Brief result -->
   <div id="brief-overlay" class="overlay" hidden>
     <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="brief-title">
       <div class="overlay-head">

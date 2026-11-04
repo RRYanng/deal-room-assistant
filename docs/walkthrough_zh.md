@@ -385,3 +385,37 @@ cd deal-room-assistant
 - `pytest`：142 passed（新增 18 个）。`pytest -m live`：7 passed。
 - 用真实模型在数据库副本上问了一次问题、生成了两次简报（一次走 API，一次走界面）。问答的 3 条 claims 引用 `tidewell_crm.csv row 3`，只显示一段原文。简报里 60 和 80 两条都带标注，100 registered 那条没有。
 - 编号和重叠高亮是用合成数据调用前端函数检查的，没有真实回答触发过。前端仍然没有自动化测试。
+
+---
+
+## 前端改为对话优先
+
+**改了什么**
+- `static/` 整体重写：只有一个对话框，输入框上方切换 Upload / Ask；左上角是 Library 和 Issues（在侧边抽屉里打开），左下角是 Generate Brief。旧的 `/api/companies/{id}/ask`、上传和简报路由都没改。
+- 新增 `app/resolve.py`：公司名称匹配，以及判断问题问的是哪家公司。
+- 新增 `app/intake.py`：上传时推测 company、doc type、doc date，并生成一致性警告。
+- 新增路由：`POST /api/ask`、`POST /api/uploads/analyze`、`POST /api/uploads/warnings`、`GET /api/issues`。
+- 改动已有后端的只有两处：agent prompt 加了一条规则（问题涉及多家公司时，只回答选中的公司），以及 UI 文件加了 `Cache-Control: no-cache`。
+
+**输入输出**
+- `POST /api/ask` 接收 `{question, last_company_id}`。能确定公司时返回 `resolution: "answered"`，并带 `company`、`company_source`、`answer`；否则返回 `resolution: "needs_company"`，并带 `message` 和 `companies`。
+- `POST /api/uploads/analyze` 接收文件，不存任何数据，返回 `company`（含 `source`）、`doc_type`、`doc_date`、`mentioned`、`warnings`。
+- 用户确认后，浏览器重新发送文件到原来的上传路由。
+
+**错误处理**
+- 文件读不了（格式不支持、CSV 缺列、空文件）：在弹确认框之前就报错，错误信息和正式上传时相同。
+- 模型推测失败或没有 key：公司留空，由用户选择，不阻塞上传。
+- 模型给出的公司名不在文件里：丢弃。
+- 警告不会阻止上传，按钮变成 "Add anyway"。
+
+**第 7 项的两个小问题**
+上一个 commit（`58ff16e`）已经修好，这次在新界面里重新确认过。简报标注保留了之前的回退规则：Risks 部分没有提到这个矛盾时，改写 "see Conflicting information"。
+
+**怎么验证的**
+- `pytest`：204 passed。`pytest -m live`：8 passed（新增 1 个模型推测公司的测试）。
+- 用真实模型在数据库副本上走完 demo：
+  - Issues 显示 "Tidewell Insurance · 3 issues"，上传第 4 份文件后变成 4（"was 3"），删除后变回 3。
+  - 打错字的 "Kitebrige" 切换到了 Kitebridge；不提公司名时沿用上一个；页面刚打开时追问 "Which company do you mean?"；"Compare Tidewell and Kitebridge" 要求选一家；问不存在的 Acme Robotics 时没有用 Tidewell 的数据回答。
+  - 改选公司、文件提到多家公司都出现警告；格式错误和 CSV 缺列都有清楚的报错；未知公司由模型建议 "Northwind Dental"，确认后新建成功。
+  - 简报里 60 和 80 两条都带 "(conflicting — see Risks)"。手机宽度和深色模式也检查过，没有横向溢出。
+- 没有覆盖的部分：前端仍然没有自动化测试。走查时部分操作用脚本触发，文件是脚本放进 file input 的，所以系统文件选择器和真正的拖拽没有测过。

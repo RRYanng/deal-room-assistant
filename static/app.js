@@ -1,11 +1,18 @@
-// Deal Room Assistant - single-page UI. Plain JavaScript, no build step.
+// Deal Room Assistant - conversation-first UI. Plain JavaScript, no build step.
 
 const state = {
-  companyId: null,
-  companyName: "",
-  chats: {},        // companyId -> list of chat entries {question, answer|error|pending}
+  companies: [],
+  current: null,        // {id, name}: the company follow-up questions and briefs use
+  entries: [],          // the conversation
+  issues: [],
+  drawer: null,         // null, {view: "library"} or {view: "issues", companyId}
+  openLibrary: new Set(),
+  openEvidence: new Set(),
+  upload: null,         // the file and suggestions behind the open confirmation dialog
   lastBrief: null,
 };
+
+let nextEntryId = 1;
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,6 +32,9 @@ async function api(path, options = {}) {
   return body;
 }
 
+const postJson = (path, body) =>
+  api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
 const METRIC_NAMES = {
   registered_customers: "Registered customers",
   paying_customers: "Paying customers",
@@ -33,6 +43,9 @@ const METRIC_NAMES = {
   other: "Other",
 };
 const metricName = (m, label) => (m === "other" && label ? label : METRIC_NAMES[m] || m);
+const DOC_TYPES = { deck: "Deck", notes: "Notes", crm: "CRM" };
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const locationOf = (s) => s.loc_label.replace(s.filename, "").trim();
 
 function formatValue(m) {
   if (m.value === null || m.value === undefined) return esc(m.value_raw);
@@ -63,173 +76,119 @@ function highlight(text, quotes) {
   return html + esc(text.slice(pos));
 }
 
-// ---------------------------------------------------------------- companies
-
-async function loadHealth() {
-  try {
-    const h = await api("/api/health");
-    $("health").textContent = `Q&A: ${h.llm_chat_model} · Extraction: ${h.llm_extract_model}`;
-  } catch { $("health").textContent = "API unavailable"; }
-}
-
-async function loadCompanies() {
-  const companies = await api("/api/companies");
-  const list = $("company-list");
-  list.innerHTML = companies.length ? "" : '<li class="muted">No companies yet.</li>';
-  for (const c of companies) {
-    const li = document.createElement("li");
-    li.className = c.id === state.companyId ? "active" : "";
-    li.innerHTML = `<span>${esc(c.name)}</span><span class="muted small">${c.documents} docs</span>`;
-    li.onclick = () => selectCompany(c.id, c.name);
-    list.appendChild(li);
-  }
-}
-
-async function selectCompany(id, name) {
-  state.companyId = id;
-  state.companyName = name;
-  $("company-title").textContent = name;
-  $("upload-section").classList.remove("disabled");
-  for (const el of ["question", "ask-button", "brief-requirements", "brief-button"]) $(el).disabled = false;
-  $("upload-status").textContent = "";
-  $("brief-status").textContent = "";
-  renderChat();
-  await Promise.all([loadCompanies(), refreshCompanyData()]);
-}
-
-async function refreshCompanyData() {
-  if (!state.companyId) return;
-  const id = state.companyId;
-  const [docs, metrics, checks] = await Promise.all([
-    api(`/api/companies/${id}/documents`),
-    api(`/api/companies/${id}/metrics`),
-    api(`/api/companies/${id}/checks`),
-  ]);
-  if (id !== state.companyId) return; // user switched company meanwhile
-  renderDocuments(docs);
-  renderMetrics(metrics);
-  renderChecks(checks);
-}
-
-$("new-company-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const name = $("new-company-name").value.trim();
-  if (!name) return;
-  try {
-    const c = await api("/api/companies", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
-    });
-    $("new-company-name").value = "";
-    await selectCompany(c.id, c.name);
-  } catch (err) { alert(err.message); }
-};
-
-// ---------------------------------------------------------------- documents
-
-const DOC_TYPES = { deck: "Deck", notes: "Notes", crm: "CRM" };
-
-function renderDocuments(docs) {
-  const list = $("document-list");
-  if (!docs.length) { list.innerHTML = '<li class="muted">No documents yet.</li>'; return; }
-  list.innerHTML = docs.map((d) => `
-    <li>
-      <div class="doc-name">${esc(d.filename)}</div>
-      <div class="muted small">
-        <span class="badge">${esc(DOC_TYPES[d.doc_type] || d.doc_type)}</span>
-        ${esc(d.doc_date || "no date")} · ${d.chunks} chunks ·
-        <button type="button" class="link small" data-reextract="${d.id}">re-extract</button> ·
-        <button type="button" class="link small" data-delete="${d.id}" data-name="${esc(d.filename)}">remove</button>
-      </div>
-    </li>`).join("");
-  list.querySelectorAll("[data-reextract]").forEach((btn) => {
-    btn.onclick = async () => {
-      btn.disabled = true;
-      setStatus("upload-status", "Extracting metrics…");
-      try {
-        const r = await api(`/api/documents/${btn.dataset.reextract}/extract`, { method: "POST" });
-        setStatus("upload-status", extractionText(r), r.status === "ok" ? "ok" : "error");
-        await refreshCompanyData();
-      } catch (err) { setStatus("upload-status", err.message, "error"); }
-      btn.disabled = false;
-    };
-  });
-  bindDeleteButtons(list);
-}
-
-function bindDeleteButtons(list) {
-  list.querySelectorAll("[data-delete]").forEach((btn) => {
-    btn.onclick = async () => {
-      if (!confirm(`Remove ${btn.dataset.name}? Its chunks and metrics are deleted too.`)) return;
-      try {
-        await api(`/api/documents/${btn.dataset.delete}`, { method: "DELETE" });
-        setStatus("upload-status", `Removed ${btn.dataset.name}.`, "ok");
-        await Promise.all([loadCompanies(), refreshCompanyData()]);
-      } catch (err) { setStatus("upload-status", err.message, "error"); }
-    };
-  });
-}
-
-function setStatus(id, text, kind = "") {
-  const el = $(id);
-  el.textContent = text;
-  el.className = `status ${kind}`;
-}
-
-function extractionText(x) {
-  if (!x) return "";
-  if (x.status === "ok") {
-    const dropped = x.dropped.length ? `, ${x.dropped.length} dropped (failed quote check)` : "";
-    return `Metrics: ${x.kept} extracted${dropped}.`;
-  }
-  return `Metric extraction failed: ${x.error}`;
-}
-
-$("upload-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const file = $("upload-file").files[0];
-  if (!file || !state.companyId) return;
-  const form = new FormData();
-  form.append("file", file);
-  form.append("doc_type", $("upload-type").value);
-  if ($("upload-date").value) form.append("doc_date", $("upload-date").value);
-  $("upload-button").disabled = true;
-  setStatus("upload-status", `Uploading ${file.name} and extracting metrics…`);
-  try {
-    const r = await api(`/api/companies/${state.companyId}/documents`, { method: "POST", body: form });
-    const replaced = r.replaced ? " (replaced the previous version)" : "";
-    const ok = !r.extraction || r.extraction.status === "ok";
-    setStatus("upload-status", `Stored ${r.filename}${replaced}: ${r.chunks} chunks.\n${extractionText(r.extraction)}`,
-      ok ? "ok" : "error");
-    $("upload-form").reset();
-    await Promise.all([loadCompanies(), refreshCompanyData()]);
-  } catch (err) {
-    setStatus("upload-status", err.message, "error");
-  } finally {
-    $("upload-button").disabled = false;
-  }
-};
-
-// ---------------------------------------------------------------- metrics & checks
-
 function sourceSpan(s) {
   return `<span class="src" title="${esc(s.quote)}">${esc(s.loc_label)}</span>`;
 }
 
-function renderMetrics(metrics) {
-  if (!metrics.length) { $("metrics").innerHTML = '<div class="muted">No metrics extracted yet.</div>'; return; }
-  const rows = metrics.map((m) => `
-    <tr>
-      <td>${esc(metricName(m.metric, m.metric_label))}</td>
-      <td class="num">${formatValue(m)}</td>
-      <td class="num">${m.as_of_date ? esc(m.as_of_date) : '<span class="badge warn">unclear basis</span>'}</td>
-      <td>${sourceSpan(m)}</td>
-    </tr>`).join("");
-  $("metrics").innerHTML = `
-    <table>
-      <thead><tr><th>Metric</th><th>Value</th><th>As of</th><th>Source</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div class="muted small" style="margin-top:6px">Hover a source to see the exact quote.</div>`;
+// ---------------------------------------------------------------- shared data
+
+function setCurrent(company) {
+  state.current = company;
+  $("current-company").textContent = company ? company.name : "None yet";
+}
+
+async function loadCompanies() {
+  state.companies = await api("/api/companies");
+}
+
+async function loadIssues() {
+  state.issues = await api("/api/issues");
+  const total = state.issues.reduce((sum, c) => sum + c.total, 0);
+  $("issues-badge").textContent = total;
+  $("issues-badge").hidden = !total;
+}
+
+// Issues are computed by the server on every request, so re-fetching keeps everything current.
+async function refreshAfterChange() {
+  await Promise.all([loadCompanies(), loadIssues()]);
+  await renderDrawer();
+}
+
+async function loadHealth() {
+  try {
+    const h = await api("/api/health");
+    $("health").textContent = `Q&A: ${h.llm_chat_model}\nExtraction: ${h.llm_extract_model}`;
+    $("health").style.whiteSpace = "pre-line";
+  } catch { $("health").textContent = "API unavailable"; }
+}
+
+// ---------------------------------------------------------------- conversation
+
+function pushEntry(entry) {
+  entry.id = nextEntryId++;
+  state.entries.push(entry);
+  renderChat();
+  return entry;
+}
+
+function updateEntry(entry, fields) {
+  for (const key of ["pending", "error", "answer", "lines", "brief"]) delete entry[key];
+  Object.assign(entry, fields);
+  renderChat();
+}
+
+function renderChat() {
+  const chat = $("chat");
+  if (!state.entries.length) {
+    chat.innerHTML = `<div class="empty-state">
+      <h1>What would you like to know?</h1>
+      Ask about a company by name, or switch to Upload to add a file.
+      Every answer shows the source text it comes from.</div>`;
+    return;
+  }
+  chat.innerHTML = state.entries.map(entryHtml).join("");
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function entryHtml(e) {
+  if (e.kind === "user") return `<div class="question">${esc(e.text)}</div>`;
+  if (e.pending) return `<div class="answer pending">${esc(e.pending)}</div>`;
+  if (e.error) return `<div class="answer error">${esc(e.error)}</div>`;
+  if (e.kind === "answer") {
+    return `<div class="turn"><div class="answering-about">Answering about: <b>${esc(e.company.name)}</b></div>
+      ${answerHtml(e.answer, e.id)}</div>`;
+  }
+  if (e.kind === "choose") {
+    const buttons = e.companies.map((c) => `<button type="button" class="secondary"
+      data-choose="${e.id}" data-company="${c.id}" ${e.chosen ? "disabled" : ""}>${esc(c.name)}</button>`).join("");
+    const none = e.companies.length ? "" : `<div class="muted small">No companies yet. Switch to Upload to add a file first.</div>`;
+    return `<div class="answer">${esc(e.message)}<div class="choices">${buttons}</div>${none}</div>`;
+  }
+  if (e.kind === "note") {
+    const lines = e.lines.map((l) => `<div class="note-line">${esc(l.text)}</div>`).join("");
+    const link = e.issuesCompany ? `<div class="answer-foot"><button type="button" class="link small"
+      data-open-issues="${e.issuesCompany}">View issues</button></div>` : "";
+    return `<div class="answer">${lines}${link}</div>`;
+  }
+  if (e.kind === "brief") {
+    return `<div class="answer">Brief for <b>${esc(e.brief.company)}</b> is ready.
+      <div class="answer-foot"><button type="button" class="link small" data-open-brief="${e.id}">Open brief</button></div></div>`;
+  }
+  return "";
+}
+
+function evidenceHtml(evidence, supports) {
+  return evidence.map((e) => `
+    <div class="evidence-item">
+      <div class="evidence-loc"><b>${esc(e.filename)}</b> · ${esc(locationOf(e))}
+        ${e.doc_date ? ` · material date ${esc(e.doc_date)}` : ""}${supports ? ` · ${supports(e)}` : ""}</div>
+      <div class="evidence-text">${highlight(e.chunk_text, e.quotes)}</div>
+    </div>`).join("");
+}
+
+// One evidence panel per group of claims that share a source passage, so no passage appears twice.
+function claimGroupHtml(a, group, id) {
+  const open = state.openEvidence.has(id);
+  const show = `Show evidence (${group.evidence.length})`;
+  // Claims need numbers only when a passage supports some of the group's claims but not all.
+  const numbered = group.evidence.some((e) => e.claims.length < group.claims.length);
+  const num = (i) => group.claims.indexOf(i) + 1;
+  const texts = group.claims.map((i) => `<div class="claim-text">
+    ${numbered ? `<span class="claim-num">${num(i)}</span> ` : ""}${esc(a.claims[i].text)}</div>`).join("");
+  const supports = numbered ? (e) => `supports ${e.claims.map(num).join(", ")}` : null;
+  return `<div class="claim">${texts}
+    <div><button type="button" class="link small" data-toggle="${id}" data-show="${show}">${open ? "Hide evidence" : show}</button></div>
+    <div class="evidence" id="${id}" ${open ? "" : "hidden"}>${evidenceHtml(group.evidence, supports)}</div></div>`;
 }
 
 function conflictHtml(c) {
@@ -240,80 +199,8 @@ function conflictHtml(c) {
     ${c.values.length} different values. Not resolved — check the sources.${sources}</div>`;
 }
 
-function renderChecks(checks) {
-  const parts = [];
-  parts.push(`<div class="check-group"><div class="box ${checks.conflicts.length ? "danger" : ""}">
-    <div class="box-title">Conflicts (${checks.conflicts.length})</div>
-    ${checks.conflicts.length ? checks.conflicts.map(conflictHtml).join("<hr>") : '<span class="muted">None detected.</span>'}
-  </div></div>`);
-  parts.push(`<div class="check-group"><div class="box ${checks.missing.length ? "warn" : ""}">
-    <div class="box-title">Missing key metrics (${checks.missing.length})</div>
-    ${checks.missing.length ? `<ul>${checks.missing.map((m) =>
-      `<li>${esc(metricName(m))}: Not found in the provided materials</li>`).join("")}</ul>` : '<span class="muted">None.</span>'}
-  </div></div>`);
-  if (checks.unclear_basis.length) {
-    parts.push(`<div class="check-group"><div class="box warn">
-      <div class="box-title">Unclear basis (${checks.unclear_basis.length})</div>
-      <ul>${checks.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.value_raw)}
-        — ${esc(u.reason)} (${sourceSpan(u)})</li>`).join("")}</ul>
-    </div></div>`);
-  }
-  $("checks").innerHTML = parts.join("");
-}
-
-// ---------------------------------------------------------------- Q&A
-
-function chatEntries() {
-  return (state.chats[state.companyId] ||= []);
-}
-
-function renderChat() {
-  const chat = $("chat");
-  const entries = chatEntries();
-  if (!entries.length) {
-    chat.innerHTML = '<div class="empty-state">Ask a question about this company, or try a suggestion below.</div>';
-    return;
-  }
-  chat.innerHTML = entries.map((e, i) => `
-    <div class="question">${esc(e.question)}</div>
-    ${e.pending ? '<div class="answer pending">Searching the materials and checking sources…</div>'
-      : e.error ? `<div class="answer error">${esc(e.error)}</div>`
-      : answerHtml(e.answer, i)}`).join("");
-  chat.querySelectorAll("[data-toggle]").forEach((btn) => {
-    btn.onclick = () => {
-      const box = document.getElementById(btn.dataset.toggle);
-      box.hidden = !box.hidden;
-      btn.textContent = box.hidden ? btn.dataset.show : "Hide evidence";
-    };
-  });
-  chat.scrollTop = chat.scrollHeight;
-}
-
-function evidenceHtml(evidence, supports) {
-  return evidence.map((e) => `
-    <div class="evidence-item">
-      <div class="evidence-loc"><b>${esc(e.filename)}</b> · ${esc(e.loc_label.replace(e.filename, "").trim())}
-        ${e.doc_date ? ` · material date ${esc(e.doc_date)}` : ""}${supports ? ` · ${supports(e)}` : ""}</div>
-      <div class="evidence-text">${highlight(e.chunk_text, e.quotes)}</div>
-    </div>`).join("");
-}
-
-// One evidence panel per group of claims that share a source passage, so no passage appears twice.
-function claimGroupHtml(a, group, id) {
-  const label = `Show evidence (${group.evidence.length})`;
-  // Claims need numbers only when a passage supports some of the group's claims but not all.
-  const numbered = group.evidence.some((e) => e.claims.length < group.claims.length);
-  const num = (i) => group.claims.indexOf(i) + 1;
-  const texts = group.claims.map((i) => `<div class="claim-text">
-    ${numbered ? `<span class="claim-num">${num(i)}</span> ` : ""}${esc(a.claims[i].text)}</div>`).join("");
-  const supports = numbered ? (e) => `supports ${e.claims.map(num).join(", ")}` : null;
-  return `<div class="claim">${texts}
-    <div><button type="button" class="link small" data-toggle="${id}" data-show="${label}">${label}</button></div>
-    <div class="evidence" id="${id}" hidden>${evidenceHtml(group.evidence, supports)}</div></div>`;
-}
-
-function answerHtml(a, index) {
-  const claims = a.evidence_groups.map((g, j) => claimGroupHtml(a, g, `ev-${index}-${j}`)).join("");
+function answerHtml(a, entryId) {
+  const claims = a.evidence_groups.map((g, j) => claimGroupHtml(a, g, `ev-${entryId}-${j}`)).join("");
   const open = a.open_items.length ? `<div class="box warn"><div class="box-title">Open items</div>
     <ul>${a.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>` : "";
   const conflicts = a.conflicts.length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
@@ -329,62 +216,481 @@ function answerHtml(a, index) {
   </div>`;
 }
 
+$("chat").addEventListener("click", (e) => {
+  const button = e.target.closest("button");
+  if (!button) return;
+  if (button.dataset.toggle) {
+    const box = document.getElementById(button.dataset.toggle);
+    box.hidden = !box.hidden;
+    button.textContent = box.hidden ? button.dataset.show : "Hide evidence";
+    if (box.hidden) state.openEvidence.delete(button.dataset.toggle);
+    else state.openEvidence.add(button.dataset.toggle);
+  } else if (button.dataset.choose) {
+    chooseCompany(Number(button.dataset.choose), Number(button.dataset.company));
+  } else if (button.dataset.openIssues) {
+    openDrawer({ view: "issues", companyId: Number(button.dataset.openIssues) });
+  } else if (button.dataset.openBrief) {
+    showBrief(state.entries.find((x) => x.id === Number(button.dataset.openBrief)).brief);
+  }
+});
+
+// ---------------------------------------------------------------- ask
+
+function setAsking(busy) {
+  $("ask-button").disabled = busy;
+  document.querySelectorAll("#suggestions .chip").forEach((chip) => { chip.disabled = busy; });
+}
+
 async function ask(question) {
-  if (!question || !state.companyId) return;
-  const companyId = state.companyId;
-  const entry = { question, pending: true };
-  chatEntries().push(entry);
-  renderChat();
+  if (!question || $("ask-button").disabled) return;
+  pushEntry({ kind: "user", text: question });
   $("question").value = "";
-  $("ask-button").disabled = true;
+  const entry = pushEntry({ kind: "answer", pending: "Searching the materials and checking sources…" });
+  setAsking(true);
   try {
-    entry.answer = await api(`/api/companies/${companyId}/ask`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }),
-    });
+    const r = await postJson("/api/ask", { question, last_company_id: state.current ? state.current.id : null });
+    if (r.resolution === "answered") {
+      setCurrent(r.company);
+      updateEntry(entry, { company: r.company, answer: r.answer });
+    } else {
+      updateEntry(entry, { kind: "choose", question, message: r.message, companies: r.companies });
+    }
   } catch (err) {
-    entry.error = err.message;
+    updateEntry(entry, { error: err.message });
   } finally {
-    entry.pending = false;
-    $("ask-button").disabled = false;
-    if (companyId === state.companyId) renderChat();
+    setAsking(false);
   }
 }
 
-$("ask-form").onsubmit = (e) => { e.preventDefault(); ask($("question").value.trim()); };
+// The user picked a company by hand, so name matching is skipped for this question.
+async function chooseCompany(entryId, companyId) {
+  const choice = state.entries.find((x) => x.id === entryId);
+  const company = choice.companies.find((c) => c.id === companyId);
+  choice.chosen = true;
+  setCurrent(company);
+  const entry = pushEntry({ kind: "answer", pending: "Searching the materials and checking sources…" });
+  setAsking(true);
+  try {
+    const answer = await postJson(`/api/companies/${company.id}/ask`, { question: choice.question });
+    updateEntry(entry, { company, answer });
+  } catch (err) {
+    updateEntry(entry, { error: err.message });
+  } finally {
+    setAsking(false);
+  }
+}
+
+$("ask-pane").onsubmit = (e) => { e.preventDefault(); ask($("question").value.trim()); };
 $("question").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask($("question").value.trim()); }
 });
 document.querySelectorAll("#suggestions .chip").forEach((chip) => {
-  chip.onclick = () => { if (state.companyId) ask(chip.textContent); };
+  chip.onclick = () => ask(chip.textContent);
+});
+
+function setMode(mode) {
+  $("mode-ask").classList.toggle("active", mode === "ask");
+  $("mode-upload").classList.toggle("active", mode === "upload");
+  $("mode-ask").setAttribute("aria-pressed", mode === "ask");
+  $("mode-upload").setAttribute("aria-pressed", mode === "upload");
+  $("ask-pane").hidden = mode !== "ask";
+  $("upload-pane").hidden = mode !== "upload";
+}
+$("mode-ask").onclick = () => { setMode("ask"); $("question").focus(); };
+$("mode-upload").onclick = () => setMode("upload");
+
+// ---------------------------------------------------------------- upload
+
+const NEW_COMPANY = "new";
+
+async function analyzeFile(file) {
+  const zone = $("dropzone");
+  const text = $("dropzone-text");
+  const idle = text.innerHTML;
+  zone.classList.add("busy");
+  text.textContent = `Reading ${file.name}…`;
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const suggestion = await api("/api/uploads/analyze", { method: "POST", body: form });
+    await loadCompanies();
+    openUploadDialog(file, suggestion);
+  } catch (err) {
+    pushEntry({ kind: "note", lines: [{ text: `Could not read ${file.name}: ${err.message}` }] });
+  } finally {
+    zone.classList.remove("busy");
+    text.innerHTML = idle;
+    $("upload-file").value = "";
+  }
+}
+
+function companyHint(c) {
+  if (c.source === "none") return "No company recognized in this file. Please choose one.";
+  const from = { "file name": "from the file name", "file content": "from the file's content", model: "by the model, from the file's content" };
+  return `Suggested: ${c.name} (${from[c.source]}).`;
+}
+
+function openUploadDialog(file, s) {
+  state.upload = { file, suggestion: s };
+  const options = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("upload-company").innerHTML = `<option value="">Choose a company…</option>${options}
+    <option value="${NEW_COMPANY}">+ New company…</option>`;
+  $("upload-company").value = s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : "";
+  $("upload-new-company").value = s.company.existing ? "" : s.company.name || "";
+  $("upload-filename").textContent = s.filename;
+  $("upload-company-why").textContent = companyHint(s.company);
+
+  // A CSV can only be CRM records, and CRM records can only be a CSV.
+  const isCsv = s.filename.toLowerCase().endsWith(".csv");
+  for (const option of $("upload-type").options) option.disabled = (option.value === "crm") !== isCsv;
+  $("upload-type").value = s.doc_type;
+  $("upload-type-why").textContent = `Suggested from: ${s.doc_type_why}.`;
+  $("upload-date").value = s.doc_date || "";
+  $("upload-date-why").textContent = s.doc_date ? `Suggested from: ${s.doc_date_why}.` : "No date found. Add one if you know it.";
+
+  syncNewCompanyField();
+  renderUploadWarnings(s.warnings);
+  $("upload-dialog").showModal();
+}
+
+function chosenCompanyName() {
+  const value = $("upload-company").value;
+  if (value === NEW_COMPANY) return $("upload-new-company").value.trim();
+  const company = state.companies.find((c) => String(c.id) === value);
+  return company ? company.name : "";
+}
+
+function syncNewCompanyField() {
+  $("upload-new-company").hidden = $("upload-company").value !== NEW_COMPANY;
+}
+
+function renderUploadWarnings(warnings) {
+  $("upload-warnings").innerHTML = warnings.map((w) =>
+    `<div class="warning" role="alert" data-kind="${esc(w.kind)}">${esc(w.message)}</div>`).join("");
+  const name = chosenCompanyName();
+  $("upload-confirm").disabled = !name;
+  $("upload-confirm").textContent = !name ? "Add" : warnings.length ? "Add anyway" : `Add to ${name}`;
+}
+
+let warningRequest = 0;
+
+async function refreshUploadWarnings() {
+  if (!state.upload) return;
+  const request = ++warningRequest;
+  const s = state.upload.suggestion;
+  const warnings = await postJson("/api/uploads/warnings", {
+    chosen_company: chosenCompanyName(),
+    suggested_company: s.company.name,
+    mentioned: s.mentioned.map((m) => m.name),
+    filename: s.filename,
+  }).catch(() => []);
+  if (request === warningRequest) renderUploadWarnings(warnings);
+}
+
+$("upload-company").onchange = () => { syncNewCompanyField(); refreshUploadWarnings(); };
+let newCompanyTimer = null;
+$("upload-new-company").oninput = () => {
+  renderUploadWarnings([]);
+  clearTimeout(newCompanyTimer);
+  newCompanyTimer = setTimeout(refreshUploadWarnings, 250);
+};
+$("upload-cancel").onclick = () => $("upload-dialog").close();
+$("upload-dialog").addEventListener("close", () => { state.upload = null; });
+
+$("upload-form").onsubmit = (e) => {
+  e.preventDefault();
+  const name = chosenCompanyName();
+  if (!name || !state.upload) return;
+  const details = {
+    file: state.upload.file,
+    companyValue: $("upload-company").value,
+    companyName: name,
+    docType: $("upload-type").value,
+    docDate: $("upload-date").value,
+  };
+  $("upload-dialog").close();
+  storeFile(details);
+};
+
+async function storeFile({ file, companyValue, companyName, docType, docDate }) {
+  pushEntry({ kind: "user", text: `Upload ${file.name} to ${companyName}` });
+  const entry = pushEntry({ kind: "note", pending: `Storing ${file.name} and extracting metrics…` });
+  try {
+    const company = companyValue === NEW_COMPANY
+      ? await postJson("/api/companies", { name: companyName })
+      : { id: Number(companyValue), name: companyName };
+    await loadIssues();
+    const before = state.issues.find((c) => c.id === company.id);
+
+    const form = new FormData();
+    form.append("file", file);
+    form.append("doc_type", docType);
+    if (docDate) form.append("doc_date", docDate);
+    const r = await api(`/api/companies/${company.id}/documents`, { method: "POST", body: form });
+
+    setCurrent(company);
+    await refreshAfterChange();
+    const after = state.issues.find((c) => c.id === company.id);
+    const lines = [{ text: `Stored ${r.filename} in ${company.name}${r.replaced ? " (replaced the previous version)" : ""}: ${plural(r.chunks, "chunk")}.` }];
+    lines.push({ text: extractionText(r.extraction) });
+    const changed = before && before.total !== after.total && companyValue !== NEW_COMPANY;
+    lines.push({ text: `${company.name} now has ${plural(after.total, "issue")}${changed ? ` (was ${before.total})` : ""}.` });
+    updateEntry(entry, { lines, issuesCompany: company.id });
+    setMode("ask");
+  } catch (err) {
+    updateEntry(entry, { error: `${file.name} was not stored: ${err.message}` });
+    await refreshAfterChange();
+  }
+}
+
+function extractionText(x) {
+  if (!x) return "";
+  if (x.status === "ok") {
+    const dropped = x.dropped.length ? `, ${x.dropped.length} dropped (failed quote check)` : "";
+    return `Metrics: ${x.kept} extracted${dropped}.`;
+  }
+  return `Metric extraction failed: ${x.error}`;
+}
+
+$("upload-file").onchange = () => { if ($("upload-file").files[0]) analyzeFile($("upload-file").files[0]); };
+const zone = $("dropzone");
+["dragenter", "dragover"].forEach((type) => zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.add("over"); }));
+["dragleave", "drop"].forEach((type) => zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.remove("over"); }));
+zone.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) analyzeFile(e.dataTransfer.files[0]); });
+
+// ---------------------------------------------------------------- drawer: Library and Issues
+
+function openDrawer(drawer) {
+  state.drawer = drawer;
+  renderDrawer();
+}
+
+function closeDrawer() {
+  state.drawer = null;
+  renderDrawer();
+}
+
+function toggleDrawer(view) {
+  if (state.drawer && state.drawer.view === view) closeDrawer();
+  else openDrawer({ view });
+}
+
+$("nav-library").onclick = () => toggleDrawer("library");
+$("nav-issues").onclick = () => toggleDrawer("issues");
+$("drawer-close").onclick = closeDrawer;
+
+let drawerRequest = 0;
+
+async function renderDrawer() {
+  const drawer = state.drawer;
+  $("drawer").hidden = !drawer;
+  $("nav-library").classList.toggle("active", !!drawer && drawer.view === "library");
+  $("nav-issues").classList.toggle("active", !!drawer && drawer.view === "issues");
+  if (!drawer) return;
+  const request = ++drawerRequest;
+  try {
+    const html = drawer.view === "library" ? await libraryHtml()
+      : drawer.companyId ? await issueDetailHtml(drawer.companyId) : await issueListHtml();
+    if (request !== drawerRequest) return; // the user moved on, or something newer is rendering
+    $("drawer-title").textContent = drawer.view === "library" ? "Library" : "Issues";
+    $("drawer-body").innerHTML = html;
+  } catch (err) {
+    if (request === drawerRequest) $("drawer-body").innerHTML = `<div class="answer error">${esc(err.message)}</div>`;
+  }
+}
+
+async function libraryHtml() {
+  await loadCompanies();
+  if (!state.companies.length) return '<div class="muted">No companies yet. Switch to Upload to add a file.</div>';
+  const cards = await Promise.all(state.companies.map(async (c) => {
+    const open = state.openLibrary.has(c.id);
+    const [docs, metrics] = await Promise.all([
+      api(`/api/companies/${c.id}/documents`),
+      open ? api(`/api/companies/${c.id}/metrics`) : null,
+    ]);
+    return `<div class="company-card">
+      <button type="button" class="company-head" data-library-company="${c.id}" aria-expanded="${open}">
+        <span>${esc(c.name)}</span>
+        <span class="muted">${plural(docs.length, "file")} · ${open ? "hide" : "show"} key metrics</span>
+      </button>
+      ${docs.length ? `<ul class="company-files">${docs.map(documentHtml).join("")}</ul>` : ""}
+      ${open ? `<div class="company-metrics"><div class="section-title">Key metrics</div>${metricsHtml(metrics)}</div>` : ""}
+    </div>`;
+  }));
+  return cards.join("");
+}
+
+function documentHtml(d) {
+  return `<li>
+    <div class="doc-name">${esc(d.filename)}</div>
+    <div class="muted small">
+      <span class="badge">${esc(DOC_TYPES[d.doc_type] || d.doc_type)}</span>
+      ${esc(d.doc_date || "no date")} · ${plural(d.chunks, "chunk")} ·
+      <button type="button" class="link small" data-reextract="${d.id}" data-name="${esc(d.filename)}">re-extract</button> ·
+      <button type="button" class="link small danger-link" data-delete="${d.id}" data-name="${esc(d.filename)}">delete</button>
+    </div>
+  </li>`;
+}
+
+function metricsHtml(metrics) {
+  if (!metrics.length) return '<div class="muted">No metrics extracted yet.</div>';
+  const rows = metrics.map((m) => `
+    <tr>
+      <td>${esc(metricName(m.metric, m.metric_label))}</td>
+      <td class="num">${formatValue(m)}</td>
+      <td class="num">${m.as_of_date ? esc(m.as_of_date) : '<span class="badge warn">unclear basis</span>'}</td>
+      <td>${sourceSpan(m)}</td>
+    </tr>`).join("");
+  return `<table>
+      <thead><tr><th>Metric</th><th>Value</th><th>As of</th><th>Source</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="muted small" style="margin-top:6px">Hover a source to see the exact quote.</div>`;
+}
+
+async function issueListHtml() {
+  await loadIssues();
+  if (!state.issues.length) return '<div class="muted">No companies yet. Switch to Upload to add a file.</div>';
+  return state.issues.map((c) => `
+    <button type="button" class="issue-row" data-issues-company="${c.id}">
+      <span>${esc(c.name)} · ${plural(c.total, "issue")}</span>
+      <span class="muted">${plural(c.conflicts, "conflict")}, ${c.missing} missing, ${c.unclear_basis} unclear</span>
+    </button>`).join("");
+}
+
+function sourceLine(s, extra = "") {
+  return `<div class="source-line">
+    <span class="source-value">${esc(s.value_raw)}</span> ${extra}
+    <div class="source-loc">${esc(s.filename)} · ${esc(locationOf(s))}</div>
+    <div class="quote">“${esc(s.quote)}”</div>
+  </div>`;
+}
+
+async function issueDetailHtml(companyId) {
+  const [checks] = await Promise.all([api(`/api/companies/${companyId}/checks`), loadIssues()]);
+  const company = state.issues.find((c) => c.id === companyId);
+  const conflicts = checks.conflicts.map((c) => `
+    <div class="issue-card conflict">
+      <div class="issue-title">${esc(metricName(c.metric, c.metric_label))} as of ${esc(c.as_of_date)}</div>
+      <div class="muted small">${c.values.length} different values. Not resolved — check the sources.</div>
+      ${c.sources.map((s) => sourceLine(s)).join("")}
+    </div>`).join("");
+  const missing = checks.missing.map((m) => `
+    <div class="issue-card">
+      <div class="issue-title">${esc(metricName(m))}</div>
+      <div class="muted small">Not found in the provided materials.</div>
+    </div>`).join("");
+  const unclear = checks.unclear_basis.map((u) => `
+    <div class="issue-card unclear">
+      <div class="issue-title">${esc(metricName(u.metric, u.metric_label))}</div>
+      <div class="muted small">${esc(u.reason)}</div>
+      ${sourceLine(u)}
+    </div>`).join("");
+  const group = (title, count, body) => `<div class="drawer-section">
+    <div class="section-title">${title} (${count})</div>${body || '<div class="muted small">None.</div>'}</div>`;
+  return `<button type="button" class="link small" data-issues-back="1">← All companies</button>
+    <h2 class="dialog-title" style="margin:10px 0 14px">${esc(company.name)} · ${plural(company.total, "issue")}</h2>
+    ${group("Conflicts", checks.conflicts.length, conflicts)}
+    ${group("Missing", checks.missing.length, missing)}
+    ${group("Unclear basis", checks.unclear_basis.length, unclear)}`;
+}
+
+$("drawer-body").addEventListener("click", async (e) => {
+  const button = e.target.closest("button");
+  if (!button) return;
+  const data = button.dataset;
+  if (data.libraryCompany) {
+    const id = Number(data.libraryCompany);
+    if (state.openLibrary.has(id)) state.openLibrary.delete(id);
+    else state.openLibrary.add(id);
+    renderDrawer();
+  } else if (data.issuesCompany) {
+    openDrawer({ view: "issues", companyId: Number(data.issuesCompany) });
+  } else if (data.issuesBack) {
+    openDrawer({ view: "issues" });
+  } else if (data.delete) {
+    if (!confirm(`Delete ${data.name}? Its chunks and metrics are deleted too.`)) return;
+    try {
+      await api(`/api/documents/${data.delete}`, { method: "DELETE" });
+      pushEntry({ kind: "note", lines: [{ text: `Deleted ${data.name}.` }] });
+      await refreshAfterChange();
+    } catch (err) {
+      pushEntry({ kind: "note", error: `Could not delete ${data.name}: ${err.message}` });
+    }
+  } else if (data.reextract) {
+    button.disabled = true;
+    try {
+      const r = await api(`/api/documents/${data.reextract}/extract`, { method: "POST" });
+      pushEntry({ kind: "note", lines: [{ text: `${data.name}: ${extractionText(r)}` }] });
+      await refreshAfterChange();
+    } catch (err) {
+      pushEntry({ kind: "note", error: `Could not re-extract ${data.name}: ${err.message}` });
+    }
+    button.disabled = false;
+  }
 });
 
 // ---------------------------------------------------------------- brief
 
-$("brief-form").onsubmit = async (e) => {
+async function openBriefDialog() {
+  await loadCompanies().catch(() => {});
+  renderBriefDialog();
+  $("brief-dialog").showModal();
+  if (state.current) $("brief-requirements").focus();
+}
+
+function renderBriefDialog() {
+  const company = state.current;
+  $("brief-requirements-label").hidden = !company;
+  $("brief-generate").hidden = !company;
+  $("brief-company").innerHTML = company
+    ? `<div class="muted small">Company</div><div class="current-name">${esc(company.name)}</div>`
+    : state.companies.length
+      ? `Which company do you mean?<div class="choices">${state.companies.map((c) =>
+        `<button type="button" class="secondary" data-brief-company="${c.id}">${esc(c.name)}</button>`).join("")}</div>`
+      : '<div class="muted">No companies yet. Switch to Upload to add a file first.</div>';
+}
+
+$("brief-button").onclick = openBriefDialog;
+$("brief-cancel").onclick = () => $("brief-dialog").close();
+$("brief-company").addEventListener("click", (e) => {
+  const button = e.target.closest("[data-brief-company]");
+  if (!button) return;
+  setCurrent(state.companies.find((c) => c.id === Number(button.dataset.briefCompany)));
+  renderBriefDialog();
+  $("brief-requirements").focus();
+});
+
+$("brief-form").onsubmit = (e) => {
   e.preventDefault();
-  if (!state.companyId) return;
+  if (!state.current) return;
+  const company = state.current;
+  const requirements = $("brief-requirements").value.trim();
+  $("brief-dialog").close();
+  generateBrief(company, requirements);
+};
+
+async function generateBrief(company, requirements) {
+  pushEntry({ kind: "user", text: `Generate a brief for ${company.name}${requirements ? `: ${requirements}` : ""}` });
+  const entry = pushEntry({ kind: "brief", pending: "Writing the brief and checking every source…" });
   $("brief-button").disabled = true;
-  setStatus("brief-status", "Writing the brief and checking every source…");
   try {
-    const brief = await api(`/api/companies/${state.companyId}/brief`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirements: $("brief-requirements").value.trim() }),
-    });
-    state.lastBrief = brief;
-    setStatus("brief-status", "");
+    const brief = await postJson(`/api/companies/${company.id}/brief`, { requirements });
+    updateEntry(entry, { brief });
     showBrief(brief);
   } catch (err) {
-    setStatus("brief-status", err.message, "error");
+    updateEntry(entry, { error: err.message });
   } finally {
     $("brief-button").disabled = false;
   }
-};
+}
 
 function cites(citations) {
   return citations.map((c) => `<span class="src" title="${esc(c.quote)}">${esc(c.loc_label)}</span>`).join(", ");
 }
 
 function showBrief(b) {
+  state.lastBrief = b;
   const sections = b.sections.map((s) => `<h3>${esc(s.title)}</h3><ul>${s.items.map((i) =>
     `<li>${esc(i.text)} ${i.note ? `<span class="conflict-note">${esc(i.note)}</span> ` : ""}<span class="cite">[${cites(i.citations)}]</span></li>`).join("")}</ul>`).join("");
   const metrics = b.key_metrics.length ? `<table><thead><tr><th>Metric</th><th>Value</th><th>As of</th><th>Source</th></tr></thead>
@@ -416,7 +722,11 @@ function showBrief(b) {
 
 $("brief-close").onclick = () => { $("brief-overlay").hidden = true; };
 $("brief-overlay").onclick = (e) => { if (e.target === $("brief-overlay")) $("brief-overlay").hidden = true; };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("brief-overlay").hidden = true; });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("brief-overlay").hidden) $("brief-overlay").hidden = true;
+  else if (state.drawer && !document.querySelector("dialog[open]")) closeDrawer();
+});
 $("brief-copy").onclick = async () => {
   if (!state.lastBrief) return;
   try { await navigator.clipboard.writeText(state.lastBrief.markdown); $("brief-copy").textContent = "Copied"; }
@@ -435,5 +745,16 @@ $("brief-download").onclick = () => {
 
 // ---------------------------------------------------------------- start
 
-loadHealth();
-loadCompanies().catch((err) => { $("company-list").innerHTML = `<li class="status error">${esc(err.message)}</li>`; });
+async function start() {
+  renderChat();
+  setMode("ask");
+  loadHealth();
+  try {
+    await Promise.all([loadCompanies(), loadIssues()]);
+    if (!state.companies.length) setMode("upload");
+  } catch (err) {
+    pushEntry({ kind: "note", error: err.message });
+  }
+}
+
+start();

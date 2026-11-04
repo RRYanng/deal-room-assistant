@@ -49,6 +49,8 @@ Rules for the answer:
 - If the question is about a different company than the selected one, do not answer it with the
   selected company's data. Write no claims; add one open item saying the question is about another
   company and only the selected company's materials are available.
+- If the question names several companies, answer only the part about the selected company and add
+  one open item saying the other companies were not answered.
 - If something asked is not in the materials, do not write a claim for it. Add an open item
   in the form "<topic>: {NOT_FOUND}".
 

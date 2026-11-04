@@ -107,3 +107,11 @@ def test_real_brief_focus_traction_and_risks(db):
     assert brief["sections"] and all(i["citations"] for s in brief["sections"] for i in s["items"])
     assert [m["metric"] for m in brief["missing"]] == ["revenue"]
     assert [c["values"] for c in brief["conflicts"]] == [[60, 80]]
+
+
+def test_real_model_finds_the_company_of_an_unmatched_file():
+    from app.intake import guess_company_with_model
+
+    text = ("SYNTHETIC SAMPLE. Northwind Dental - seed deck.\n\nNorthwind Dental sells scheduling software to "
+            "dentists. Our largest customer is Bright Smiles Clinic, and our investor is Oak Fund.")
+    assert guess_company_with_model("deck.txt", text, get_llm("chat")) == "Northwind Dental"
