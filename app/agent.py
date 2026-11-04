@@ -209,6 +209,44 @@ def related_checks(conn: sqlite3.Connection, company_id: int, chunk_ids: set[int
     return {"conflicts": conflicts, "unclear_basis": unclear}
 
 
+def group_evidence(claims: list[dict]) -> list[dict]:
+    """Group claims linked by a shared chunk, so the UI shows each source passage only once.
+
+    A display structure only: each claim keeps its own verified citations. A group sits at the
+    position of its first claim. `claims` values are indexes into the answer's claims.
+    """
+    groups: list[tuple[list[int], set[int]]] = []
+    for index, claim in enumerate(claims):
+        chunk_ids = {c["chunk_id"] for c in claim["citations"]}
+        touching = [g for g in groups if g[1] & chunk_ids]
+        if not touching:
+            groups.append(([index], chunk_ids))
+            continue
+        members, ids = touching[0]
+        for other in touching[1:]:
+            members += other[0]
+            ids |= other[1]
+            groups.remove(other)
+        members.append(index)
+        ids |= chunk_ids
+
+    result = []
+    for members, _ in groups:
+        members.sort()
+        evidence: dict[int, dict] = {}
+        for index in members:
+            for c in claims[index]["citations"]:
+                entry = evidence.setdefault(c["chunk_id"], {
+                    "chunk_id": c["chunk_id"], "filename": c["filename"], "loc_label": c["loc_label"],
+                    "doc_date": c["doc_date"], "chunk_text": c["chunk_text"], "quotes": [], "claims": []})
+                if c["quote"] not in entry["quotes"]:
+                    entry["quotes"].append(c["quote"])
+                if index not in entry["claims"]:
+                    entry["claims"].append(index)
+        result.append({"claims": members, "evidence": list(evidence.values())})
+    return result
+
+
 def answer_question(conn: sqlite3.Connection, company_id: int, question: str, llm: LLMClient) -> dict:
     company = conn.execute("SELECT name FROM companies WHERE id = ?", (company_id,)).fetchone()["name"]
     run = run_agent(conn, company_id, f"Selected company: {company}\nQuestion: {question}", llm)
@@ -227,7 +265,8 @@ def answer_question(conn: sqlite3.Connection, company_id: int, question: str, ll
 
     cited = {c["chunk_id"] for claim in claims for c in claim["citations"]}
     result = {"run_id": run["run_id"], "status": run["status"], "question": question,
-              "claims": claims, "open_items": open_items, "tool_calls": run["tool_calls"]}
+              "claims": claims, "evidence_groups": group_evidence(claims),
+              "open_items": open_items, "tool_calls": run["tool_calls"]}
     result |= related_checks(conn, company_id, cited)
     log_event(conn, run["run_id"], 0, "final", output={"claims": len(claims), "open_items": open_items})
     return result

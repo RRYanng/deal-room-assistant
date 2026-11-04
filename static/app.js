@@ -41,14 +41,26 @@ function formatValue(m) {
   return n;
 }
 
-// Highlight the quote inside the chunk text, tolerating whitespace differences.
-function highlight(text, quote) {
-  const words = String(quote || "").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return esc(text);
-  const pattern = new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"));
-  const m = pattern.exec(text);
-  if (!m) return esc(text);
-  return esc(text.slice(0, m.index)) + "<mark>" + esc(m[0]) + "</mark>" + esc(text.slice(m.index + m[0].length));
+// Highlight the quotes inside the chunk text, tolerating whitespace differences. Quotes may overlap.
+function highlight(text, quotes) {
+  const ranges = [];
+  for (const quote of quotes) {
+    const words = String(quote || "").trim().split(/\s+/).filter(Boolean);
+    if (!words.length) continue;
+    const pattern = new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"));
+    const m = pattern.exec(text);
+    if (m) ranges.push([m.index, m.index + m[0].length]);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  let html = "";
+  let pos = 0;
+  for (const [start, end] of ranges) {
+    if (end <= pos) continue;
+    const from = Math.max(start, pos);
+    html += esc(text.slice(pos, from)) + "<mark>" + esc(text.slice(from, end)) + "</mark>";
+    pos = end;
+  }
+  return html + esc(text.slice(pos));
 }
 
 // ---------------------------------------------------------------- companies
@@ -277,23 +289,31 @@ function renderChat() {
   chat.scrollTop = chat.scrollHeight;
 }
 
-function evidenceHtml(citations) {
-  return citations.map((c) => `
+function evidenceHtml(evidence, supports) {
+  return evidence.map((e) => `
     <div class="evidence-item">
-      <div class="evidence-loc"><b>${esc(c.filename)}</b> · ${esc(c.loc_label.replace(c.filename, "").trim())}
-        ${c.doc_date ? ` · material date ${esc(c.doc_date)}` : ""}</div>
-      <div class="evidence-text">${highlight(c.chunk_text, c.quote)}</div>
+      <div class="evidence-loc"><b>${esc(e.filename)}</b> · ${esc(e.loc_label.replace(e.filename, "").trim())}
+        ${e.doc_date ? ` · material date ${esc(e.doc_date)}` : ""}${supports ? ` · ${supports(e)}` : ""}</div>
+      <div class="evidence-text">${highlight(e.chunk_text, e.quotes)}</div>
     </div>`).join("");
 }
 
+// One evidence panel per group of claims that share a source passage, so no passage appears twice.
+function claimGroupHtml(a, group, id) {
+  const label = `Show evidence (${group.evidence.length})`;
+  // Claims need numbers only when a passage supports some of the group's claims but not all.
+  const numbered = group.evidence.some((e) => e.claims.length < group.claims.length);
+  const num = (i) => group.claims.indexOf(i) + 1;
+  const texts = group.claims.map((i) => `<div class="claim-text">
+    ${numbered ? `<span class="claim-num">${num(i)}</span> ` : ""}${esc(a.claims[i].text)}</div>`).join("");
+  const supports = numbered ? (e) => `supports ${e.claims.map(num).join(", ")}` : null;
+  return `<div class="claim">${texts}
+    <div><button type="button" class="link small" data-toggle="${id}" data-show="${label}">${label}</button></div>
+    <div class="evidence" id="${id}" hidden>${evidenceHtml(group.evidence, supports)}</div></div>`;
+}
+
 function answerHtml(a, index) {
-  const claims = a.claims.map((claim, j) => {
-    const id = `ev-${index}-${j}`;
-    const label = `Show evidence (${claim.citations.length})`;
-    return `<div class="claim">${esc(claim.text)}
-      <div><button type="button" class="link small" data-toggle="${id}" data-show="${label}">${label}</button></div>
-      <div class="evidence" id="${id}" hidden>${evidenceHtml(claim.citations)}</div></div>`;
-  }).join("");
+  const claims = a.evidence_groups.map((g, j) => claimGroupHtml(a, g, `ev-${index}-${j}`)).join("");
   const open = a.open_items.length ? `<div class="box warn"><div class="box-title">Open items</div>
     <ul>${a.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>` : "";
   const conflicts = a.conflicts.length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
@@ -366,7 +386,7 @@ function cites(citations) {
 
 function showBrief(b) {
   const sections = b.sections.map((s) => `<h3>${esc(s.title)}</h3><ul>${s.items.map((i) =>
-    `<li>${esc(i.text)} <span class="cite">[${cites(i.citations)}]</span></li>`).join("")}</ul>`).join("");
+    `<li>${esc(i.text)} ${i.note ? `<span class="conflict-note">${esc(i.note)}</span> ` : ""}<span class="cite">[${cites(i.citations)}]</span></li>`).join("")}</ul>`).join("");
   const metrics = b.key_metrics.length ? `<table><thead><tr><th>Metric</th><th>Value</th><th>As of</th><th>Source</th></tr></thead>
     <tbody>${b.key_metrics.map((m) => `<tr><td>${esc(metricName(m.metric))}</td><td class="num">${formatValue(m)}</td>
     <td class="num">${esc(m.as_of_date)}</td><td>${sourceSpan(m)}</td></tr>`).join("")}</tbody></table>`

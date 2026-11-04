@@ -5,7 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agent import answer_question, parse_json_object, run_tool
+from app.agent import answer_question, group_evidence, parse_json_object, run_tool
 from app.db import connect, init_db
 from app.llm import FakeLLM, LLMAuthError
 from app.logs import get_run_log
@@ -194,3 +194,61 @@ def test_ask_without_api_key_says_api_key_missing(client):
     app.dependency_overrides[get_chat_llm] = lambda: NoKey()
     r = client.post(f"/api/companies/{cid}/ask", json={"question": "q"})
     assert r.status_code == 503 and r.json()["detail"] == "API key missing: set ANTHROPIC_API_KEY in .env."
+
+
+# --- evidence groups --------------------------------------------------------------
+
+def cited(*chunks_and_quotes):
+    return {"text": "claim", "citations": [
+        {"chunk_id": chunk, "quote": quote, "filename": "f", "loc_label": f"f ¶{chunk}", "doc_date": None,
+         "chunk_text": f"text of {chunk}"} for chunk, quote in chunks_and_quotes]}
+
+
+def test_claims_citing_the_same_chunk_share_one_passage():
+    groups = group_evidence([cited((1, "first")), cited((1, "second"))])
+    assert len(groups) == 1
+    assert groups[0]["claims"] == [0, 1]
+    assert [(e["chunk_id"], e["quotes"], e["claims"]) for e in groups[0]["evidence"]] == \
+        [(1, ["first", "second"], [0, 1])]
+
+
+def test_claims_with_different_chunks_stay_separate():
+    groups = group_evidence([cited((1, "a")), cited((2, "b"))])
+    assert [(g["claims"], [e["chunk_id"] for e in g["evidence"]]) for g in groups] == [([0], [1]), ([1], [2])]
+
+
+def test_shared_chunks_link_claims_and_group_sits_at_its_first_claim():
+    # Claim 3 links the groups of claims 0 and 2; claim 1 stays alone and comes after them.
+    groups = group_evidence([cited((1, "a")), cited((5, "e")), cited((2, "b")), cited((1, "c"), (2, "d"))])
+    assert [g["claims"] for g in groups] == [[0, 2, 3], [1]]
+    first = {e["chunk_id"]: e["claims"] for e in groups[0]["evidence"]}
+    assert first == {1: [0, 3], 2: [2, 3]}
+
+
+def test_same_quote_repeated_is_kept_once():
+    groups = group_evidence([cited((1, "same"), (1, "same")), cited((1, "same"))])
+    assert groups[0]["evidence"][0]["quotes"] == ["same"]
+    assert groups[0]["evidence"][0]["claims"] == [0, 1]
+
+
+def test_answer_merges_evidence_but_keeps_each_claims_citations(sample):
+    conn, a, _ = sample
+    chunk = chunk_id_of(conn, "Ask for revenue figures")
+    fake = FakeLLM([FakeLLM.text(json.dumps({"claims": [
+        {"text": "The last meeting was on 2026-07-22.", "citations": [{"chunk_id": chunk, "quote": "2026-07-22"}]},
+        {"text": "The next step is to ask for revenue.",
+         "citations": [{"chunk_id": chunk, "quote": "Ask for revenue figures"}]},
+    ], "open_items": []}))])
+    result = answer_question(conn, a, "Last call?", fake)
+    assert [c["citations"][0]["quote"] for c in result["claims"]] == ["2026-07-22", "Ask for revenue figures"]
+    assert len(result["evidence_groups"]) == 1
+    evidence = result["evidence_groups"][0]["evidence"]
+    assert len(evidence) == 1
+    assert evidence[0]["quotes"] == ["2026-07-22", "Ask for revenue figures"]
+    assert "Ask for revenue figures" in evidence[0]["chunk_text"]
+
+
+def test_answer_without_claims_has_no_groups(sample):
+    conn, a, _ = sample
+    fake = FakeLLM([FakeLLM.text(json.dumps({"claims": [], "open_items": ["x: Not found in the provided materials"]}))])
+    assert answer_question(conn, a, "x?", fake)["evidence_groups"] == []

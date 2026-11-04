@@ -8,10 +8,12 @@ Two kinds of content, kept apart on purpose:
     Every bullet must cite a verbatim quote; bullets that fail the check are dropped.
 """
 
+import re
 import sqlite3
 from datetime import datetime, timezone
 
 from app.agent import NOT_FOUND, run_agent, verify_items
+from app.citations import normalize_ws
 from app.llm import LLMClient
 from app.logs import log_event
 from app.rules import KEY_METRICS, find_conflicts, get_metrics, missing_metrics, unclear_basis
@@ -57,6 +59,8 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
     open_items = [str(o).strip() for o in final.get("open_items") or [] if str(o).strip()]
     if run["status"] != "ok":
         open_items.append(f"The written sections are incomplete (agent status: {run['status']}).")
+    conflicts = find_conflicts(conn, company_id)
+    mark_traction_conflicts(sections, conflicts)
 
     brief = {
         "run_id": run["run_id"],
@@ -67,7 +71,7 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
         "key_metrics": key_metrics(conn, company_id),
         "recent_communications": recent_communications(conn, company_id),
         "missing": [{"metric": m, "text": f"{m}: {NOT_FOUND}"} for m in missing_metrics(conn, company_id)],
-        "conflicts": find_conflicts(conn, company_id),
+        "conflicts": conflicts,
         "unclear_basis": unclear_basis(conn, company_id),
         "open_items": open_items,
         "tool_calls": run["tool_calls"],
@@ -76,6 +80,37 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
               output={"sections": len(sections), "missing": [m["metric"] for m in brief["missing"]],
                       "conflicts": len(brief["conflicts"])})
     return brief
+
+
+def _quotes_value(quote: str, value_raw: str) -> bool:
+    """True if the quote states this value as a whole number or word: "60" is not in "2060" or "60.5"."""
+    pattern = rf"(?<![\w.,]){re.escape(normalize_ws(value_raw))}(?!\w|[.,]\d)"
+    return re.search(pattern, quote, re.IGNORECASE) is not None
+
+
+def _cites_conflict(item: dict, conflicts: list[dict]) -> bool:
+    """True if a citation quotes a conflicting value from the chunk that value was extracted from."""
+    return any(c["chunk_id"] == s["chunk_id"] and _quotes_value(c["quote"], s["value_raw"])
+               for c in item["citations"] for conflict in conflicts for s in conflict["sources"])
+
+
+def mark_traction_conflicts(sections: list[dict], conflicts: list[dict]) -> None:
+    """Add a note to Traction bullets that state a conflicting value.
+
+    The note points to Risks only if a Risks section covers the conflict. Otherwise it points to
+    the program-built "Conflicting information" section, which always lists the conflict.
+    """
+    def title(section):
+        return section["title"].lower()
+
+    risks_cover = any("risk" in title(s) and "traction" not in title(s)
+                      and any(_cites_conflict(i, conflicts) for i in s["items"]) for s in sections)
+    target = "Risks" if risks_cover else "Conflicting information"
+    for section in sections:
+        if "traction" in title(section):
+            for item in section["items"]:
+                if _cites_conflict(item, conflicts):
+                    item["note"] = f"(conflicting — see {target})"
 
 
 def key_metrics(conn: sqlite3.Connection, company_id: int) -> list[dict]:
@@ -109,7 +144,8 @@ def brief_to_markdown(brief: dict) -> str:
         lines.append(f"## {section['title']}")
         for item in section["items"]:
             sources = "; ".join(f"{c['loc_label']}: \"{c['quote']}\"" for c in item["citations"])
-            lines.append(f"- {item['text']} [{sources}]")
+            note = f" {item['note']}" if item.get("note") else ""
+            lines.append(f"- {item['text']}{note} [{sources}]")
         lines.append("")
     lines.append("## Key metrics")
     for m in brief["key_metrics"]:

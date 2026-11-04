@@ -114,6 +114,9 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); fon
 .answer.error { border-color: var(--danger); color: var(--danger); }
 .claim { padding: 6px 0; }
 .claim + .claim { border-top: 1px solid var(--border); }
+.claim-text + .claim-text { margin-top: 6px; }
+.claim-num { font-size: 12px; font-weight: 600; color: var(--muted); }
+.conflict-note { color: var(--danger); font-weight: 600; }
 .evidence { margin-top: 6px; display: grid; gap: 6px; }
 .evidence-item { background: var(--bg); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
 .evidence-loc { font-size: 12px; color: var(--muted); margin-bottom: 4px; }

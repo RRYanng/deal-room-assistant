@@ -367,3 +367,21 @@ cd deal-room-assistant
 .venv/bin/uvicorn app.main:app --port 8000
 ```
 打开 http://localhost:8000 → 选 Tidewell → 依次点 3 个建议问题 → 上传 `samples/company_a/tidewell_update_2026-08.txt` → Generate Brief。走完之后看 `docs/verification.md` 和 `docs/decisions.md`，对哪条决定有不同意见就告诉我。
+
+---
+
+## P7 之后的两个小改进
+
+**1. 问答证据合并**
+- 改了什么：`app/agent.py` 新增 `group_evidence`，`answer_question` 的返回里多了 `evidence_groups`。通过共同 chunk 连起来的 claims 归为一组，共用一个 evidence 面板，同一段原文只显示一次，各条 quote 都高亮。每条 claim 自己的 `citations` 不变。
+- 取舍：一组放在它第一条 claim 的位置，所以不相邻的 claims 合并后，后面那条会被提到前面。只有当某段原文只支持组内部分 claims 时才显示编号（"supports 2"），保留 claim 和证据的对应关系。
+
+**2. 简报 Traction 矛盾标注**
+- 改了什么：`app/brief.py` 新增 `mark_traction_conflicts`，由程序加 `note`，模型写的 `text` 不改。界面和 Markdown 都显示在该条后面。
+- 判断规则：citation 的 chunk 是矛盾来源，并且 quote 里包含那个矛盾值（整词匹配，"60" 不会匹配 "2060"）。
+- 文案：Risks 部分确实提到这个矛盾时，写 "(conflicting — see Risks)"；否则写 "(conflicting — see Conflicting information)"，避免指向不存在的内容。
+
+**怎么验证的**
+- `pytest`：142 passed（新增 18 个）。`pytest -m live`：7 passed。
+- 用真实模型在数据库副本上问了一次问题、生成了两次简报（一次走 API，一次走界面）。问答的 3 条 claims 引用 `tidewell_crm.csv row 3`，只显示一段原文。简报里 60 和 80 两条都带标注，100 registered 那条没有。
+- 编号和重叠高亮是用合成数据调用前端函数检查的，没有真实回答触发过。前端仍然没有自动化测试。

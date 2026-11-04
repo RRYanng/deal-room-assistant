@@ -20,7 +20,7 @@ exact source sentence**; generate a one-page company brief that flags **missing*
    table, each with a verbatim quote.
 3. **Q&A**: pick a company, ask a question. An agent searches that company's materials with tools
    and answers in short claims; each claim can be expanded to show the file, location and quoted
-   text.
+   text. Claims that cite the same passage share one evidence panel, so it is shown only once.
 4. **One-click brief**: "focus on traction and risks" → key metrics, recent communications,
    missing information and conflicts, each line with its source.
 5. **Missing and conflicting information** is shown explicitly: "Not found in the provided
@@ -45,7 +45,7 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (124 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (142 tests)
 .venv/bin/python -m pytest -m live         # calls the real models (7 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
