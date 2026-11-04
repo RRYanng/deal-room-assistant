@@ -28,8 +28,9 @@ exact source sentence**; generate a one-page company brief that flags **missing*
    materials", and conflicting values are listed side by side with their sources. The system never
    picks a winner. The **Issues** panel lists these per company and updates after every upload or delete.
 
-The screen is one conversation, with an Upload / Ask switch above the input. **Library** (files
-and key metrics per company), **Issues** and **Generate Brief** are in the left sidebar.
+The screen is one conversation, with an Upload / Ask switch above the input. The top bar has
+**Library** (files and key metrics per company), **Issues**, an optional **Company** selector and
+**Generate Brief**.
 
 ## Quick start
 
@@ -49,7 +50,7 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (204 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (206 tests)
 .venv/bin/python -m pytest -m live         # calls the real models (8 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
@@ -132,12 +133,13 @@ The server decides, always. The model never chooses a `company_id`.
 | The question… | Result |
 |---|---|
 | names one company ("tidewel" also matches) | Answers about it and shows "Answering about: <company>" |
-| names no company | Keeps the previous company |
-| names no company, and there is no previous one | "Which company do you mean?" with company buttons |
+| names no company | Uses the company in the Company selector, which follows the last company used |
+| names no company, and the selector is on Auto-detect | "Which company do you mean?" with company buttons |
 | names several companies | Says it answers one company at a time and asks which |
 
 The match uses the non-generic words of the name, so "Tidewell" matches Tidewell Insurance but
-"insurance" alone matches nothing.
+"insurance" alone matches nothing. A question naming another company still switches to it, and
+the selector updates to show that.
 
 **Uploads** (`POST /api/uploads/analyze`): the program checks the file name, then the content.
 Only if neither names a known company does the model suggest a name, and that name counts only

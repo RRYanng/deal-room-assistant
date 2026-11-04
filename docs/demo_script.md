@@ -38,7 +38,8 @@ Click **Show evidence**: file name, paragraph, and the highlighted sentence.
 
 Click the shortcut **"When was our last conversation and what are the next steps?"**
 
-> "This question names no company, so it stays on Tidewell. The answer comes from the CRM log.
+> "This question names no company, so it stays on Tidewell, the company now shown in the selector at
+> the top. I could also choose a company there myself. The answer comes from the CRM log.
 > Both statements come from the same row, so the row is shown once with both parts highlighted."
 
 ## 0:50 – Revenue is missing (10 s)
@@ -72,9 +73,9 @@ gives both values and flags the conflict.
 
 ## 1:30 – Generate Brief (25 s)
 
-Click **Generate Brief** at the bottom left. Type **"focus on traction and risks"** and click **Generate**.
+Click **Generate Brief** at the top right. Type **"focus on traction and risks"** and click **Generate**.
 
-> "It uses the current company. The model writes the traction and risk sections, and each quote was
+> "It uses the company in the selector. The model writes the traction and risk sections, and each quote was
 > checked word for word against the file. The two conflicting numbers are marked in red. Below that,
 > the program adds the key metrics, the last three CRM touchpoints, what's missing and the conflict.
 > It can be copied or downloaded as Markdown."

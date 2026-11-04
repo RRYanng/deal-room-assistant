@@ -1,10 +1,12 @@
 """FastAPI app: JSON API under /api, single-page UI served from /static."""
 
+import hashlib
 import sqlite3
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -71,9 +73,18 @@ def require_company(conn: sqlite3.Connection, company_id: int) -> sqlite3.Row:
     return row
 
 
+def asset_url(name: str, static_dir: Path = STATIC_DIR) -> str:
+    """URL with a hash of the file's content, so a browser can never reuse an old copy of a changed file."""
+    digest = hashlib.sha256((static_dir / name).read_bytes()).hexdigest()[:12]
+    return f"/static/{name}?v={digest}"
+
+
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    for name in ("style.css", "app.js"):
+        html = html.replace(f"/static/{name}", asset_url(name))
+    return HTMLResponse(html)
 
 
 @app.get("/api/health")

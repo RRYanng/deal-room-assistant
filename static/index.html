@@ -4,26 +4,43 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Deal Room Assistant</title>
+  <script>
+    // A dead page must say why. Shows the problem if a file fails to load or the app does not start.
+    (function () {
+      var problems = [];
+      window.addEventListener("error", function (e) {
+        var file = e.target && (e.target.src || e.target.href);
+        problems.push(file ? "Could not load " + file : e.message);
+      }, true);
+      window.addEventListener("load", function () {
+        if (window.appStarted && !problems.length) return;
+        var box = document.createElement("div");
+        box.setAttribute("role", "alert");
+        box.id = "startup-error";
+        box.style.cssText = "position:fixed;left:16px;right:16px;bottom:16px;z-index:99;padding:12px 14px;" +
+          "border-radius:8px;background:#b42318;color:#fff;font:14px/1.4 sans-serif;";
+        box.textContent = "This page did not start correctly. " + (problems.join(" ") || "The app script did not run.");
+        document.body.appendChild(box);
+      });
+    })();
+  </script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
-      <div class="brand">Deal Room Assistant</div>
+    <header class="topbar">
+      <div class="brand" id="brand">Deal Room Assistant</div>
       <nav class="nav">
         <button type="button" id="nav-library" class="nav-item">Library</button>
         <button type="button" id="nav-issues" class="nav-item">Issues <span id="issues-badge" class="count" hidden></span></button>
       </nav>
-      <div class="sidebar-bottom">
-        <div class="current">
-          <div class="eyebrow">Current company</div>
-          <div id="current-company" class="current-name">None yet</div>
-        </div>
-        <button type="button" id="brief-button">Generate Brief</button>
-        <div id="health" class="muted small health"></div>
-      </div>
-    </aside>
+      <label class="company-picker">Company:
+        <select id="company-select"><option value="">Auto-detect</option></select>
+      </label>
+      <button type="button" id="brief-button" class="brief-button">Generate Brief</button>
+    </header>
 
+    <div class="workspace">
     <section id="drawer" class="drawer" aria-labelledby="drawer-title" hidden>
       <div class="drawer-head">
         <h1 id="drawer-title"></h1>
@@ -62,6 +79,7 @@
         </div>
       </div>
     </main>
+    </div>
   </div>
 
   <!-- Upload confirmation -->

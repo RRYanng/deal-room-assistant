@@ -419,3 +419,37 @@ cd deal-room-assistant
   - 改选公司、文件提到多家公司都出现警告；格式错误和 CSV 缺列都有清楚的报错；未知公司由模型建议 "Northwind Dental"，确认后新建成功。
   - 简报里 60 和 80 两条都带 "(conflicting — see Risks)"。手机宽度和深色模式也检查过，没有横向溢出。
 - 没有覆盖的部分：前端仍然没有自动化测试。走查时部分操作用脚本触发，文件是脚本放进 file input 的，所以系统文件选择器和真正的拖拽没有测过。
+
+---
+
+## 修复新界面无法使用，并加入顶部栏
+
+**问题和原因**
+- 症状：页面没有样式，所有按钮都没反应。
+- 原因：上一版改版时，CSS 和 JS 的地址没有变，浏览器继续使用缓存里的旧文件。旧的 `app.js` 在新页面上找不到 `new-company-form`，一启动就报错 `Cannot set properties of null (setting 'onsubmit')`，后面的代码都没运行。旧文件是在加 `no-cache` 之前缓存的，所以 `no-cache` 帮不上忙。
+- 复现：在新端口先用旧版本的服务打开一次，换成当时的新代码后普通刷新，症状和报错完全一致。
+
+**改了什么**
+- `app/main.py`：`index()` 在页面里给 CSS、JS 地址加内容指纹（`?v=<hash>`）。文件一变地址就变，旧缓存不可能再被用到。
+- `static/index.html`：加了启动检查。文件加载失败或脚本没跑起来时，页面底部显示红色提示和具体错误。
+- 顶部栏取代侧边栏：Library、Issues、Company 选择器在左，Generate Brief 在右上角。
+- 对话区为空时只显示一行灰字 "Upload files or ask about a company by name"。
+- Upload / Ask 的选中项改成主色背景。
+
+**Company 选择器的行为**
+- 默认是 Auto-detect：按问题里的公司名识别，识别不到就问 "Which company do you mean?"。
+- 选了公司后，没提公司名的问题都答这家。回答之后选择器也会跟着显示最近用过的公司。
+- 问题里提到别的公司时，仍然自动切换过去，选择器同步更新。
+- 选回 Auto-detect 后，不再沿用上一家。
+
+**怎么验证的**
+- 同一场景（缓存里有旧文件、不强制刷新）修复后正常打开，请求的是带 `?v=` 的新地址。
+- 故意弄坏脚本，页面显示了具体错误。
+- 用真实鼠标点击走过的：Library、公司展开、Issues、公司详情、返回、Close、Upload/Ask、建议问题、公司按钮、Show/Hide evidence、Ask、Generate Brief、Cancel、Add、Copy Markdown、Close、Open brief、View agent log、re-extract、delete。
+- `pytest`：206 passed。`pytest -m live`：8 passed。
+
+**没有覆盖的部分**
+- 用户自己的浏览器：Claude in Chrome 没有连接，读不到那边的 console。上面的结论来自内置浏览器里的复现和服务器日志。
+- 系统文件选择框和真正的拖拽没测，文件是脚本放进上传控件的。
+- Company 选择器是通过页面表单接口设置的，不是真实鼠标展开下拉框。
+- delete 的确认框被替换成了自动确认；Download .md 拦截了保存这一步，只确认生成了正确的文件内容和文件名。

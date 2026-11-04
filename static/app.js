@@ -2,7 +2,7 @@
 
 const state = {
   companies: [],
-  current: null,        // {id, name}: the company follow-up questions and briefs use
+  current: null,        // {id, name} or null: the Company selector; questions naming another company change it
   entries: [],          // the conversation
   issues: [],
   drawer: null,         // null, {view: "library"} or {view: "issues", companyId}
@@ -84,11 +84,23 @@ function sourceSpan(s) {
 
 function setCurrent(company) {
   state.current = company;
-  $("current-company").textContent = company ? company.name : "None yet";
+  $("company-select").value = company ? String(company.id) : "";
 }
+
+function renderCompanySelect() {
+  $("company-select").innerHTML = '<option value="">Auto-detect</option>' +
+    state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("company-select").value = state.current ? String(state.current.id) : "";
+}
+
+$("company-select").onchange = () => {
+  const company = state.companies.find((c) => String(c.id) === $("company-select").value);
+  state.current = company ? { id: company.id, name: company.name } : null;
+};
 
 async function loadCompanies() {
   state.companies = await api("/api/companies");
+  renderCompanySelect();
 }
 
 async function loadIssues() {
@@ -107,9 +119,8 @@ async function refreshAfterChange() {
 async function loadHealth() {
   try {
     const h = await api("/api/health");
-    $("health").textContent = `Q&A: ${h.llm_chat_model}\nExtraction: ${h.llm_extract_model}`;
-    $("health").style.whiteSpace = "pre-line";
-  } catch { $("health").textContent = "API unavailable"; }
+    $("brand").title = `Q&A: ${h.llm_chat_model} · Extraction: ${h.llm_extract_model}`;
+  } catch { $("brand").title = "API unavailable"; }
 }
 
 // ---------------------------------------------------------------- conversation
@@ -130,10 +141,7 @@ function updateEntry(entry, fields) {
 function renderChat() {
   const chat = $("chat");
   if (!state.entries.length) {
-    chat.innerHTML = `<div class="empty-state">
-      <h1>What would you like to know?</h1>
-      Ask about a company by name, or switch to Upload to add a file.
-      Every answer shows the source text it comes from.</div>`;
+    chat.innerHTML = '<div class="empty-state">Upload files or ask about a company by name</div>';
     return;
   }
   chat.innerHTML = state.entries.map(entryHtml).join("");
@@ -335,7 +343,9 @@ function openUploadDialog(file, s) {
   const options = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("upload-company").innerHTML = `<option value="">Choose a company…</option>${options}
     <option value="${NEW_COMPANY}">+ New company…</option>`;
-  $("upload-company").value = s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : "";
+  // With nothing recognized in the file, start from the company selected at the top of the page.
+  const fallback = state.current ? String(state.current.id) : "";
+  $("upload-company").value = s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : fallback;
   $("upload-new-company").value = s.company.existing ? "" : s.company.name || "";
   $("upload-filename").textContent = s.filename;
   $("upload-company-why").textContent = companyHint(s.company);
@@ -749,6 +759,7 @@ async function start() {
   renderChat();
   setMode("ask");
   loadHealth();
+  window.appStarted = true;
   try {
     await Promise.all([loadCompanies(), loadIssues()]);
     if (!state.companies.length) setMode("upload");
