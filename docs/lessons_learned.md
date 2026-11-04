@@ -32,12 +32,6 @@ Real problems found while building and checking this project.
 - **Found by:** Trying file replacement by hand and reading the response.
 - **Fix:** `AUTOINCREMENT` on the ID columns, plus a regression test.
 
-### API key in git history
-- **Symptom:** A real key sat on a commented line of `.env.example`, in every commit after it was added.
-- **Cause:** The key got into the tracked template, and a `git commit -a` included it unread.
-- **Found by:** The audit before the first public push, which searched all of history. The key never reached GitHub.
-- **Fix:** History rewritten, old objects purged, every object and a fresh clone searched, key replaced. No automatic secret scan is set up yet.
-
 ### Invalid key reported as "Which company do you mean?"
 - **Symptom:** With a dead key, an unrelated question got "Which company do you mean?" instead of an error, and the upload dialog said no company was recognized.
 - **Cause:** Both model checks swallowed failures and reported a normal result. The server also reads `.env` only at startup, so it kept the old key.
