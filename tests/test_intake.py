@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.intake import guess_doc_date, guess_doc_type
-from app.llm import FakeLLM, LLMError
+from app.llm import FakeLLM, LLMAuthError, LLMError
 from app.main import app, get_chat_llm, get_extract_llm
 from tests.helpers import TIDEWELL_RULES, fake_extractor
 
@@ -76,10 +76,36 @@ def test_model_finding_no_company_leaves_the_choice_to_the_user(client):
     assert analyze(client, "deck.txt", NEUTRAL).json()["company"]["source"] == "none"
 
 
-def test_model_failure_does_not_block_the_upload(client):
-    app.dependency_overrides[get_chat_llm] = lambda: FakeLLM(default=lambda call: (_ for _ in ()).throw(LLMError("down")))
+@pytest.mark.parametrize("error, message", [
+    (LLMAuthError("API key invalid or missing. Check .env and restart the server."),
+     "Model call failed: API key invalid or missing. Check .env and restart the server."),
+    (LLMError("Could not reach Anthropic API: Connection error."),
+     "Model call failed: Could not reach Anthropic API: Connection error."),
+])
+def test_model_failure_is_reported_but_does_not_block_the_upload(client, error, message):
+    def fail(call):
+        raise error
+    app.dependency_overrides[get_chat_llm] = lambda: FakeLLM(default=fail)
     r = analyze(client, "deck.txt", NEUTRAL)
-    assert r.status_code == 200 and r.json()["company"]["source"] == "none"
+    assert r.status_code == 200
+    assert r.json()["company"] == {"id": None, "name": None, "existing": False, "source": "none", "model_error": message}
+
+    cid = client.get("/api/companies").json()[0]["id"]
+    stored = client.post(f"/api/companies/{cid}/documents", data={"doc_type": "notes"},
+                         files={"file": ("deck.txt", NEUTRAL, "text/plain")})
+    assert stored.status_code == 201
+
+
+def test_model_finding_nothing_is_not_reported_as_a_failure(client):
+    model_says(None)
+    assert "model_error" not in analyze(client, "deck.txt", NEUTRAL).json()["company"]
+
+
+def test_program_match_has_no_model_error_even_if_the_model_is_down(client):
+    def fail(call):
+        raise LLMError("down")
+    app.dependency_overrides[get_chat_llm] = lambda: FakeLLM(default=fail)
+    assert "model_error" not in analyze(client, "tidewell_notes.txt", b"Some notes.").json()["company"]
 
 
 def test_analyze_stores_nothing(client):

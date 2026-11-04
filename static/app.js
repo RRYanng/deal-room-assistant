@@ -330,6 +330,7 @@ async function analyzeFile(file) {
 }
 
 function companyHint(c) {
+  if (c.model_error) return "The file could not be checked for a company. You can still choose one.";
   if (c.source === "none") return "No company recognized in this file. Please choose one.";
   const from = { "file name": "from the file name", "file content": "from the file's content", model: "by the model, from the file's content" };
   return `Suggested: ${c.name} (${from[c.source]}).`;
@@ -372,7 +373,9 @@ function syncNewCompanyField() {
 }
 
 function renderUploadWarnings(warnings) {
-  $("upload-warnings").innerHTML = warnings.map((w) =>
+  const modelError = state.upload?.suggestion.company.model_error;
+  const notices = (modelError ? [{ kind: "model_error", message: modelError }] : []).concat(warnings);
+  $("upload-warnings").innerHTML = notices.map((w) =>
     `<div class="warning" role="alert" data-kind="${esc(w.kind)}">${esc(w.message)}</div>`).join("");
   const name = chosenCompanyName();
   $("upload-confirm").disabled = !name;

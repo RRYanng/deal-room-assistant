@@ -94,12 +94,12 @@ def guess_doc_date(filename: str, text: str, crm_rows: list[dict]) -> tuple[str 
 
 
 def guess_company_with_model(filename: str, text: str, llm: LLMClient) -> str | None:
-    """The company name the model finds, kept only if it is literally in the file or its name."""
+    """The company name the model finds, kept only if it is literally in the file or its name.
+
+    Raises LLMError if the model call fails.
+    """
     prompt = f"File name: {filename}\n\nDocument:\n{text[:MODEL_TEXT_CHARS]}"
-    try:
-        name = llm.complete_json(COMPANY_SYSTEM_PROMPT, prompt, COMPANY_SCHEMA).get("company_name")
-    except LLMError:
-        return None  # the user picks the company by hand; a failed guess must not block an upload
+    name = llm.complete_json(COMPANY_SYSTEM_PROMPT, prompt, COMPANY_SCHEMA).get("company_name")
     name = normalize_ws(str(name or ""))
     if not name or name.lower() not in normalize_ws(f"{filename} {text}").lower():
         return None
@@ -107,14 +107,22 @@ def guess_company_with_model(filename: str, text: str, llm: LLMClient) -> str | 
 
 
 def suggest_company(filename: str, text: str, companies: list[dict], mentioned: list[dict], llm: LLMClient) -> dict:
-    """Returns {id, name, existing, source}. source: file name / file content / model / none."""
+    """Returns {id, name, existing, source}. source: file name / file content / model / none.
+
+    If the model call fails, the result also has `model_error`: the user can still pick a company,
+    so the upload is not blocked, but must not be told that the file simply names no company.
+    """
     in_filename = find_mentions(Path(filename).stem, companies)
     for matches, source in ((in_filename, "file name"), (mentioned, "file content")):
         if matches:
             return {"id": matches[0]["id"], "name": matches[0]["name"], "existing": True, "source": source}
-    name = guess_company_with_model(filename, text, llm)
+    none = {"id": None, "name": None, "existing": False, "source": "none"}
+    try:
+        name = guess_company_with_model(filename, text, llm)
+    except LLMError as e:
+        return none | {"model_error": f"Model call failed: {e}"}
     if not name:
-        return {"id": None, "name": None, "existing": False, "source": "none"}
+        return none
     known = find_mentions(name, companies)
     if known:
         return {"id": known[0]["id"], "name": known[0]["name"], "existing": True, "source": "model"}

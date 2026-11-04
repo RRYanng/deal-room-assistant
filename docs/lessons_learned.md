@@ -39,7 +39,7 @@ Real problems found while building and checking this project.
 - **Fix:** History rewritten, old objects purged, every object and a fresh clone searched, key replaced. No automatic secret scan is set up yet.
 
 ### Invalid key reported as "Which company do you mean?"
-- **Symptom:** With a dead key, an unrelated question got "Which company do you mean?" instead of an error.
-- **Cause:** The relevance check treated every model failure as "relevant". The server also reads `.env` only at startup, so it kept the old key.
+- **Symptom:** With a dead key, an unrelated question got "Which company do you mean?" instead of an error, and the upload dialog said no company was recognized.
+- **Cause:** Both model checks swallowed failures and reported a normal result. The server also reads `.env` only at startup, so it kept the old key.
 - **Found by:** Checking the running server after replacing the key.
-- **Fix:** A failed check now returns a clear error, such as "Model call failed: API key invalid or missing. Check .env and restart the server."
+- **Fix:** Both now show a clear error, such as "Model call failed: API key invalid or missing. Check .env and restart the server." Uploads can still go ahead.
