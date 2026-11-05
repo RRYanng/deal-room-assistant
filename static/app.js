@@ -240,7 +240,6 @@ $("chat").addEventListener("click", (e) => {
 
 function setAsking(busy) {
   $("ask-button").disabled = busy;
-  document.querySelectorAll("#suggestions .chip").forEach((chip) => { chip.disabled = busy; });
 }
 
 async function ask(question) {
@@ -288,9 +287,6 @@ async function chooseCompany(entryId, companyId) {
 $("ask-pane").onsubmit = (e) => { e.preventDefault(); ask($("question").value.trim()); };
 $("question").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask($("question").value.trim()); }
-});
-document.querySelectorAll("#suggestions .chip").forEach((chip) => {
-  chip.onclick = () => ask(chip.textContent);
 });
 
 function setMode(mode) {

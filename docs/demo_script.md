@@ -36,7 +36,7 @@ Click **Show evidence**: file name, paragraph, and the highlighted sentence.
 
 ## 0:35 – Follow-up (15 s)
 
-Click the shortcut **"When was our last conversation and what are the next steps?"**
+Type **"When was our last conversation and what are the next steps?"**
 
 > "This question names no company, so it stays on Tidewell, the company now shown in the selector at
 > the top. I could also choose a company there myself. The answer comes from the CRM log.
@@ -44,7 +44,7 @@ Click the shortcut **"When was our last conversation and what are the next steps
 
 ## 0:50 – Revenue is missing (10 s)
 
-Click **"What is the company's revenue?"**
+Type **"What is the company's revenue?"**
 
 > "No file has a revenue number, so it says *Not found in the provided materials*. It doesn't guess."
 
@@ -68,7 +68,7 @@ The conversation reports *Tidewell Insurance now has 4 issues (was 3)*. Click **
 > "The update says 80 paying customers for the same date. Here are both values, each with its file,
 > location and quote. It doesn't pick one. A person decides which is right."
 
-Close the panel and click **"How many paying customers does the company have?"**: the answer now
+Close the panel and type **"How many paying customers does the company have?"**: the answer now
 gives both values and flags the conflict.
 
 ## 1:30 – Generate Brief (25 s)
@@ -90,7 +90,7 @@ Click **Generate Brief** at the top right. Type **"focus on traction and risks"*
 
 **If there's extra time:**
 
-- *Which company?* Reload the page and click a shortcut: it asks **"Which company do you mean?"** with buttons.
+- *Which company?* Reload the page and type **"What is the company's revenue?"**: it asks **"Which company do you mean?"** with buttons.
 - *One company at a time:* Ask **"Compare Tidewell and Kitebridge"**: it asks which one to answer about.
 - *Off-topic:* Ask **"What's the weather?"**: it says it only answers questions about the uploaded materials.
 - *Calculation:* With no conflict in the files, ask the brief for "the share of registered businesses that pay": the figure is marked **(calculated)** and shows its working.

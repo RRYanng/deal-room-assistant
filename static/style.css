@@ -143,10 +143,6 @@ mark { background: var(--mark); color: inherit; padding: 0 1px; border-radius: 2
 .mode:hover { color: var(--text); }
 .mode.active, .mode.active:hover { background: var(--accent); color: var(--accent-text); font-weight: 650; }
 .pane[hidden] { display: none; }
-.suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.chip { background: var(--bg); color: var(--text); border: 1px solid var(--border); font-weight: 400;
-  font-size: 12px; padding: 4px 10px; border-radius: 14px; text-align: left; }
-.chip:hover { border-color: var(--accent); }
 .ask-row { display: flex; gap: 8px; align-items: flex-end; }
 .dropzone { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 22px 16px; cursor: pointer;
   border: 1.5px dashed var(--border); border-radius: var(--radius); background: var(--bg); }
