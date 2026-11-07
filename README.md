@@ -14,7 +14,8 @@ brief that flags **missing** and **conflicting** information instead of hiding i
 
 1. **Import**: upload decks (text PDF, TXT, MD), meeting notes (TXT, MD, PDF) and CRM records (CSV).
    The system suggests the company, material type and date, and you confirm them. It warns if the
-   file seems to belong to another company. Data survives restarts, and uploading a file with the
+   file seems to belong to another company. Choosing several files opens a table with the same
+   suggestions and checks on every row. Data survives restarts, and uploading a file with the
    same name replaces the old version.
 2. **Organize**: files are split into chunks that keep their location (PDF page + paragraph,
    TXT/MD paragraph, CSV row) and are indexed for hybrid search. Key metrics are extracted into a
@@ -50,7 +51,7 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (251 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (270 tests)
 .venv/bin/python -m pytest -m live         # calls the real models (9 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
@@ -154,6 +155,23 @@ stored until you confirm. The confirmation warns, without blocking, if:
 - a file with that name would be replaced;
 - a new company name resembles an existing one.
 
+**Batch upload** (`POST /api/uploads/batch`): choosing several files opens one table instead of the
+dialog, with the same suggestions and warnings on each row. One file still opens the dialog.
+
+![The batch table: Set all to Tidewell, with a warning on the Kitebridge row](docs/screenshot_batch_confirm.jpg)
+
+- **Set all to** puts every row on one company. A company selected at the top of the page is the default.
+- A row whose company cannot be recognized must be given one before **Upload all** is enabled. The
+  server also refuses the whole batch, storing nothing, if a row has no company.
+- Files are stored first, so they can be asked about straight away. Metrics are then extracted in
+  the background, one file at a time, and each row shows its progress.
+- A failure stays on its own row with the reason. If only extraction failed, the file stays stored,
+  and the *re-extract* link in Library can run it again.
+- The Issues count updates as rows finish.
+
+Progress is kept in memory. If the server restarts during a batch, the files stored so far stay
+stored, but files still waiting are not processed.
+
 ## Why hybrid retrieval
 
 Investment questions mix exact tokens and meaning. BM25 is good at exact terms (numbers,
@@ -182,6 +200,8 @@ numpy matrix product; BM25 is rebuilt per query. Both are simple to explain and 
 | GET | `/api/companies/{id}/checks` | Conflicts, unclear basis, missing key metrics |
 | POST | `/api/uploads/analyze` | Suggest company, type and date for a file; stores nothing |
 | POST | `/api/uploads/warnings` | Consistency warnings for the company chosen in the confirmation |
+| POST | `/api/uploads/batch` | Store several files in the background (multipart: `files`, plus `items` as JSON with `company_id` or `new_company`, `doc_type`, `doc_date`) |
+| GET | `/api/uploads/batch/{id}` | Progress per file: `waiting`, `uploading`, `stored`, `analyzing`, `done`, `failed` |
 | GET | `/api/issues` | All companies with their issue counts, computed live |
 | POST | `/api/ask` | Q&A that works out the company (`{"question": …, "last_company_id": …}`) |
 | POST | `/api/companies/{id}/ask` | Q&A for a company the user picked (`{"question": …}`) |
@@ -234,6 +254,7 @@ app/
   config.py       settings from environment
   db.py           SQLite schema
   ingest.py       parsing + chunking with locations, upload/replace
+  batch.py        batch upload: stores, then extracts metrics, in the background
   resolve.py      company name matching; which company a question is about
   intake.py       upload suggestions (company, type, date) and consistency warnings
   rag.py          embeddings, BM25 tokenizer, hybrid search with RRF

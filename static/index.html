@@ -67,8 +67,8 @@
 
         <div id="upload-pane" class="pane" hidden>
           <label id="dropzone" class="dropzone">
-            <input id="upload-file" type="file" accept=".pdf,.txt,.md,.csv">
-            <span id="dropzone-text" class="dropzone-text"><b>Choose a file</b> or drop it here</span>
+            <input id="upload-file" type="file" accept=".pdf,.txt,.md,.csv" multiple>
+            <span id="dropzone-text" class="dropzone-text"><b>Choose files</b> or drop them here</span>
             <span class="muted small">PDF, TXT or MD, or CRM records as CSV. You confirm the details before it is stored.</span>
           </label>
         </div>
@@ -107,6 +107,31 @@
         <button type="submit" id="upload-confirm">Add</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Batch upload: confirmation table, then progress -->
+  <dialog id="batch-dialog" class="dialog batch-dialog" aria-labelledby="batch-title">
+    <div class="stack">
+      <div class="batch-head">
+        <h2 id="batch-title" class="dialog-title"></h2>
+        <div class="batch-set-all">
+          <label for="batch-set-all">Set all to:</label>
+          <select id="batch-set-all"></select>
+          <input id="batch-set-all-new" type="text" placeholder="New company name" aria-label="New company name for all files" autocomplete="off" hidden>
+        </div>
+      </div>
+      <div class="batch-table-wrap">
+        <table id="batch-table" class="batch-table">
+          <thead><tr><th>File</th><th>Company</th><th>Material type</th><th>Material date</th><th>Status</th></tr></thead>
+        </table>
+      </div>
+      <div id="batch-error" class="warning" role="alert" hidden></div>
+      <div class="dialog-actions batch-actions">
+        <span id="batch-summary" class="muted small batch-summary" aria-live="polite"></span>
+        <button type="button" id="batch-cancel" class="secondary">Cancel</button>
+        <button type="button" id="batch-confirm">Upload all</button>
+      </div>
+    </div>
   </dialog>
 
   <!-- Brief requirements -->

@@ -8,11 +8,12 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app.config import PROJECT_ROOT, get_settings
 from app.db import connect, init_db
 from app.agent import OUT_OF_SCOPE_MESSAGE, answer_question, is_out_of_scope
+from app.batch import BatchFile, get_batch, start_batch
 from app.brief import brief_to_markdown, generate_brief
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
@@ -188,6 +189,49 @@ class WarningsIn(BaseModel):
 def upload_warnings(body: WarningsIn, conn=Depends(get_db)):
     """Warnings for the company currently chosen in the confirmation dialog."""
     return consistency_warnings(conn, body.chosen_company, body.suggested_company, body.mentioned, body.filename)
+
+
+class BatchItemIn(BaseModel):
+    company_id: int | None = None
+    new_company: str | None = None
+    doc_type: str
+    doc_date: str | None = None
+
+
+def read_batch_file(file: UploadFile, item: BatchItemIn) -> BatchFile:
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    return BatchFile(file.filename or "", data, item.doc_type.strip().lower(), (item.doc_date or "").strip() or None,
+                     item.company_id, item.new_company,
+                     error="File is larger than 20 MB." if len(data) > MAX_UPLOAD_BYTES else None)
+
+
+@app.post("/api/uploads/batch", status_code=202)
+def upload_batch(request: Request, files: list[UploadFile] = File(...), items: str = Form(...),
+                 llm: LLMClient = Depends(get_extract_llm)):
+    """Store several files and extract their metrics in the background; read progress with GET.
+
+    `items` is a JSON list with one entry per file. A row with no company refuses the whole batch
+    before anything is stored; any other problem fails only its own row.
+    """
+    try:
+        rows = TypeAdapter(list[BatchItemIn]).validate_json(items)
+    except ValidationError:
+        rows = []
+    if len(rows) != len(files):
+        raise HTTPException(400, "The list of file details does not match the files.")
+    no_company = [f.filename or "" for f, r in zip(files, rows)
+                  if r.company_id is None and not (r.new_company or "").strip()]
+    if no_company:
+        raise HTTPException(400, f"Choose a company for: {', '.join(no_company)}.")
+    return start_batch(request.app.state.db_path, [read_batch_file(f, r) for f, r in zip(files, rows)], llm)
+
+
+@app.get("/api/uploads/batch/{batch_id}")
+def upload_batch_status(batch_id: str):
+    batch = get_batch(batch_id)
+    if not batch:
+        raise HTTPException(404, f"Batch {batch_id} not found.")
+    return batch
 
 
 def run_extraction(conn: sqlite3.Connection, document_id: int, llm: LLMClient) -> dict:

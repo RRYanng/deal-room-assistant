@@ -58,3 +58,14 @@ def test_ui_does_not_use_native_dialogs():
     from app.main import STATIC_DIR
 
     assert not re.search(r"(?<![\w.])(confirm|alert|prompt)\(", (STATIC_DIR / "app.js").read_text(encoding="utf-8"))
+
+
+def test_upload_input_allows_several_files_and_each_row_gets_a_status():
+    """The file picker only offers multi-select if the input says so."""
+    from app.main import STATIC_DIR
+
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="upload-file"' in html and 'accept=".pdf,.txt,.md,.csv" multiple' in html
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    for label in ("Uploading", "Analyzing", "Done", "Failed"):
+        assert f'"{label}"' in script

@@ -9,6 +9,7 @@ const state = {
   openLibrary: new Set(),
   openEvidence: new Set(),
   upload: null,         // the file and suggestions behind the open confirmation dialog
+  batch: null,          // the files in the batch table
   lastBrief: null,
 };
 
@@ -131,14 +132,15 @@ function updateEntry(entry, fields) {
   renderChat();
 }
 
-function renderChat() {
+function renderChat({ keepScroll = false } = {}) {
   const chat = $("chat");
+  const scrollTop = chat.scrollTop;
   if (!state.entries.length) {
     chat.innerHTML = '<div class="empty-state">Upload files or ask about a company by name</div>';
     return;
   }
   chat.innerHTML = state.entries.map(entryHtml).join("");
-  chat.scrollTop = chat.scrollHeight;
+  chat.scrollTop = keepScroll ? scrollTop : chat.scrollHeight;
 }
 
 function entryHtml(e) {
@@ -230,7 +232,8 @@ $("chat").addEventListener("click", (e) => {
   } else if (button.dataset.choose) {
     chooseCompany(Number(button.dataset.choose), Number(button.dataset.company));
   } else if (button.dataset.openIssues) {
-    openDrawer({ view: "issues", companyId: Number(button.dataset.openIssues) });
+    openDrawer(button.dataset.openIssues === "all" ? { view: "issues" }
+      : { view: "issues", companyId: Number(button.dataset.openIssues) });
   } else if (button.dataset.openBrief) {
     showBrief(state.entries.find((x) => x.id === Number(button.dataset.openBrief)).brief);
   }
@@ -463,11 +466,410 @@ function extractionText(x) {
   return `Metric extraction failed: ${x.error}`;
 }
 
-$("upload-file").onchange = () => { if ($("upload-file").files[0]) analyzeFile($("upload-file").files[0]); };
+// One file keeps the single-file dialog. Several files go to the batch table.
+function chooseFiles(fileList) {
+  const files = [...fileList];
+  if (files.length === 1) analyzeFile(files[0]);
+  else if (files.length > 1) openBatch(files);
+  $("upload-file").value = "";
+}
+
+$("upload-file").onchange = () => chooseFiles($("upload-file").files);
 const zone = $("dropzone");
 ["dragenter", "dragover"].forEach((type) => zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.add("over"); }));
 ["dragleave", "drop"].forEach((type) => zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.remove("over"); }));
-zone.addEventListener("drop", (e) => { if (e.dataTransfer.files[0]) analyzeFile(e.dataTransfer.files[0]); });
+zone.addEventListener("drop", (e) => chooseFiles(e.dataTransfer.files));
+
+// ---------------------------------------------------------------- batch upload
+
+const BATCH_POLL_MS = 700;
+const BATCH_STATUS = {
+  reading: "Reading…", ready: "Ready", "needs-company": "Needs company", warning: "Warning",
+  waiting: "Waiting", uploading: "Uploading", stored: "Waiting to analyze", analyzing: "Analyzing",
+  done: "Done", failed: "Failed",
+};
+
+function companyNameOf(value, newName) {
+  if (value === NEW_COMPANY) return (newName || "").trim();
+  const company = state.companies.find((c) => String(c.id) === value);
+  return company ? company.name : "";
+}
+
+const rowCompany = (row) => companyNameOf(row.companyValue, row.newCompany);
+
+function companyOptions(placeholder) {
+  return `<option value="">${esc(placeholder)}</option>
+    ${state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}
+    <option value="${NEW_COMPANY}">+ New company…</option>`;
+}
+
+// Warnings for one row, from the program's checks plus what only the batch can know.
+function rowNotices(batch, row) {
+  if (row.error) return [{ kind: "failed", message: row.error }];
+  if (batch.phase !== "review" || !row.suggestion) return [];
+  const notices = [];
+  const c = row.suggestion.company;
+  const name = rowCompany(row);
+  if (!row.companyPicked && c.model_error) notices.push({ kind: "model_error", message: c.model_error });
+  else if (!row.companyPicked && c.source === "none") {
+    notices.push({ kind: "no_company", message: name
+      ? `No company recognized in this file. Check that it belongs to ${name}.`
+      : "No company recognized in this file. Choose a company to upload it." });
+  }
+  notices.push(...row.warnings);
+  const clash = batch.rows.some((other) => other !== row && other.status === "ready" && name
+    && other.filename === row.filename && rowCompany(other).toLowerCase() === name.toLowerCase());
+  if (clash) {
+    notices.push({ kind: "replaces_file",
+      message: `Another file in this batch is also named ${row.filename} and going to ${name}. The later file replaces the earlier one.` });
+  }
+  return notices;
+}
+
+function rowStatus(batch, row) {
+  if (row.status !== "ready" || batch.phase !== "review") return row.status;
+  if (!rowCompany(row)) return "needs-company";
+  return rowNotices(batch, row).length ? "warning" : "ready";
+}
+
+function rowResult(row) {
+  if (row.status !== "done") return "";
+  return [row.replaced ? "Replaced the previous version." : "", extractionText(row.extraction)].filter(Boolean).join(" ");
+}
+
+function renderRowState(batch, row) {
+  if (state.batch !== batch) return;
+  const body = document.querySelector(`#batch-table tbody[data-row="${row.key}"]`);
+  const status = rowStatus(batch, row);
+  body.querySelector(".batch-status").dataset.status = status;
+  body.querySelector(".batch-status").textContent = BATCH_STATUS[status];
+  const result = rowResult(row);
+  body.querySelector(".batch-notes").innerHTML = rowNotices(batch, row).map((w) =>
+    `<div class="warning" role="alert" data-kind="${esc(w.kind)}">${esc(w.message)}</div>`).join("")
+    + (result ? `<div class="batch-result">${esc(result)}</div>` : "");
+}
+
+function renderRow(batch, row) {
+  if (state.batch !== batch) return;
+  const body = document.querySelector(`#batch-table tbody[data-row="${row.key}"]`);
+  const s = row.suggestion;
+  const locked = batch.phase !== "review" ? "disabled" : "";
+  const name = esc(row.filename);
+  let fields = '<td colspan="3" class="muted">–</td>';
+  if (s) {
+    const isCsv = row.filename.toLowerCase().endsWith(".csv");
+    const typeOptions = [["deck", "Pitch deck"], ["notes", "Meeting notes"], ["crm", "CRM records"]]
+      .map(([value, label]) => `<option value="${value}" ${(value === "crm") !== isCsv ? "disabled" : ""}>${label}</option>`).join("");
+    const isNew = row.companyValue === NEW_COMPANY;
+    fields = `<td><select data-field="companyValue" aria-label="Company for ${name}" title="${esc(companyHint(s.company))}" ${locked}>${companyOptions("Choose a company…")}</select>
+        <input class="batch-new-company" data-field="newCompany" type="text" placeholder="New company name"
+          aria-label="New company name for ${name}" value="${esc(row.newCompany)}" autocomplete="off" ${isNew ? "" : "hidden"} ${locked}></td>
+      <td><select data-field="docType" aria-label="Material type for ${name}" title="Suggested from: ${esc(s.doc_type_why)}." ${locked}>${typeOptions}</select></td>
+      <td><input data-field="docDate" type="date" aria-label="Material date for ${name}" value="${esc(row.docDate)}"
+        title="${s.doc_date ? `Suggested from: ${esc(s.doc_date_why)}.` : "No date found. Add one if you know it."}" ${locked}></td>`;
+  }
+  body.innerHTML = `<tr><td class="batch-file">${name}</td>${fields}<td class="batch-status" data-file="${name}"></td></tr>
+    <tr><td colspan="5" class="batch-notes"></td></tr>`;
+  if (s) {
+    body.querySelector('[data-field="companyValue"]').value = row.companyValue;
+    body.querySelector('[data-field="docType"]').value = row.docType;
+  }
+  renderRowState(batch, row);
+}
+
+function renderBatchFooter(batch) {
+  if (state.batch !== batch) return;
+  const count = (test) => batch.rows.filter(test).length;
+  const reading = count((r) => r.status === "reading");
+  const ready = batch.rows.filter((r) => r.status === "ready");
+  const needCompany = ready.filter((r) => !rowCompany(r)).length;
+  const warned = ready.filter((r) => rowCompany(r) && rowNotices(batch, r).length).length;
+  const unreadable = count((r) => r.status === "failed");
+  const review = batch.phase === "review";
+  const finished = count((r) => r.status === "done" || r.status === "failed");
+
+  $("batch-title").textContent = review ? `Confirm ${plural(batch.rows.length, "file")}`
+    : batch.phase === "finished" ? "Upload finished" : `Uploading ${plural(batch.rows.length, "file")}`;
+  document.querySelector(".batch-set-all").hidden = !review;
+  $("batch-set-all").disabled = reading > 0;
+  $("batch-cancel").hidden = !review;
+  $("batch-confirm").disabled = batch.phase === "sending" || (review && (reading > 0 || !ready.length || needCompany > 0));
+  $("batch-confirm").textContent = { finished: "Close", running: "Keep working" }[batch.phase] || "Upload all";
+
+  if (reading) $("batch-summary").textContent = `Reading ${plural(reading, "file")}…`;
+  else if (review) {
+    $("batch-summary").textContent = [
+      needCompany ? `${plural(needCompany, "file")} still ${needCompany === 1 ? "needs" : "need"} a company.` : "",
+      warned ? `${plural(warned, "file")} with warnings can still be uploaded.` : "",
+      unreadable ? `${plural(unreadable, "file")} could not be read and will be skipped.` : "",
+    ].filter(Boolean).join(" ");
+  } else if (batch.phase === "finished") {
+    const failed = count((r) => r.status === "failed");
+    $("batch-summary").textContent = `Finished: ${count((r) => r.status === "done")} done, ${failed} failed.`;
+  } else {
+    $("batch-summary").textContent = `${finished} of ${batch.rows.length} finished. This goes on in the background if you keep working.`;
+  }
+}
+
+function renderBatchStates(batch) {
+  batch.rows.forEach((row) => renderRowState(batch, row));
+  renderBatchFooter(batch);
+}
+
+function renderBatch(batch) {
+  $("batch-table").querySelectorAll("tbody").forEach((body) => body.remove());
+  for (const row of batch.rows) {
+    const body = document.createElement("tbody");
+    body.dataset.row = row.key;
+    $("batch-table").appendChild(body);
+    renderRow(batch, row);
+  }
+  renderBatchFooter(batch);
+}
+
+async function openBatch(files) {
+  try {
+    await loadCompanies();
+  } catch (err) {
+    pushEntry({ kind: "note", lines: [{ text: `Could not read the files: ${err.message}` }] });
+    return;
+  }
+  const batch = {
+    phase: "review",
+    rows: files.map((file, key) => ({ key, file, filename: file.name, status: "reading", error: null, suggestion: null,
+      companyValue: "", newCompany: "", docType: "", docDate: "", warnings: [], warningRequest: 0, companyPicked: false,
+      serverRow: null })),
+  };
+  state.batch = batch;
+  $("batch-error").hidden = true;
+  $("batch-set-all").innerHTML = companyOptions("Choose…");
+  $("batch-set-all-new").hidden = true;
+  $("batch-set-all-new").value = "";
+  renderBatch(batch);
+  $("batch-dialog").showModal();
+  for (const row of batch.rows) {
+    if (state.batch !== batch) return;
+    await analyzeRow(batch, row);
+  }
+}
+
+async function analyzeRow(batch, row) {
+  try {
+    const form = new FormData();
+    form.append("file", row.file);
+    const s = await api("/api/uploads/analyze", { method: "POST", body: form });
+    row.suggestion = s;
+    row.status = "ready";
+    // The company selected at the top of the page wins over what the file suggests.
+    row.companyValue = state.current ? String(state.current.id) : s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : "";
+    row.newCompany = !state.current && !s.company.existing ? s.company.name || "" : "";
+    row.docType = s.doc_type;
+    row.docDate = s.doc_date || "";
+    row.warnings = s.warnings;
+  } catch (err) {
+    row.status = "failed";
+    row.error = err.message;
+  }
+  renderRow(batch, row);
+  renderBatchStates(batch);
+  if (state.current && row.suggestion) await refreshRowWarnings(batch, row);
+}
+
+async function refreshRowWarnings(batch, row) {
+  const request = ++row.warningRequest;
+  const s = row.suggestion;
+  const warnings = await postJson("/api/uploads/warnings", {
+    chosen_company: rowCompany(row),
+    suggested_company: s.company.name,
+    mentioned: s.mentioned.map((m) => m.name),
+    filename: s.filename,
+  }).catch(() => []);
+  if (request !== row.warningRequest) return;
+  row.warnings = warnings;
+  renderBatchStates(batch);
+}
+
+let batchWarningTimer = null;
+
+function refreshWarningsSoon(batch, rows) {
+  clearTimeout(batchWarningTimer);
+  batchWarningTimer = setTimeout(() => rows.forEach((row) => refreshRowWarnings(batch, row)), 250);
+}
+
+function editBatchRow(e) {
+  const batch = state.batch;
+  const field = e.target.dataset.field;
+  if (!batch || !field) return;
+  const row = batch.rows[Number(e.target.closest("tbody").dataset.row)];
+  row[field] = e.target.value;
+  if (field === "companyValue") {
+    row.companyPicked = true;
+    e.target.closest("td").querySelector('[data-field="newCompany"]').hidden = row.companyValue !== NEW_COMPANY;
+    $("batch-set-all").value = "";
+    $("batch-set-all-new").hidden = true;
+    refreshRowWarnings(batch, row);
+    renderBatchStates(batch);
+  } else if (field === "newCompany") {
+    row.companyPicked = true;
+    row.warnings = [];
+    refreshWarningsSoon(batch, [row]);
+    renderBatchStates(batch);
+  }
+}
+
+$("batch-table").addEventListener("change", editBatchRow);
+$("batch-table").addEventListener("input", (e) => { if (e.target.dataset.field === "newCompany") editBatchRow(e); });
+
+function applySetAll() {
+  const batch = state.batch;
+  const value = $("batch-set-all").value;
+  $("batch-set-all-new").hidden = value !== NEW_COMPANY;
+  const newCompany = value === NEW_COMPANY ? $("batch-set-all-new").value.trim() : "";
+  if (!batch || !value || (value === NEW_COMPANY && !newCompany)) return;
+  const rows = batch.rows.filter((r) => r.status === "ready");
+  for (const row of rows) {
+    row.companyValue = value;
+    row.newCompany = newCompany;
+    row.companyPicked = true;
+    row.warnings = [];
+    renderRow(batch, row);
+  }
+  refreshWarningsSoon(batch, rows);
+  renderBatchStates(batch);
+}
+
+$("batch-set-all").onchange = applySetAll;
+$("batch-set-all-new").oninput = applySetAll;
+
+function closeBatchDialog() {
+  const batch = state.batch;
+  state.batch = null; // a batch still being read stops here; one already uploading goes on
+  clearTimeout(batchWarningTimer);
+  $("batch-dialog").close();
+  return batch;
+}
+
+$("batch-cancel").onclick = closeBatchDialog;
+$("batch-dialog").addEventListener("cancel", closeBatchDialog); // Escape
+
+$("batch-confirm").onclick = () => {
+  if (state.batch.phase === "review") uploadBatch(state.batch);
+  else closeBatchDialog();
+};
+
+function batchLines(batch) {
+  return batch.rows.map((row) => {
+    const company = row.serverRow?.company?.name || (row.suggestion ? rowCompany(row) : "");
+    const detail = row.error || rowResult(row);
+    return { text: `${row.filename}${company ? ` → ${company}` : ""}: ${BATCH_STATUS[row.status]}${detail ? `. ${detail}` : ""}` };
+  });
+}
+
+async function uploadBatch(batch) {
+  const rows = batch.rows.filter((r) => r.status === "ready");
+  clearTimeout(batchWarningTimer);
+  batch.phase = "sending";
+  batch.issuesBefore = state.issues;
+  rows.forEach((row) => { row.status = "waiting"; });
+  rows[0].status = "uploading";
+  $("batch-error").hidden = true;
+  batch.rows.forEach((row) => renderRow(batch, row));
+  renderBatchFooter(batch);
+
+  const form = new FormData();
+  rows.forEach((row) => form.append("files", row.file));
+  form.append("items", JSON.stringify(rows.map((row) => ({
+    company_id: row.companyValue === NEW_COMPANY ? null : Number(row.companyValue),
+    new_company: row.companyValue === NEW_COMPANY ? row.newCompany.trim() : null,
+    doc_type: row.docType,
+    doc_date: row.docDate || null,
+  }))));
+
+  let started;
+  try {
+    await loadIssues();
+    batch.issuesBefore = state.issues;
+    started = await api("/api/uploads/batch", { method: "POST", body: form });
+  } catch (err) { // nothing was stored, so the table can be used again
+    batch.phase = "review";
+    rows.forEach((row) => { row.status = "ready"; });
+    batch.rows.forEach((row) => renderRow(batch, row));
+    renderBatchFooter(batch);
+    $("batch-error").textContent = `The files were not uploaded: ${err.message}`;
+    $("batch-error").hidden = false;
+    return;
+  }
+
+  batch.phase = "running";
+  batch.id = started.batch_id;
+  batch.uploading = rows;
+  pushEntry({ kind: "user", text: `Upload ${plural(batch.rows.length, "file")}` });
+  batch.entry = pushEntry({ kind: "note", lines: batchLines(batch) });
+  setMode("ask");
+  applyBatchProgress(batch, started);
+  pollBatch(batch);
+}
+
+function applyBatchProgress(batch, progress) {
+  let changed = false;
+  batch.uploading.forEach((row, i) => {
+    const server = progress.rows[i];
+    if (row.status !== server.status) changed = true;
+    row.status = server.status;
+    row.error = server.error;
+    row.replaced = server.replaced;
+    row.extraction = server.extraction;
+    row.serverRow = server;
+  });
+  renderBatchStates(batch);
+  if (changed) showBatchProgress(batch);
+  return changed;
+}
+
+function showBatchProgress(batch) {
+  batch.entry.lines = batchLines(batch);
+  renderChat({ keepScroll: true });
+}
+
+async function pollBatch(batch) {
+  let progress;
+  try {
+    progress = await api(`/api/uploads/batch/${batch.id}`);
+  } catch (err) {
+    for (const row of batch.uploading) {
+      if (row.status === "done" || row.status === "failed") continue;
+      row.status = "failed";
+      row.error = `Lost track of this file (${err.message}). Check the Library for what was stored.`;
+    }
+    await finishBatch(batch);
+    return;
+  }
+  // Each stored file can already be asked about, and each result can change the counts.
+  if (applyBatchProgress(batch, progress)) await refreshAfterChange().catch(() => {});
+  if (progress.finished) await finishBatch(batch);
+  else setTimeout(() => pollBatch(batch), BATCH_POLL_MS);
+}
+
+async function finishBatch(batch) {
+  batch.phase = "finished";
+  renderBatchStates(batch);
+  const companies = new Map(batch.uploading.filter((r) => r.serverRow?.company)
+    .map((r) => [r.serverRow.company.id, r.serverRow.company]));
+  if (companies.size === 1) setCurrent([...companies.values()][0]);
+  await refreshAfterChange().catch(() => {});
+  const lines = batchLines(batch);
+  const counts = [...companies.values()].map((company) => {
+    const before = batch.issuesBefore.find((c) => c.id === company.id);
+    const after = state.issues.find((c) => c.id === company.id);
+    if (!after) return "";
+    const was = before && before.total !== after.total ? ` (was ${before.total})` : "";
+    return `${company.name} now has ${plural(after.total, "issue")}${was}.`;
+  }).filter(Boolean);
+  if (counts.length) lines.push({ text: counts.join(" ") });
+  batch.entry.lines = lines;
+  batch.entry.issuesCompany = companies.size === 1 ? [...companies.keys()][0] : companies.size ? "all" : null;
+  renderChat();
+}
 
 // ---------------------------------------------------------------- drawer: Library and Issues
 

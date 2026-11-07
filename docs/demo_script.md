@@ -88,6 +88,41 @@ Click **Generate Brief** at the top right. Type **"focus on traction and risks"*
 
 ---
 
+## Batch upload (about 40 s)
+
+Use this in place of the 1:00 step, or after the close. Start from a fresh database for the numbers below.
+Afterwards, run the steps under *Before the demo* again to get back to 3 issues.
+
+Set **Company** at the top to **Auto-detect**, because a selected company becomes the default for every row.
+Switch to **Upload**, click **Choose files**, and Cmd-click these three:
+
+- `samples/company_a/tidewell_update_2026-08.txt`
+- `samples/company_a/tidewell_meeting_notes.md`
+- `samples/company_b/kitebridge_meeting_notes.md`
+
+> "Several files open a table instead of the single-file dialog. Each row has the same suggestions and
+> the same checks. These two would replace files that are already stored, and it says so on the row."
+
+Choose **Set all to: Tidewell Insurance**. The Kitebridge row warns: *This file mentions Kitebridge
+Finance, but you are adding it to Tidewell Insurance.*
+
+> "Set all is quick, but the check still runs on every row."
+
+Change that row back to **Kitebridge Finance**, then click **Upload all**.
+
+> "Each row shows its own progress. The files are stored first, so they can be asked about straight away.
+> Metric extraction goes on in the background, one file at a time, and one failure stays on its own row."
+
+While a row says **Analyzing**, click **Keep working** and ask a question. Extraction takes a few seconds per file,
+so if the button already says **Close**, everything has finished. The conversation keeps the progress
+and ends with *Tidewell Insurance now has 4 issues (was 3). Kitebridge Finance now has 1 issue.*
+
+The first upload after starting the server stays on **Uploading** for about 15 seconds while the
+embedding model loads. The Issues count can rise for a moment while a replaced file waits for its
+new metrics, and it settles when the batch finishes.
+
+---
+
 **If there's extra time:**
 
 - *Which company?* Reload the page and type **"What is the company's revenue?"**: it asks **"Which company do you mean?"** with buttons.

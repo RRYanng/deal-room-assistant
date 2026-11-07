@@ -213,6 +213,34 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .warning + .warning { margin-top: 6px; }
 #upload-new-company { margin-top: 6px; }
 
+/* Batch upload */
+.batch-dialog { width: min(1040px, calc(100vw - 32px)); }
+.batch-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.batch-set-all { display: flex; align-items: center; gap: 8px; }
+.batch-set-all label { white-space: nowrap; font-size: 13px; }
+.batch-set-all select, .batch-set-all input { width: 200px; }
+.batch-table-wrap { max-height: 58vh; overflow: auto; }
+.batch-table { min-width: 760px; table-layout: fixed; }
+.batch-table th:nth-child(1) { width: 25%; }
+.batch-table th:nth-child(2) { width: 26%; }
+.batch-table th:nth-child(3) { width: 16%; }
+.batch-table th:nth-child(4) { width: 17%; }
+.batch-table td { border-top: 0; vertical-align: middle; }
+.batch-table td:last-child { width: auto; }
+.batch-table tbody { border-top: 1px solid var(--border); }
+.batch-table .batch-new-company { margin-top: 6px; }
+.batch-file { overflow-wrap: anywhere; font-weight: 550; }
+.batch-status { font-weight: 600; white-space: nowrap; color: var(--muted); }
+.batch-status[data-status=done] { color: var(--ok); }
+.batch-status[data-status=failed] { color: var(--danger); }
+.batch-status[data-status=warning], .batch-status[data-status=needs-company] { color: var(--warn); }
+.batch-status[data-status=uploading], .batch-status[data-status=analyzing] { color: var(--accent); }
+.batch-table td.batch-notes { padding: 0 0 8px; }
+.batch-notes:empty { display: none; }
+.batch-result { font-size: 12px; color: var(--muted); }
+.batch-actions { align-items: center; }
+.batch-summary { margin-right: auto; }
+
 .overlay { position: fixed; inset: 0; background: rgba(10, 14, 20, .45); display: flex;
   align-items: center; justify-content: center; padding: 24px; z-index: 10; }
 .overlay[hidden] { display: none; }
