@@ -435,7 +435,10 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
         claims = extract_claims(conn, deck, llm, log_id)
         evidence = deck_checks(claims)
 
-        from app import memory  # noqa: PLC0415 (memory builds on this module)
+        from app import alignment, memory  # noqa: PLC0415 (both build on this module)
+        _stage(conn, run_id, "Reading the business model")
+        business_model = alignment.read_business_model(conn, deck, llm, log_id)
+
         _stage(conn, run_id, "Reading earlier decks for comparison")
         for filename in memory.fill_earlier_decks(conn, company_id, deck, llm, log_id):
             notes.append(f"Read the earlier deck {filename} once, to compare figures (claims only, no web search).")
@@ -456,7 +459,7 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
             evidence += found
             notes += research_notes
 
-        _save(conn, run_id, company_id, claims, evidence, notes, deck)
+        _save(conn, run_id, company_id, claims, evidence, notes, deck, business_model)
     except LLMError as e:
         _fail(conn, run_id, f"Model call failed: {e}", notes)
     except Exception as e:  # noqa: BLE001 (the run must end in a stored state the page can show)
@@ -480,10 +483,12 @@ def _fail(conn: sqlite3.Connection, run_id: int, error: str, notes: list[str]) -
 
 
 def _save(conn: sqlite3.Connection, run_id: int, company_id: int, claims: list[dict], evidence: list[dict],
-          notes: list[str], deck: sqlite3.Row) -> None:
+          notes: list[str], deck: sqlite3.Row, business_model: list[dict] = ()) -> None:
+    from app import alignment  # noqa: PLC0415 (alignment builds on this module)
     from app.memory import save_deck  # noqa: PLC0415 (memory builds on this module)
     with conn:
         save_deck(conn, company_id, deck, claims)
+        alignment.save(conn, run_id, company_id, business_model)
         for i, c in enumerate(claims):
             mine = [e for e in evidence if e["claim"] == i]
             lo, hi = c["range"] if c["range"] else (None, None)
@@ -567,9 +572,11 @@ def latest_results(conn: sqlite3.Connection, company_id: int) -> dict:
               "run": last and get_run(conn, company_id, last),
               "failed_run": get_run(conn, company_id, failed) if failed and (not last or failed > last) else None,
               "claims": [], "competitors": []}
-    result["changes"] = []
+    result["changes"], result["alignment"] = [], None
     if last:
+        from app import alignment  # noqa: PLC0415 (alignment builds on this module)
         from app.memory import changes  # noqa: PLC0415 (memory builds on this module)
+        result["alignment"] = alignment.results(conn, company_id, last, result["run"]["filename"])
         result["claims"] = run_claims(conn, company_id, last)
         result["competitors"] = run_competitors(conn, company_id, last)
         result["changes"] = changes(conn, company_id, result["run"]["document_id"])

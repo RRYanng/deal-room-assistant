@@ -259,8 +259,9 @@ def test_e5_product_outcome_stays_unverified_with_web_research_on(results):
 def test_a_run_records_its_cost(db):
     out = check(db)
     usage = out["run"]["usage"]
-    # 1 extraction + 1 read of the earlier deck (memory) + 1 evidence review + 2 turns of each research loop.
-    assert usage["complete_json"] == 3 and usage["chat"] == 4 and usage["model_calls"] == 7
+    # 1 extraction + 1 business model + 1 read of the earlier deck (memory) + 1 evidence review + 2 turns of
+    # each research loop.
+    assert usage["complete_json"] == 4 and usage["chat"] == 4 and usage["model_calls"] == 8
     assert usage["web_searches"] == 4 and usage["search_credits"] is None  # the fake does not report credits
     assert usage["seconds"] >= 0
     assert usage["tokens"] is None and usage["estimated_usd"] is None  # FakeLLM reports no usage

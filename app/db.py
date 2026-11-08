@@ -158,6 +158,19 @@ CREATE TABLE IF NOT EXISTS competitors (
 );
 CREATE INDEX IF NOT EXISTS idx_competitors_run ON competitors(run_id);
 
+-- v2 alignment check: who pays, how the company charges, who benefits, and tension points (fixed types).
+CREATE TABLE IF NOT EXISTS alignment_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL CHECK (kind IN ('role', 'tension')),
+    label        TEXT NOT NULL,              -- payer / pricing / beneficiary, or the tension type
+    chunk_id     INTEGER REFERENCES chunks(id) ON DELETE CASCADE,
+    quote        TEXT NOT NULL,              -- verbatim from the deck
+    loc_label    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_alignment_run ON alignment_items(run_id);
+
 -- v2 memory: every claim of every checked deck, kept per company, to see what changed between decks.
 -- Entries survive deleting the deck (document_id becomes NULL); file name and date are copied.
 CREATE TABLE IF NOT EXISTS memory_entries (

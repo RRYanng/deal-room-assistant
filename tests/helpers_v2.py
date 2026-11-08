@@ -136,11 +136,36 @@ def evidence_reviewer(rules=EVIDENCE_RULES, pair_risks=True):
     return reply
 
 
-def claim_llm(extractor=None, reviewer=None) -> FakeLLM:
+PRICING = ("Practices pay a monthly subscription per location, plus 8% of the amounts ClearClaim recovers on "
+           "previously denied claims.")
+BENEFIT = ("Practices get paid faster and spend less staff time on insurance; patients get clearer cost estimates "
+           "before treatment.")
+ALIGNMENT_RULES = [("role", "payer", PRICING), ("role", "pricing", PRICING), ("role", "beneficiary", BENEFIT),
+                   ("tension", "share_of_recovered", PRICING)]
+
+
+def alignment_reader(rules=ALIGNMENT_RULES):
+    """FakeLLM reply for "Read the business model": every rule whose quote is in a chunk of the deck."""
+    def reply(call):
+        out = {"roles": [], "tensions": []}
+        for chunk_id, _label, text in chunks_in_prompt(call["prompt"]):
+            flat = " ".join(text.split())
+            for kind, label, quote in rules:
+                if quote in flat:
+                    key = "role" if kind == "role" else "type"
+                    out["roles" if kind == "role" else "tensions"].append({key: label, "chunk_id": chunk_id, "quote": quote})
+        return out
+    return reply
+
+
+def claim_llm(extractor=None, reviewer=None, alignment=None) -> FakeLLM:
     """One FakeLLM for a whole claim check: routes each call by the skill section in its system prompt."""
     extractor, reviewer = extractor or claim_extractor(), reviewer or evidence_reviewer()
+    alignment = alignment or alignment_reader()
 
     def reply(call):
+        if "who pays the company" in call["system"]:
+            return alignment(call)
         if "list the key claims" in call["system"]:
             return extractor(call)
         if "check the claims of a pitch deck" in call["system"]:
