@@ -1412,7 +1412,14 @@ function renderClaims() {
       ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>` : ""}
       ${c.source_type ? `<span class="muted small">(${esc(c.source_type)})</span>` : ""}</li>`;
   }).join("")}</ul>` : "";
-  $("claims-body").innerHTML = `${head}
+  const changes = (d.changes || []).length ? `<div class="issue-card changes">
+    <div class="issue-title">Changed since the last deck</div>
+    ${d.changes.map((c) => `<div class="small">${c.kind === "changed" ? '<span class="status st-warn">Changed</span>'
+      : '<span class="status st-none">Updated</span>'} <b>${esc(c.key)}</b>: ${esc(c.note)}
+      <div class="quote">Before: “${esc(c.old.quote)}” · Now: “${esc(c.new.quote)}”</div></div>`).join("")}
+    <div class="muted small">Market figures should not move between decks; traction, team and costs change with time.</div>
+  </div>` : "";
+  $("claims-body").innerHTML = `${head}${changes}
     <div class="claims-summary">${byStatus.join(" ")}
       <span class="muted small">${d.counts.awaiting_review} awaiting review · ${d.counts.confirmed} confirmed</span> ${dismissed}</div>
     <div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true. Nothing is a

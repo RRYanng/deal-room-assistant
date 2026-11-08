@@ -34,6 +34,7 @@ def build_memo(conn: sqlite3.Connection, company_id: int) -> dict:
         "awaiting_review": [c for c in claims if c["review_state"] == "awaiting_review"],
         "dismissed": [c for c in claims if c["review_state"] == "dismissed"],
         "competitors": results["competitors"],
+        "changes": results["changes"],
         "signals": apply_reviews(conn, company_id, latest_monitor_results(conn, company_id)["signals"], "signal"),
     }
 
@@ -62,6 +63,13 @@ def memo_to_markdown(memo: dict) -> str:
     if memo["dismissed"]:
         lines += [f"## Dismissed ({len(memo['dismissed'])})", ""]
         lines += [f"- {c['statement']} Reason: {c['review']['reason']}" for c in memo["dismissed"]] + [""]
+
+    changed = [c for c in memo["changes"] if c["kind"] == "changed"]
+    updated = [c for c in memo["changes"] if c["kind"] == "updated"]
+    if changed or updated:
+        lines += ["## Changed since the last deck", ""]
+        lines += [f"- **Changed** ({c['key']}): {c['note']}" for c in changed]
+        lines += [f"- Updated ({c['key']}): {c['note']}" for c in updated] + [""]
 
     signals = memo["signals"]
     if signals:

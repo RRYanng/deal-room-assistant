@@ -27,6 +27,8 @@ CASES = {
     "E8": "$400B US dental spending vs CMS ($189.2B) is Possibly overstated, with a real link",
     "E9": "Competitor research lists competitors with links and contradicts 'no other company'",
     "E10": "Invented sources and altered quotes are dropped; queries naming the company are refused",
+    "E11": "Memory: 250,000 practices in the September deck -> 400,000 in December is flagged as changed",
+    "E12": "Memory never crosses companies (ClearClaim, Tidewell, Kitebridge)",
     "E13": "Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; reason required",
     "E14": "Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1",
     "FP": "The same file checked twice gives identical fingerprints",

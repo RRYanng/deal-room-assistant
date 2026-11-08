@@ -7,7 +7,7 @@ import pytest
 from app.db import SCHEMA, connect, init_db
 
 V2_TABLES = {"claim_runs", "claims", "web_sources", "evidence", "competitors", "reviews", "monitor_runs",
-             "monitor_periods", "signals"}
+             "monitor_periods", "signals", "memory_entries"}
 
 
 def tables(conn):

@@ -47,6 +47,19 @@ CLAIM_RULES = [
      "quote": "Our model assumes 0% customer churn and 98% first-pass claim acceptance through 2029."},
 ]
 
+# The September 2025 deck, read once by memory. (Its "$400 billion" sentence matches a rule above.)
+SEP_DECK_RULES = [
+    {"key": "market.customer_count", "value_raw": "250,000",
+     "quote": "There are 250,000 independent dental practices in the United States."},
+    {"key": "market.price_usd", "value_raw": "$3,600",
+     "quote": "At $3,600 per practice per year, our total addressable market is $900M."},
+    {"key": "market.size_usd", "value_raw": "$900M",
+     "quote": "At $3,600 per practice per year, our total addressable market is $900M."},
+    {"key": "traction.paying_customers", "value_raw": "40",
+     "quote": "As of August 31, 2025, 40 dental practices pay for ClearClaim."},
+    {"key": "team.headcount", "value_raw": "9", "quote": "We are a team of 9 full-time employees."},
+]
+
 # Passages a careful model links to claims. `claim` is a fragment of the claim's quote.
 # The last two rules are traps the program must drop: a passage on the topic with no number, and an
 # industry survey the founder quoted (labelled scope "industry"), linked to the product's own result.
@@ -69,7 +82,7 @@ EVIDENCE_RULES = [
 ]
 
 
-def claim_extractor(rules=CLAIM_RULES, statement=lambda rule: f"The deck says: {rule['quote']}"):
+def claim_extractor(rules=CLAIM_RULES + SEP_DECK_RULES, statement=lambda rule: f"The deck says: {rule['quote']}"):
     """FakeLLM reply for "Extract claims": every rule whose quote is in a chunk of the prompt."""
     def reply(call):
         out = []

@@ -432,6 +432,11 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
         claims = extract_claims(conn, deck, llm, log_id)
         evidence = deck_checks(claims)
 
+        from app import memory  # noqa: PLC0415 (memory builds on this module)
+        _stage(conn, run_id, "Reading earlier decks for comparison")
+        for filename in memory.fill_earlier_decks(conn, company_id, deck, llm, log_id):
+            notes.append(f"Read the earlier deck {filename} once, to compare figures (claims only, no web search).")
+
         _stage(conn, run_id, "Checking claims against the company's other materials")
         docs = context_documents(conn, company_id, deck)
         if not docs:
@@ -448,7 +453,7 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
             evidence += found
             notes += research_notes
 
-        _save(conn, run_id, company_id, claims, evidence, notes)
+        _save(conn, run_id, company_id, claims, evidence, notes, deck)
     except LLMError as e:
         _fail(conn, run_id, f"Model call failed: {e}", notes)
     except Exception as e:  # noqa: BLE001 (the run must end in a stored state the page can show)
@@ -472,8 +477,10 @@ def _fail(conn: sqlite3.Connection, run_id: int, error: str, notes: list[str]) -
 
 
 def _save(conn: sqlite3.Connection, run_id: int, company_id: int, claims: list[dict], evidence: list[dict],
-          notes: list[str]) -> None:
+          notes: list[str], deck: sqlite3.Row) -> None:
+    from app.memory import save_deck  # noqa: PLC0415 (memory builds on this module)
     with conn:
+        save_deck(conn, company_id, deck, claims)
         for i, c in enumerate(claims):
             mine = [e for e in evidence if e["claim"] == i]
             lo, hi = c["range"] if c["range"] else (None, None)
@@ -557,9 +564,12 @@ def latest_results(conn: sqlite3.Connection, company_id: int) -> dict:
               "run": last and get_run(conn, company_id, last),
               "failed_run": get_run(conn, company_id, failed) if failed and (not last or failed > last) else None,
               "claims": [], "competitors": []}
+    result["changes"] = []
     if last:
+        from app.memory import changes  # noqa: PLC0415 (memory builds on this module)
         result["claims"] = run_claims(conn, company_id, last)
         result["competitors"] = run_competitors(conn, company_id, last)
+        result["changes"] = changes(conn, company_id, result["run"]["document_id"])
     return result
 
 

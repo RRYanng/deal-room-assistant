@@ -158,6 +158,24 @@ CREATE TABLE IF NOT EXISTS competitors (
 );
 CREATE INDEX IF NOT EXISTS idx_competitors_run ON competitors(run_id);
 
+-- v2 memory: every claim of every checked deck, kept per company, to see what changed between decks.
+-- Entries survive deleting the deck (document_id becomes NULL); file name and date are copied.
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    filename     TEXT NOT NULL,
+    doc_date     TEXT,
+    key          TEXT NOT NULL,
+    value_raw    TEXT,
+    value_lo     REAL,
+    value_hi     REAL,
+    quote        TEXT NOT NULL,
+    loc_label    TEXT,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_memory_company ON memory_entries(company_id, key);
+
 -- v2 portfolio monitoring: KPIs per update and the signals computed from them.
 CREATE TABLE IF NOT EXISTS monitor_runs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
