@@ -80,7 +80,7 @@ FakeWebSearch. They test the program's checks and rules, not the real model's ju
 | E14 | Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1 | pass |
 | FP | The same file checked twice gives identical fingerprints | pass |
 
-Whole offline suite at the last run: 416 passed (the 274 v1.1 tests included).
+Whole offline suite at the last run: 417 passed (the 274 v1.1 tests included).
 
 **Live run** (real Claude Opus 5.5 and Tavily, ClearClaim deck, 2026-11-08): E1-E9 matched the
 expected statuses in both runs. In the second run 18 of 18 claims found in both runs had the same
@@ -88,7 +88,9 @@ fingerprint and status; it cost 8 model calls, about $0.78 and 8 search credits 
 A third run, with memory, flagged 250,000 -> 400,000 practices as changed (E11 live) and gave the
 same fingerprint and status for all 20 claims as the second run. Portfolio monitoring with the real
 model (E14 live): the expected signal in every quarter and every cash, burn and revenue figure as in
-the updates, for 4 model calls and about $0.08.
+the updates, for 4 model calls and about $0.08. With prompt caching in the research loops, a
+fourth run cost about $0.65 instead of $0.78 (87,915 tokens written to cache, 57,145 read back,
+10,832 uncached), with the same 20 fingerprints and statuses as the third run.
 
 ## Quick start
 
