@@ -60,12 +60,15 @@ OVERSTATED_RATIO = 1.5    # a claim at least 1.5x its benchmark is possibly over
 CONTEXT_WINDOW_DAYS = 60  # other materials count as evidence only if dated this close to the deck
 CANDIDATES_PER_CLAIM = 6
 
-# Floor for operating cost per full-time employee. BLS Employer Costs for Employee Compensation,
-# December 2025 (released 2026-03-20): private industry employers paid $46.15 per hour worked
-# (https://www.bls.gov/news.release/archives/ecec_03202026.htm). x 2,080 hours = about $96,000 a year;
-# the floor is half of that. Operating costs also include rent, software and fees, so a company below
-# half of the average pay cost alone has very likely misstated its team size or its costs.
-COST_PER_EMPLOYEE_FLOOR_USD = 48_000
+# Floor for operating cost per full-time employee: the yearly employer cost of one worker in the
+# lowest-cost occupation group. BLS Employer Costs for Employee Compensation, December 2025 (released
+# 2026-03-20), Table 4, private industry, Service occupations: total compensation $23.39 per hour
+# worked (https://www.bls.gov/news.release/archives/ecec_03202026.htm). x 2,080 hours = $48,651 a year.
+# Operating costs also include rent, software and fees, so costs below what the cheapest kind of
+# worker costs in pay alone mean the team size or the costs are very likely misstated.
+LOWEST_COST_OCCUPATION_HOURLY_USD = 23.39
+FULL_TIME_HOURS_PER_YEAR = 2080
+COST_PER_EMPLOYEE_FLOOR_USD = round(LOWEST_COST_OCCUPATION_HOURLY_USD * FULL_TIME_HOURS_PER_YEAR)  # 48,651
 
 EXTRACT_SCHEMA = {
     "type": "object",
@@ -226,9 +229,9 @@ def deck_checks(claims: list[dict]) -> list[dict]:
         per_head = opex["range"][0] / heads["range"][0]
         if per_head < COST_PER_EMPLOYEE_FLOOR_USD:
             note = (f"{opex['value_raw']} / {heads['value_raw']} = {_usd(per_head)} per full-time employee "
-                    f"(calculated), below the {_usd(COST_PER_EMPLOYEE_FLOOR_USD)} floor (half the average US "
-                    f"employer cost of one worker, BLS, December 2025). The team size may be overstated or "
-                    f"the costs understated.")
+                    f"(calculated), below the {_usd(COST_PER_EMPLOYEE_FLOOR_USD)} floor: the yearly employer cost of "
+                    f"one worker in the lowest-cost occupation group (BLS, December 2025). The team size may be "
+                    f"overstated or the costs understated.")
             for claim in (opex, heads):
                 found.append(evidence_item(claims.index(claim), "calculation", "overstates", note=note))
     return found

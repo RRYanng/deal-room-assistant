@@ -42,12 +42,14 @@ status. Highest rule wins:
 The column is labelled "Evidence status" with the note "Not a verdict — needs investor review."
 
 **Implausible cost structure.** Operating cost per full-time employee below a floor is flagged
-possibly overstated (implausible). Floor: 50% of the average US private-industry employer cost of
-one full-time worker. BLS Employer Costs for Employee Compensation, December 2025: $46.15 per hour
-worked (https://www.bls.gov/news.release/ecec.htm); x 2,080 hours = about $96,000 a year; 50% =
-**$48,000**. Operating costs also include rent, software and payer fees, so a company below half of
-the average pay cost alone is very unlikely to be described correctly. The floor is a constant in
-code with this source next to it.
+possibly overstated (implausible). Floor: the yearly employer cost of one worker in the lowest-cost
+occupation group. BLS Employer Costs for Employee Compensation, December 2025 (released 2026-03-20),
+Table 4, private industry, Service occupations: total compensation $23.39 per hour worked
+(https://www.bls.gov/news.release/archives/ecec_03202026.htm); x 2,080 hours = **$48,651** a year.
+Operating costs also include rent, software and payer fees, so costs below what the cheapest kind of
+worker costs in pay alone are very unlikely to be described correctly. The floor is computed in code
+from these two numbers, with this source next to it. (Revised 2026-11-08; it was 50% of the
+all-worker average.)
 
 ## 3. Web research
 

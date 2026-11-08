@@ -58,7 +58,7 @@ FakeWebSearch. They test the program's checks and rules, not the real model's ju
 |---|---|---|
 | E1 | Gross margin stated two ways in one deck (67-82% vs above 90%) is Contradicted | pass |
 | E2 | Market size arithmetic that does not add up ($12B vs 400,000 x $3,600) is Contradicted | pass |
-| E3 | Operating cost per employee below the BLS-based floor ($48,000) is Possibly overstated | pass |
+| E3 | Operating cost per employee below the BLS-based floor ($48,651) is Possibly overstated | pass |
 | E4 | A projection that assumes away a risk the deck states is Possibly overstated | pass |
 | E5 | A claim with no evidence (15 hours saved per week) stays Unverified | pass |
 | E6 | A claim backed by notes and CRM is Consistent with company data | pass |

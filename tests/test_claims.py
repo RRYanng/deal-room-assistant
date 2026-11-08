@@ -75,7 +75,7 @@ def test_e2_market_size_arithmetic_is_contradicted(results):
 
 
 def test_e3_cost_per_employee_below_floor_is_possibly_overstated(results):
-    assert COST_PER_EMPLOYEE_FLOOR_USD == 48_000
+    assert COST_PER_EMPLOYEE_FLOOR_USD == 48_651  # $23.39 x 2,080 (BLS, Service occupations)
     for fragment in ("operating costs for 2025 are $420,000", "team of 14 full-time employees"):
         claim = by_quote(results["claims"], fragment)
         assert claim["status"] == "possibly_overstated"

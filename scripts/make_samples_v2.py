@@ -68,7 +68,7 @@ DECK_2025_12 = [
      "No other company offers AI agents for dental insurance claims.",
      "Today practices rely on manual work or outsourced billing services."],
     ["Team",
-     # With the operating costs below: $30,000 per employee, below the $48,000 floor.
+     # With the operating costs below: $30,000 per employee, below the $48,651 floor.
      "We are a team of 14 full-time employees.",
      "Maya Chen, CEO, is a former dental office manager. Daniel Okafor, CTO, is a former payments "
      "engineer. Priya Raman, Head of Sales, sold practice software for eight years."],
