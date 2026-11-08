@@ -7,8 +7,8 @@
 Upload a company's pitch deck, meeting notes and CRM log, ask questions, and generate a one-page
 brief that flags **missing** and **conflicting** information instead of hiding it.
 
-> Independent prototype, built for my application to the Associate AI Engineer role at Core VC.
-> It was not commissioned by Core. All sample data is synthetic and marked `SYNTHETIC SAMPLE`.
+> Independent prototype, not affiliated with or commissioned by any firm. All sample data is synthetic
+> and marked `SYNTHETIC SAMPLE`.
 
 ## What it does
 
