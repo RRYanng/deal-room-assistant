@@ -224,6 +224,17 @@ def test_replacing_a_file_warns(client):
     assert warn(client, name, name, [], "b.txt") == []
 
 
+def test_replacing_a_file_warning_carries_the_old_date(client):
+    """The confirmation starts from the replaced file's date when it finds no better one."""
+    cid = client.get("/api/companies").json()[1]["id"]
+    name = client.get("/api/companies").json()[1]["name"]
+    for filename, doc_date in (("dated.txt", "2026-07-15"), ("undated.txt", None)):
+        client.post(f"/api/companies/{cid}/documents", files={"file": (filename, b"Some text.", "text/plain")},
+                    data={"doc_type": "notes"} | ({"doc_date": doc_date} if doc_date else {}))
+    assert [w["doc_date"] for w in warn(client, name, name, [], "dated.txt")] == ["2026-07-15"]
+    assert [w["doc_date"] for w in warn(client, name, name, [], "undated.txt")] == [None]
+
+
 def test_warnings_do_not_block_the_upload(client):
     """Adding a Kitebridge file to Tidewell still works if the user continues."""
     cid = next(c["id"] for c in client.get("/api/companies").json() if c["name"].startswith("Tidewell"))

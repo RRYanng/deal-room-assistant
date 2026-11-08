@@ -335,8 +335,22 @@ function companyHint(c) {
   return `Suggested: ${c.name} (${from[c.source]}).`;
 }
 
+// A file that replaces one with the same name starts from that file's date, unless the new file
+// gives a date of its own. The server keeps the old date too if the date is left empty.
+function replacedDate(warnings) {
+  const replaced = warnings.find((w) => w.kind === "replaces_file");
+  return replaced?.doc_date || "";
+}
+
+function dateHint(s, date, edited, kept) {
+  if (date && !edited && !s.doc_date && date === kept) return "Date of the file this one replaces.";
+  if (!date && kept) return `If left empty, the date of the file this one replaces (${kept}) is kept.`;
+  if (s.doc_date) return `Suggested from: ${s.doc_date_why}.`;
+  return "No date found. Add one if you know it.";
+}
+
 function openUploadDialog(file, s) {
-  state.upload = { file, suggestion: s };
+  state.upload = { file, suggestion: s, dateEdited: false };
   const options = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   $("upload-company").innerHTML = `<option value="">Choose a company…</option>${options}
     <option value="${NEW_COMPANY}">+ New company…</option>`;
@@ -353,10 +367,10 @@ function openUploadDialog(file, s) {
   $("upload-type").value = s.doc_type;
   $("upload-type-why").textContent = `Suggested from: ${s.doc_type_why}.`;
   $("upload-date").value = s.doc_date || "";
-  $("upload-date-why").textContent = s.doc_date ? `Suggested from: ${s.doc_date_why}.` : "No date found. Add one if you know it.";
 
   syncNewCompanyField();
   renderUploadWarnings(s.warnings);
+  applyReplacedDate(s.warnings);
   $("upload-dialog").showModal();
 }
 
@@ -393,10 +407,24 @@ async function refreshUploadWarnings() {
     mentioned: s.mentioned.map((m) => m.name),
     filename: s.filename,
   }).catch(() => []);
-  if (request === warningRequest) renderUploadWarnings(warnings);
+  if (request !== warningRequest) return;
+  renderUploadWarnings(warnings);
+  applyReplacedDate(warnings);
+}
+
+function applyReplacedDate(warnings) {
+  state.upload.keptDate = replacedDate(warnings);
+  const { suggestion: s, dateEdited, keptDate } = state.upload;
+  if (!s.doc_date && !dateEdited) $("upload-date").value = keptDate;
+  $("upload-date-why").textContent = dateHint(s, $("upload-date").value, dateEdited, keptDate);
 }
 
 $("upload-company").onchange = () => { syncNewCompanyField(); refreshUploadWarnings(); };
+$("upload-date").addEventListener("input", () => {
+  if (!state.upload) return;
+  state.upload.dateEdited = true;
+  $("upload-date-why").textContent = dateHint(state.upload.suggestion, $("upload-date").value, true, state.upload.keptDate);
+});
 let newCompanyTimer = null;
 $("upload-new-company").oninput = () => {
   renderUploadWarnings([]);
@@ -566,7 +594,7 @@ function renderRow(batch, row) {
           aria-label="New company name for ${name}" value="${esc(row.newCompany)}" autocomplete="off" ${isNew ? "" : "hidden"} ${locked}></td>
       <td><select data-field="docType" aria-label="Material type for ${name}" title="Suggested from: ${esc(s.doc_type_why)}." ${locked}>${typeOptions}</select></td>
       <td><input data-field="docDate" type="date" aria-label="Material date for ${name}" value="${esc(row.docDate)}"
-        title="${s.doc_date ? `Suggested from: ${esc(s.doc_date_why)}.` : "No date found. Add one if you know it."}" ${locked}></td>`;
+        title="${esc(dateHint(s, row.docDate, row.dateEdited, replacedDate(row.warnings)))}" ${locked}></td>`;
   }
   body.innerHTML = `<tr><td class="batch-file">${name}</td>${fields}<td class="batch-status" data-file="${name}"></td></tr>
     <tr><td colspan="5" class="batch-notes"></td></tr>`;
@@ -637,7 +665,7 @@ async function openBatch(files) {
   const batch = {
     phase: "review",
     rows: files.map((file, key) => ({ key, file, filename: file.name, status: "reading", error: null, suggestion: null,
-      companyValue: "", newCompany: "", docType: "", docDate: "", warnings: [], warningRequest: 0, companyPicked: false,
+      companyValue: "", newCompany: "", docType: "", docDate: "", dateEdited: false, warnings: [], warningRequest: 0, companyPicked: false,
       serverRow: null })),
   };
   state.batch = batch;
@@ -664,8 +692,8 @@ async function analyzeRow(batch, row) {
     row.companyValue = state.current ? String(state.current.id) : s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : "";
     row.newCompany = !state.current && !s.company.existing ? s.company.name || "" : "";
     row.docType = s.doc_type;
-    row.docDate = s.doc_date || "";
     row.warnings = s.warnings;
+    row.docDate = s.doc_date || replacedDate(s.warnings);
   } catch (err) {
     row.status = "failed";
     row.error = err.message;
@@ -686,7 +714,17 @@ async function refreshRowWarnings(batch, row) {
   }).catch(() => []);
   if (request !== row.warningRequest) return;
   row.warnings = warnings;
+  applyRowReplacedDate(batch, row);
   renderBatchStates(batch);
+}
+
+function applyRowReplacedDate(batch, row) {
+  const s = row.suggestion;
+  if (s.doc_date || row.dateEdited || batch.phase !== "review" || state.batch !== batch) return;
+  row.docDate = replacedDate(row.warnings);
+  const input = document.querySelector(`#batch-table tbody[data-row="${row.key}"] [data-field="docDate"]`);
+  input.value = row.docDate;
+  input.title = dateHint(s, row.docDate, false, row.docDate);
 }
 
 let batchWarningTimer = null;
@@ -702,6 +740,10 @@ function editBatchRow(e) {
   if (!batch || !field) return;
   const row = batch.rows[Number(e.target.closest("tbody").dataset.row)];
   row[field] = e.target.value;
+  if (field === "docDate") {
+    row.dateEdited = true;
+    e.target.title = dateHint(row.suggestion, row.docDate, true, replacedDate(row.warnings));
+  }
   if (field === "companyValue") {
     row.companyPicked = true;
     e.target.closest("td").querySelector('[data-field="newCompany"]').hidden = row.companyValue !== NEW_COMPANY;

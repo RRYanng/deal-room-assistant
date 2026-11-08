@@ -156,9 +156,10 @@ def consistency_warnings(conn: sqlite3.Connection, chosen: str, suggested: str |
 
     companies = all_companies(conn)
     existing = next((c for c in companies if _same_name(c["name"], chosen)), None)
-    if existing and filename and conn.execute(
-            "SELECT 1 FROM documents WHERE company_id = ? AND filename = ?", (existing["id"], filename)).fetchone():
-        warnings.append({"kind": "replaces_file",
+    replaced = existing and filename and conn.execute(
+        "SELECT doc_date FROM documents WHERE company_id = ? AND filename = ?", (existing["id"], filename)).fetchone()
+    if replaced:  # doc_date lets the dialog keep the old file's date when it has no better guess
+        warnings.append({"kind": "replaces_file", "doc_date": replaced["doc_date"],
                          "message": f"{chosen} already has a file named {filename}. "
                                     "Adding this one replaces it and its metrics."})
     if not existing:

@@ -176,6 +176,18 @@ def test_same_file_name_replaces_the_stored_file(client, companies):
     assert [c["text"] for c in chunks] == ["New text."]
 
 
+def test_replacement_without_a_date_keeps_the_old_date(client, companies):
+    """tidewell_deck.pdf dated 2026-07-15, replaced in a batch with the date left empty."""
+    cid = companies["Tidewell Insurance"]
+    run_batch(client, [row("tidewell_deck.pdf", sample("company_a/tidewell_deck.pdf"), cid, doc_type="deck",
+                           doc_date="2026-07-15")])
+    second = run_batch(client, [row("tidewell_deck.pdf", sample("company_a/tidewell_deck.pdf"), cid, doc_type="deck")])
+    assert second["rows"][0]["status"] == "done" and second["rows"][0]["replaced"] is True
+
+    docs = client.get(f"/api/companies/{cid}/documents").json()
+    assert [(d["filename"], d["doc_date"]) for d in docs] == [("tidewell_deck.pdf", "2026-07-15")]
+
+
 def test_same_file_name_twice_in_a_batch_keeps_the_later_file(client, companies):
     cid = companies["Tidewell Insurance"]
     body = run_batch(client, [row("notes.md", b"First.", cid), row("notes.md", b"Second.", cid)])

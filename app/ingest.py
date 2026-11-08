@@ -205,7 +205,7 @@ def _split_long(text: str) -> list[str]:
 def ingest_document(conn: sqlite3.Connection, company_id: int, filename: str, doc_type: str,
                     doc_date: str | None, data: bytes, embedder: Embedder | None = None) -> dict:
     """Validate, parse, embed and store one file. Same filename for the same company replaces
-    the old one.
+    the old one; with no new material date, the replacement keeps the old file's date.
 
     Parsing and embedding happen before any write, so a bad replacement file (or a failing
     embedding model) leaves the old version intact.
@@ -216,10 +216,11 @@ def ingest_document(conn: sqlite3.Connection, company_id: int, filename: str, do
     vectors = embedder.embed([c.text for c in parsed.chunks])
 
     with conn:  # one transaction: either everything is stored or nothing changes
-        old = conn.execute("SELECT id FROM documents WHERE company_id = ? AND filename = ?",
+        old = conn.execute("SELECT id, doc_date FROM documents WHERE company_id = ? AND filename = ?",
                            (company_id, filename)).fetchone()
         if old:
             conn.execute("DELETE FROM documents WHERE id = ?", (old["id"],))  # cascades
+            doc_date = doc_date or old["doc_date"]
         doc_id = conn.execute(
             "INSERT INTO documents(company_id, filename, doc_type, doc_date) VALUES (?, ?, ?, ?)",
             (company_id, filename, doc_type, doc_date or None),
@@ -241,4 +242,4 @@ def ingest_document(conn: sqlite3.Connection, company_id: int, filename: str, do
                 )
 
     return {"document_id": doc_id, "filename": filename, "replaced": bool(old),
-            "chunks": len(parsed.chunks)}
+            "doc_date": doc_date or None, "chunks": len(parsed.chunks)}

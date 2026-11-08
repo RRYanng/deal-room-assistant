@@ -73,6 +73,23 @@ def test_same_filename_replaces_old_version_without_duplicates(client, db_path):
     assert texts == ["New paragraph."]
 
 
+def test_replacement_without_a_date_keeps_the_old_date(client):
+    cid = make_company(client)
+    upload(client, cid, "notes.md", b"Old paragraph.", "notes", "2026-07-15")
+    r = upload(client, cid, "notes.md", b"New paragraph.", "notes")
+    assert r.status_code == 201 and r.json()["replaced"] is True and r.json()["doc_date"] == "2026-07-15"
+    upload(client, cid, "notes.md", b"Newer paragraph.", "notes", "2026-09-01")
+
+    docs = client.get(f"/api/companies/{cid}/documents").json()
+    assert [(d["filename"], d["doc_date"]) for d in docs] == [("notes.md", "2026-09-01")]
+
+
+def test_new_file_without_a_date_stays_undated(client):
+    cid = make_company(client)
+    upload(client, cid, "notes.md", b"Paragraph.", "notes")
+    assert client.get(f"/api/companies/{cid}/documents").json()[0]["doc_date"] is None
+
+
 def test_crm_replacement_does_not_duplicate_crm_records(client, db_path):
     cid = make_company(client)
     for _ in range(2):

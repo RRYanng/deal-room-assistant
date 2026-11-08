@@ -16,7 +16,7 @@ brief that flags **missing** and **conflicting** information instead of hiding i
    The system suggests the company, material type and date, and you confirm them. It warns if the
    file seems to belong to another company. Choosing several files opens a table with the same
    suggestions and checks on every row. Data survives restarts, and uploading a file with the
-   same name replaces the old version.
+   same name replaces the old version, keeping its material date unless you give a new one.
 2. **Organize**: files are split into chunks that keep their location (PDF page + paragraph,
    TXT/MD paragraph, CSV row) and are indexed for hybrid search. Key metrics are extracted into a
    table, each with a verbatim quote.
@@ -51,7 +51,7 @@ on first use and is cached by Hugging Face afterwards.
 Tests:
 
 ```bash
-.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (270 tests)
+.venv/bin/python -m pytest                 # offline: FakeLLM, no API calls (274 tests)
 .venv/bin/python -m pytest -m live         # calls the real models (9 tests)
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
