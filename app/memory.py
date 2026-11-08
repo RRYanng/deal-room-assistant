@@ -21,6 +21,7 @@ from app.claims import TOLERANCE, extract_claims
 from app.llm import LLMClient
 from app.numbers import ranges_agree
 from app.presentation import label
+from app.questions import change_question
 
 STABLE_PREFIXES = ("market.", "unit.", "product.")  # should not move between decks: a change is a flag
 NOT_COMPARED = {"other", "risk.stated", "competition.landscape", "market.status_quo", "projection.assumption",
@@ -92,6 +93,7 @@ def changes(conn: sqlite3.Connection, company_id: int, document_id: int) -> list
             "new": {k: new[k] for k in ("value_raw", "quote", "filename", "doc_date", "loc_label")},
             "note": f"{old['value_raw']} ({old['filename']}, {old['doc_date']}) -> {new['value_raw']} "
                     f"({new['filename']}, {new['doc_date']})."})
+        out[-1]["question"] = change_question(out[-1])
     return out
 
 

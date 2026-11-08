@@ -34,6 +34,7 @@ from app.logs import log_event
 from app.numbers import normalize_number
 from app.rag import iso_dates
 from app.skills import skill_prompt
+from app.questions import signal_question
 from app.usage import CountingLLM
 
 log = logging.getLogger(__name__)
@@ -365,4 +366,5 @@ def latest_results(conn: sqlite3.Connection, company_id: int) -> dict:
             s.pop("evidence_json")
             # Runs stored before quotes were de-duplicated may hold one sentence twice.
             s["evidence"] = list({(e["filename"], e["quote"]): e for e in s["evidence"]}.values())
+            s["question"] = signal_question(s)
     return result
