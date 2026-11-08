@@ -443,7 +443,8 @@ def list_claims(company_id: int, conn=Depends(get_db)):
     apply_reviews(conn, company_id, result["changes"], "drift")
     counts = review_counts(result["claims"])
     counts["dismissed"] += sum(c["review_state"] == "dismissed" for c in result["changes"])
-    return result | {"counts": counts, "summary": build_summary(result["claims"], result["changes"])}
+    return result | {"counts": counts,
+                     "summary": build_summary(result["claims"], result["changes"], result["regulatory"])}
 
 
 class ReviewIn(BaseModel):

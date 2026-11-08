@@ -121,8 +121,9 @@ def _strength(item: dict) -> int:
     return 2
 
 
-def build_summary(claims: list[dict], changes: list[dict]) -> dict:
-    """Issues per category and the three that matter most, from claims and changes not dismissed."""
+def build_summary(claims: list[dict], changes: list[dict], regulatory: dict | None = None) -> dict:
+    """Issues per category and the three that matter most, from claims and changes not dismissed, and
+    regulatory checklist items the materials do not address."""
     live = [c for c in claims if c.get("review_state") != "dismissed" and c.get("category")]
     moved = [c for c in changes if c.get("review_state") != "dismissed" and c["kind"] == "changed"]
     counts = {name: {"category": name, "issues": 0, "unverified": 0} for name in CATEGORIES}
@@ -133,6 +134,8 @@ def build_summary(claims: list[dict], changes: list[dict]) -> dict:
             counts[c["category"]]["unverified"] += 1
     for c in moved:
         counts[category(c["key"]) or "Market"]["issues"] += 1
+    missing = [i for i in (regulatory or {}).get("items", []) if i["status"] == "Not addressed in materials"]
+    counts["Regulatory"]["issues"] += len(missing)
 
     candidates = []
     for c in live:
@@ -145,6 +148,9 @@ def build_summary(claims: list[dict], changes: list[dict]) -> dict:
         candidates.append(((2, 1, 0), c["key"], {"status": "changed", "category": category(c["key"]) or "Market",
                                                  "text": f"{label(c['key'])} changed since the last deck: {c['note']}",
                                                  "fingerprint": c["fingerprint"]}))
+    for i in missing:  # after claims and changes: absence from the files is weaker than a contradiction
+        candidates.append(((3, 0, 0), i["id"], {"status": "not_addressed", "category": "Regulatory",
+                                                 "text": f"{i['name']}: not addressed in materials.", "fingerprint": i["id"]}))
     top, keys = [], set()
     for _, key, item in sorted(candidates, key=lambda x: x[0]):
         if key not in keys:  # one line per subject (both gross margin claims point at the same problem)

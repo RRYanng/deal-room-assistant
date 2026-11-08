@@ -572,7 +572,9 @@ def latest_results(conn: sqlite3.Connection, company_id: int) -> dict:
               "run": last and get_run(conn, company_id, last),
               "failed_run": get_run(conn, company_id, failed) if failed and (not last or failed > last) else None,
               "claims": [], "competitors": []}
+    from app.regulatory import check as regulatory_check  # noqa: PLC0415 (kept with the other v2 parts)
     result["changes"], result["alignment"] = [], None
+    result["regulatory"] = regulatory_check(conn, company_id)
     if last:
         from app import alignment  # noqa: PLC0415 (alignment builds on this module)
         from app.memory import changes  # noqa: PLC0415 (memory builds on this module)
