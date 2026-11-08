@@ -1199,8 +1199,10 @@ $("brief-close").onclick = () => { $("brief-overlay").hidden = true; };
 $("brief-overlay").onclick = (e) => { if (e.target === $("brief-overlay")) $("brief-overlay").hidden = true; };
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (document.querySelector("dialog[open]")) return; // a dialog handles its own Escape
   if (!$("brief-overlay").hidden) $("brief-overlay").hidden = true;
-  else if (state.drawer && !document.querySelector("dialog[open]")) closeDrawer();
+  else if (!$("claims-overlay").hidden) closeClaims();
+  else if (state.drawer) closeDrawer();
 });
 $("brief-copy").onclick = async () => {
   if (!state.lastBrief) return;
@@ -1216,6 +1218,297 @@ $("brief-download").onclick = () => {
   a.download = `brief-${state.lastBrief.company.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md`;
   a.click();
   URL.revokeObjectURL(a.href);
+};
+
+// ---------------------------------------------------------------- claim check
+
+// The server decides every status; the page only shows it. Nothing is a finding until confirmed.
+const CLAIM_STATUS = {
+  contradicted: ["Contradicted", "st-bad"],
+  possibly_overstated: ["Possibly overstated", "st-warn"],
+  externally_supported: ["Externally supported", "st-ok"],
+  consistent_with_company_data: ["Consistent with company data", "st-info"],
+  unverified: ["Unverified", "st-none"],
+};
+const EVIDENCE_SOURCE = { internal: "Company materials", external: "Web source", calculation: "Calculation" };
+const EVIDENCE_STANCE = { supports: "supports", contradicts: "contradicts", overstates: "suggests overstated" };
+const CLAIM_POLL_MS = 1000;
+
+const claims = { companyId: null, data: null, view: "claims", showDismissed: false, timer: null, memo: null, reviewing: null };
+
+async function openClaims() {
+  await loadCompanies().catch(() => {});
+  const ids = state.companies.map((c) => c.id);
+  if (!ids.includes(claims.companyId)) claims.companyId = state.current ? state.current.id : ids[0] ?? null;
+  $("claims-company").innerHTML = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("claims-company").value = claims.companyId ? String(claims.companyId) : "";
+  claims.view = "claims";
+  $("claims-overlay").hidden = false;
+  await loadClaims();
+}
+
+function closeClaims() {
+  $("claims-overlay").hidden = true;
+  stopClaimPoll();
+}
+
+async function loadClaims() {
+  stopClaimPoll();
+  if (!claims.companyId) {
+    claims.data = null;
+    $("claims-body").innerHTML = '<div class="muted">No companies yet. Switch to Upload to add a deck first.</div>';
+    syncClaimButtons();
+    return;
+  }
+  const companyId = claims.companyId;
+  try {
+    const data = await api(`/api/companies/${companyId}/claims`);
+    if (companyId !== claims.companyId) return; // the user picked another company meanwhile
+    claims.data = data;
+    renderClaims();
+    if (data.running) claims.timer = setTimeout(() => pollClaimRun(companyId, data.running.id), CLAIM_POLL_MS);
+  } catch (err) {
+    $("claims-body").innerHTML = `<div class="answer error">${esc(err.message)}</div>`;
+  }
+}
+
+function stopClaimPoll() {
+  clearTimeout(claims.timer);
+  claims.timer = null;
+}
+
+async function pollClaimRun(companyId, runId) {
+  if (companyId !== claims.companyId || $("claims-overlay").hidden) return;
+  try {
+    const run = await api(`/api/companies/${companyId}/claim-runs/${runId}`);
+    if (run.status === "running") {
+      claims.data.running = run;
+      if (claims.view === "claims") renderClaims();
+      claims.timer = setTimeout(() => pollClaimRun(companyId, runId), CLAIM_POLL_MS);
+    } else {
+      await loadClaims();
+    }
+  } catch (err) {
+    claims.timer = setTimeout(() => pollClaimRun(companyId, runId), CLAIM_POLL_MS * 3);
+  }
+}
+
+function syncClaimButtons() {
+  const running = !!(claims.data && claims.data.running);
+  $("claims-run").disabled = !claims.companyId || running;
+  $("claims-run").textContent = running ? "Checking…" : "Run claim check";
+  $("claims-memo").textContent = claims.view === "memo" ? "Back to claims" : "Memo";
+  $("claims-memo").disabled = !claims.data || !claims.data.run;
+}
+
+function safeUrl(url) {
+  return /^https?:\/\//i.test(url || "") ? url : null;
+}
+
+function siteOf(url) {
+  return url.replace(/^https?:\/\/(www\.)?/i, "").split("/")[0];
+}
+
+function evidenceItemHtml(e) {
+  const url = safeUrl(e.url);
+  const where = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>`
+    : e.filename ? esc(`${e.filename} · ${locationOf(e)}`) : "";
+  return `<div class="ev ev-${esc(e.stance)}">
+    <div class="ev-kind">${esc(EVIDENCE_SOURCE[e.source] || e.source)} · ${esc(EVIDENCE_STANCE[e.stance] || e.stance)}</div>
+    <div>${esc(e.note)}</div>
+    ${e.quote ? `<div class="quote">“${esc(e.quote)}”</div>` : ""}
+    ${where ? `<div class="source-loc">${where}</div>` : ""}
+  </div>`;
+}
+
+function reviewCellHtml(c) {
+  const actions = `<div class="review-actions">
+      <button type="button" class="secondary small-button" data-review="confirmed" data-fp="${esc(c.fingerprint)}">Confirm</button>
+      <button type="button" class="secondary small-button" data-review="dismissed" data-fp="${esc(c.fingerprint)}">Dismiss</button>
+    </div>`;
+  if (c.review_state === "awaiting_review") {
+    const changed = c.evidence_changed
+      ? `<div class="muted small">Evidence changed since it was ${esc(c.review.decision)}: ${esc(c.review.reason)}</div>` : "";
+    return `<div class="muted small">Awaiting review</div>${changed}${actions}`;
+  }
+  const label = c.review_state === "confirmed" ? "Confirmed" : "Dismissed";
+  return `<div class="review-done ${c.review_state}"><b>${label}</b></div>
+    <div class="small">${esc(c.review.reason)}</div>${actions}`;
+}
+
+function claimRowHtml(c) {
+  const [label, cls] = CLAIM_STATUS[c.status] || [c.status, "st-none"];
+  const evidence = c.evidence.length ? c.evidence.map(evidenceItemHtml).join("")
+    : '<div class="muted small">No evidence found.</div>';
+  return `<tr class="${c.review_state === "dismissed" ? "dismissed" : ""}">
+    <td><span class="status ${cls}">${esc(label)}</span></td>
+    <td><div class="claim-quote">“${esc(c.quote)}”</div><div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div></td>
+    <td>${evidence}</td>
+    <td>${reviewCellHtml(c)}</td>
+  </tr>`;
+}
+
+function runSummaryHtml(d) {
+  const parts = [];
+  if (d.running) {
+    parts.push(`<div class="answer pending">Checking ${esc(d.running.filename)}: ${esc(d.running.stage || "starting")}…</div>`);
+  }
+  if (d.failed_run) {
+    const kept = d.run ? " The results below are from the last check that finished." : "";
+    parts.push(`<div class="answer error">The latest claim check failed: ${esc(d.failed_run.error)}${kept}</div>`);
+  }
+  if (d.run) {
+    const when = d.run.finished_at ? ` · ${esc(d.run.finished_at)} UTC` : "";
+    parts.push(`<div class="muted small">Last check: ${esc(d.run.filename)}${when}</div>`);
+    if (d.run.notes.length) parts.push(`<ul class="run-notes">${d.run.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`);
+  }
+  return parts.join("");
+}
+
+function renderClaims() {
+  syncClaimButtons();
+  const d = claims.data;
+  if (claims.view === "memo") return renderMemo();
+  const head = runSummaryHtml(d);
+  if (!d.run) {
+    $("claims-body").innerHTML = head + (d.running || d.failed_run ? "" : `<div class="muted">No claim check yet. Run one
+      to list the deck's key claims and the evidence for and against each.</div>`);
+    return;
+  }
+  const visible = d.claims.filter((c) => claims.showDismissed || c.review_state !== "dismissed");
+  const byStatus = Object.keys(CLAIM_STATUS).map((s) => [s, visible.filter((c) => c.status === s).length])
+    .filter(([, n]) => n).map(([s, n]) => `<span class="status ${CLAIM_STATUS[s][1]}">${esc(CLAIM_STATUS[s][0])}: ${n}</span>`);
+  const dismissed = d.counts.dismissed
+    ? `<button type="button" class="link small" id="claims-toggle-dismissed">${claims.showDismissed ? "Hide" : "Show"}
+       dismissed (${d.counts.dismissed})</button>` : "";
+  const competitors = d.competitors.length ? `<h3>Competitors found by web research</h3><ul>${d.competitors.map((c) => {
+    const url = safeUrl(c.url);
+    return `<li><b>${esc(c.name)}</b>${c.description ? ` — ${esc(c.description)}` : ""}
+      ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>` : ""}</li>`;
+  }).join("")}</ul>` : "";
+  $("claims-body").innerHTML = `${head}
+    <div class="claims-summary">${byStatus.join(" ")}
+      <span class="muted small">${d.counts.awaiting_review} awaiting review · ${d.counts.confirmed} confirmed</span> ${dismissed}</div>
+    <div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true. Nothing is a
+      finding until you confirm it.</div>
+    <table class="claims-table">
+      <thead><tr><th>Evidence status</th><th>Claim</th><th>Evidence</th><th>Review</th></tr></thead>
+      <tbody>${visible.map(claimRowHtml).join("")}</tbody>
+    </table>
+    ${competitors}`;
+}
+
+async function toggleMemo() {
+  if (claims.view === "memo") {
+    claims.view = "claims";
+    return renderClaims();
+  }
+  claims.view = "memo";
+  claims.memo = null;
+  renderClaims();
+  try {
+    claims.memo = await api(`/api/companies/${claims.companyId}/memo`);
+  } catch (err) {
+    claims.memo = { error: err.message };
+  }
+  if (claims.view === "memo") renderMemo();
+}
+
+function renderMemo() {
+  syncClaimButtons();
+  const m = claims.memo;
+  if (!m) { $("claims-body").innerHTML = '<div class="answer pending">Building the memo…</div>'; return; }
+  if (m.error) { $("claims-body").innerHTML = `<div class="answer error">${esc(m.error)}</div>`; return; }
+  $("claims-body").innerHTML = `<div class="overlay-actions memo-actions">
+      <button type="button" class="secondary" id="memo-copy">Copy Markdown</button>
+      <button type="button" class="secondary" id="memo-download">Download .md</button>
+    </div>
+    <div class="muted small">${m.findings.length} confirmed finding${m.findings.length === 1 ? "" : "s"} ·
+      ${m.awaiting_review.length} awaiting review · ${m.dismissed.length} dismissed</div>
+    <pre class="memo">${esc(m.markdown)}</pre>`;
+}
+
+$("nav-claims").onclick = openClaims;
+$("claims-close").onclick = closeClaims;
+$("claims-overlay").onclick = (e) => { if (e.target === $("claims-overlay")) closeClaims(); };
+$("claims-company").onchange = () => {
+  claims.companyId = Number($("claims-company").value) || null;
+  claims.view = "claims";
+  claims.showDismissed = false;
+  loadClaims();
+};
+$("claims-memo").onclick = toggleMemo;
+$("claims-run").onclick = async () => {
+  if (!claims.companyId) return;
+  $("claims-run").disabled = true;
+  try {
+    const run = await postJson(`/api/companies/${claims.companyId}/claim-check`, {});
+    claims.view = "claims";
+    claims.data = { ...(claims.data || { run: null, failed_run: null, claims: [], competitors: [], counts: {} }), running: run };
+    renderClaims();
+    claims.timer = setTimeout(() => pollClaimRun(claims.companyId, run.id), CLAIM_POLL_MS);
+  } catch (err) {
+    $("claims-body").insertAdjacentHTML("afterbegin", `<div class="answer error">${esc(err.message)}</div>`);
+    syncClaimButtons();
+  }
+};
+
+$("claims-body").addEventListener("click", async (e) => {
+  if (e.target.closest("#claims-toggle-dismissed")) {
+    claims.showDismissed = !claims.showDismissed;
+    return renderClaims();
+  }
+  if (e.target.closest("#memo-copy")) {
+    const button = $("memo-copy");
+    try { await navigator.clipboard.writeText(claims.memo.markdown); button.textContent = "Copied"; }
+    catch { button.textContent = "Copy failed"; }
+    return setTimeout(() => { if ($("memo-copy")) $("memo-copy").textContent = "Copy Markdown"; }, 1500);
+  }
+  if (e.target.closest("#memo-download")) {
+    const blob = new Blob([claims.memo.markdown], { type: "text/markdown" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `memo-${claims.memo.company.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md`;
+    a.click();
+    return URL.revokeObjectURL(a.href);
+  }
+  const button = e.target.closest("[data-review]");
+  if (button) openReview(button.dataset.fp, button.dataset.review);
+});
+
+// ---------------------------------------------------------------- review dialog
+
+function openReview(fingerprint, decision) {
+  const claim = claims.data.claims.find((c) => c.fingerprint === fingerprint);
+  if (!claim) return;
+  claims.reviewing = { fingerprint, decision, companyId: claims.companyId };
+  $("review-title").textContent = decision === "confirmed" ? "Confirm this finding?" : "Dismiss this flag?";
+  $("review-claim").textContent = `“${claim.quote}”`;
+  $("review-reason").value = "";
+  $("review-error").hidden = true;
+  $("review-save").disabled = true;
+  $("review-save").textContent = decision === "confirmed" ? "Confirm" : "Dismiss";
+  $("review-dialog").showModal();
+  $("review-reason").focus();
+}
+
+$("review-reason").addEventListener("input", () => { $("review-save").disabled = !$("review-reason").value.trim(); });
+$("review-cancel").onclick = () => $("review-dialog").close();
+$("review-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const r = claims.reviewing;
+  const reason = $("review-reason").value.trim();
+  if (!r || !reason) return;
+  $("review-save").disabled = true;
+  try {
+    await postJson(`/api/companies/${r.companyId}/reviews`, { fingerprint: r.fingerprint, decision: r.decision, reason });
+    $("review-dialog").close();
+    await loadClaims();
+  } catch (err) {
+    $("review-error").textContent = err.message;
+    $("review-error").hidden = false;
+    $("review-save").disabled = false;
+  }
 };
 
 // ---------------------------------------------------------------- start

@@ -33,6 +33,7 @@
       <nav class="nav">
         <button type="button" id="nav-library" class="nav-item">Library</button>
         <button type="button" id="nav-issues" class="nav-item">Issues <span id="issues-badge" class="count" hidden></span></button>
+        <button type="button" id="nav-claims" class="nav-item">Claim check</button>
       </nav>
       <label class="company-picker">Company:
         <select id="company-select"><option value="">Auto-detect</option></select>
@@ -175,6 +176,38 @@
       <div id="brief-body" class="brief-body"></div>
     </div>
   </div>
+
+  <!-- Claim check: claims, evidence, review, memo -->
+  <div id="claims-overlay" class="overlay" hidden>
+    <div class="overlay-card claims-card" role="dialog" aria-modal="true" aria-labelledby="claims-title">
+      <div class="overlay-head">
+        <h2 id="claims-title">Claim check</h2>
+        <div class="overlay-actions">
+          <select id="claims-company" aria-label="Company"></select>
+          <button type="button" id="claims-run">Run claim check</button>
+          <button type="button" id="claims-memo" class="secondary">Memo</button>
+          <button type="button" id="claims-close" class="secondary">Close</button>
+        </div>
+      </div>
+      <div id="claims-body" class="brief-body claims-body"></div>
+    </div>
+  </div>
+
+  <!-- Review: confirm or dismiss a claim, with a required reason -->
+  <dialog id="review-dialog" class="dialog" aria-labelledby="review-title">
+    <form id="review-form" class="stack">
+      <h2 id="review-title" class="dialog-title"></h2>
+      <div id="review-claim" class="quote"></div>
+      <label>Reason (required)
+        <textarea id="review-reason" rows="3" placeholder="e.g. Founder confirmed 70% margin in the meeting"></textarea>
+      </label>
+      <div id="review-error" class="warning" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button type="button" id="review-cancel" class="secondary">Cancel</button>
+        <button type="submit" id="review-save" disabled>Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="/static/app.js"></script>
 </body>

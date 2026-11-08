@@ -223,8 +223,24 @@ def test_a_failed_model_call_is_stored_as_a_failed_run(db, clearclaim):
         raise LLMError("bad API key")
 
     out = check(db, company_id, docs[DECK], FakeLLM(default=broken))
-    assert out["run"]["status"] == "failed" and "Model call failed: bad API key" in out["run"]["error"]
-    assert out["claims"] == []
+    assert out["run"] is None and out["claims"] == []
+    assert out["failed_run"]["status"] == "failed"
+    assert "Model call failed: bad API key" in out["failed_run"]["error"]
+
+
+def test_a_failed_rerun_keeps_the_last_good_results(db, clearclaim):
+    company_id, docs = clearclaim
+    good = check(db, company_id, docs[DECK])
+
+    def broken(call):
+        raise LLMError("bad API key")
+
+    out = check(db, company_id, docs[DECK], FakeLLM(default=broken))
+    assert out["run"]["id"] == good["run"]["id"]
+    assert len(out["claims"]) == len(good["claims"])
+    assert "bad API key" in out["failed_run"]["error"]
+    # A later good run clears the failure banner.
+    assert check(db, company_id, docs[DECK])["failed_run"] is None
 
 
 def test_only_a_deck_of_the_company_can_be_checked(db, clearclaim):

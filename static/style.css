@@ -256,6 +256,39 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .brief-body li { margin: 4px 0; }
 .cite { font-size: 12px; color: var(--muted); }
 
+/* Claim check */
+.claims-card { width: min(1180px, 100%); }
+.claims-body h3 { font-size: 14px; margin: 18px 0 6px; }
+.claims-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 4px; }
+.claims-table { margin-top: 10px; }
+.claims-table td:nth-child(1) { width: 150px; }
+.claims-table td:nth-child(2) { width: 30%; }
+.claims-table td:last-child { width: 190px; }
+.claims-table tr.dismissed { opacity: .6; }
+.claim-quote { overflow-wrap: anywhere; }
+.status { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 10px;
+  border: 1px solid transparent; white-space: nowrap; }
+.st-bad { background: var(--danger-soft); color: var(--danger); }
+.st-warn { background: var(--warn-soft); color: var(--warn); }
+.st-ok { background: var(--ok-soft); color: var(--ok); }
+.st-info { background: var(--accent-soft); color: var(--accent); }
+.st-none { background: var(--bg); color: var(--muted); border-color: var(--border); }
+.ev { border-left: 3px solid var(--border); padding: 2px 0 2px 8px; margin-bottom: 8px; overflow-wrap: anywhere; }
+.ev-supports { border-left-color: var(--ok); }
+.ev-contradicts { border-left-color: var(--danger); }
+.ev-overstates { border-left-color: var(--warn); }
+.ev-kind { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.ev a, .claims-body li a { color: var(--accent); }
+.review-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+button.small-button { padding: 3px 9px; font-size: 12px; }
+.review-done.confirmed b { color: var(--ok); }
+.review-done.dismissed b { color: var(--muted); }
+.run-notes { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.memo-actions { justify-content: flex-start; margin-bottom: 8px; }
+pre.memo { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px; font-size: 12.5px; line-height: 1.5; }
+#review-reason { width: 100%; resize: vertical; }
+
 @media (max-width: 760px) {
   .topbar { flex-wrap: wrap; gap: 8px 12px; padding: 10px 16px; }
   .brand { order: 1; }
@@ -268,4 +301,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .overlay { padding: 8px; }
   .overlay-head { flex-direction: column; align-items: stretch; }
   .brief-body { padding: 12px 16px 20px; }
+  .claims-table thead { display: none; }
+  .claims-table tr { display: block; border-top: 1px solid var(--border); padding: 8px 0; }
+  .claims-table td { display: block; width: auto !important; border-top: 0; padding: 4px 0; }
 }

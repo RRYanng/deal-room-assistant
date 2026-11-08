@@ -504,16 +504,21 @@ def get_run(conn: sqlite3.Connection, company_id: int, run_id: int) -> dict | No
 
 
 def latest_results(conn: sqlite3.Connection, company_id: int) -> dict:
-    """The newest finished run of the company with its claims and evidence, plus any run still going."""
-    running = conn.execute("SELECT id FROM claim_runs WHERE company_id = ? AND status = 'running'"
-                           " ORDER BY id DESC LIMIT 1", (company_id,)).fetchone()
-    last = conn.execute("SELECT id FROM claim_runs WHERE company_id = ? AND status != 'running'"
-                        " ORDER BY id DESC LIMIT 1", (company_id,)).fetchone()
-    result = {"running": running and get_run(conn, company_id, running["id"]),
-              "run": last and get_run(conn, company_id, last["id"]), "claims": [], "competitors": []}
+    """The newest successful run with its claims and evidence, a newer failed run if any (shown as an
+    error without hiding the last good results), and any run still going."""
+    def newest(status: str):
+        row = conn.execute("SELECT id FROM claim_runs WHERE company_id = ? AND status = ? ORDER BY id DESC LIMIT 1",
+                           (company_id, status)).fetchone()
+        return row and row["id"]
+
+    running, last, failed = newest("running"), newest("done"), newest("failed")
+    result = {"running": running and get_run(conn, company_id, running),
+              "run": last and get_run(conn, company_id, last),
+              "failed_run": get_run(conn, company_id, failed) if failed and (not last or failed > last) else None,
+              "claims": [], "competitors": []}
     if last:
-        result["claims"] = run_claims(conn, company_id, last["id"])
-        result["competitors"] = run_competitors(conn, company_id, last["id"])
+        result["claims"] = run_claims(conn, company_id, last)
+        result["competitors"] = run_competitors(conn, company_id, last)
     return result
 
 
