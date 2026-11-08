@@ -44,13 +44,16 @@ Branch `feature/v2`. Design: [docs/v2_design.md](docs/v2_design.md).
 7. **Web research**: market figures are checked against public sources, and competitors are listed
    with source links (Tavily, behind a replaceable interface). The company's name is never sent to
    the search engine, and every quote must appear in a page the search returned.
-8. **Review**: an investor confirms or dismisses each flag, with a reason. The memo lists only
+8. **Review**: an investor confirms or dismisses each flag or portfolio signal, with a reason. The memo lists only
    confirmed items as findings. A dismissed flag stays quiet unless its evidence changes.
 9. **Portfolio monitoring**: reads a company's quarterly updates and computes three signals by
    rule: cash runway (under 12 months is a warning; high when revenue also grew under 10%), key
    person departure, and a milestone that keeps slipping. The model only quotes the figures.
    Competitors moving faster, customer concentration, regulatory issues and next-round risk are
    further signals worth adding; they are not built.
+10. **Memory**: every checked deck's claims are kept per company. A figure that differs from the
+   previous deck is shown as "Changed since the last deck" (market figures) or "Updated" (traction,
+   team, costs), on the page and in the memo.
 
 ### Evaluation
 
@@ -71,17 +74,21 @@ FakeWebSearch. They test the program's checks and rules, not the real model's ju
 | E8 | $400B US dental spending vs CMS ($189.2B) is Possibly overstated, with a real link | pass |
 | E9 | Competitor research lists competitors with links and contradicts "no other company" | pass |
 | E10 | Invented sources and altered quotes are dropped; queries naming the company are refused | pass |
+| E11 | Memory: 250,000 practices in the September deck -> 400,000 in December is flagged as changed | pass |
+| E12 | Memory never crosses companies (ClearClaim, Tidewell, Kitebridge) | pass |
 | E13 | Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; a reason is required | pass |
 | E14 | Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1 | pass |
 | FP | The same file checked twice gives identical fingerprints | pass |
 
-Whole offline suite at the last run: 403 passed (the 274 v1.1 tests included). Memory (E11, E12)
-is not built yet.
+Whole offline suite at the last run: 416 passed (the 274 v1.1 tests included).
 
 **Live run** (real Claude Opus 5.5 and Tavily, ClearClaim deck, 2026-11-08): E1-E9 matched the
 expected statuses in both runs. In the second run 18 of 18 claims found in both runs had the same
 fingerprint and status; it cost 8 model calls, about $0.78 and 8 search credits in 78 seconds.
-Portfolio monitoring has not been run with the real model yet.
+A third run, with memory, flagged 250,000 -> 400,000 practices as changed (E11 live) and gave the
+same fingerprint and status for all 20 claims as the second run. Portfolio monitoring with the real
+model (E14 live): the expected signal in every quarter and every cash, burn and revenue figure as in
+the updates, for 4 model calls and about $0.08.
 
 ## Quick start
 

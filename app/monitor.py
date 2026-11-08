@@ -222,8 +222,9 @@ def signals_for(periods: list[dict], company_id: int) -> list[dict]:
 
 def _signal(company_id, period_end, kind, level, title, detail, key_parts, evidence) -> dict:
     raw = "|".join([str(company_id), "signal", kind, period_end, *map(str, key_parts)])
+    unique = {(e["filename"], e["quote"]): e for e in evidence}  # one sentence can hold two figures
     return {"period_end": period_end, "kind": kind, "level": level, "title": title, "detail": detail,
-            "fingerprint": hashlib.sha256(raw.encode()).hexdigest()[:24], "evidence": evidence}
+            "fingerprint": hashlib.sha256(raw.encode()).hexdigest()[:24], "evidence": list(unique.values())}
 
 
 # --- the run --------------------------------------------------------------------------------

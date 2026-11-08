@@ -198,3 +198,15 @@ evaluation and approvals are not cut.
   least twice, or passed and not done). Departure is level high; a slip is a warning. Signal
   fingerprints use company, kind, period and the numbers or names, so a second run gives the same ones.
   Signals cannot be confirmed or dismissed yet.
+
+## 13. Signal reviews and memory (2026-11-08, evening)
+
+- Signals reuse the reviews table (item type "signal"): a reason is required, the latest decision
+  wins, and a dismissed signal comes back when its level or its basis (calculation and quotes)
+  changes. Confirmed signals are in the memo with the investor's note.
+- Memory (`app/memory.py`): each claim check stores the deck's claims in `memory_entries` (kept when
+  the deck is deleted). An earlier deck that was never checked is read once, claims only. Changes
+  against the most recent earlier deck use the same tolerance as everything else. Market, unit and
+  product figures that move are "changed"; traction, team and costs are "updated". Claims keyed
+  "other", risks, competition, status quo and projection assumptions are not compared. Drift items
+  cannot be confirmed or dismissed yet.

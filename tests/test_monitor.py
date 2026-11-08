@@ -213,3 +213,13 @@ def test_a_signal_review_needs_a_reason_and_its_own_company(db):
         record_review(db, other, fp, "dismissed", "x", item_type="signal")
     with pytest.raises(ReviewError, match="No such item"):  # a signal fingerprint is not a claim
         record_review(db, company_id, fp, "dismissed", "x", item_type="claim")
+
+
+def test_a_sentence_holding_two_figures_is_quoted_once():
+    sentence = {"quote": "Revenue was $364,000, up 2%.", "filename": "q3.txt", "loc_label": "q3.txt ¶3", "chunk_id": 3}
+    q2 = period("2026-06-30", revenue=None)
+    q3 = period("2026-09-30", 2_100_000, 300_000, None)
+    q3["metrics"]["revenue_growth_pct"] = {"value": 2.0, "value_raw": "2%", **sentence}
+    q3["metrics"]["revenue"] = {"value": 364_000, "value_raw": "$364,000", **sentence}
+    [runway] = [s for s in signals_for([q2, q3], 1) if s["kind"] == "cash_runway"]
+    assert [e["quote"] for e in runway["evidence"]].count(sentence["quote"]) == 1
