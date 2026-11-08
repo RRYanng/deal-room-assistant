@@ -6,7 +6,7 @@ items are counted, with their reasons, and never presented as findings.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 
 from app.claims import latest_results
 from app.monitor import latest_results as latest_monitor_results
@@ -26,15 +26,16 @@ def build_memo(conn: sqlite3.Connection, company_id: int) -> dict:
     results = latest_results(conn, company_id)
     order = list(STATUS_LABELS)  # flags first, as on the page
     claims = sorted(apply_reviews(conn, company_id, results["claims"]), key=lambda c: order.index(c["status"]))
+    generated = datetime.now().astimezone()  # the server's own time zone: the machine the team runs it on
     return {
         "company": company,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "generated_at": generated.strftime("%Y-%m-%d %H:%M %Z"),
         "run": results["run"],
         "findings": [c for c in claims if c["review_state"] == "confirmed"],
         "awaiting_review": [c for c in claims if c["review_state"] == "awaiting_review"],
         "dismissed": [c for c in claims if c["review_state"] == "dismissed"],
         "competitors": results["competitors"],
-        "changes": results["changes"],
+        "changes": apply_reviews(conn, company_id, results["changes"], "drift"),
         "signals": apply_reviews(conn, company_id, latest_monitor_results(conn, company_id)["signals"], "signal"),
     }
 
@@ -50,7 +51,7 @@ def memo_to_markdown(memo: dict) -> str:
     if not memo["findings"]:
         lines += ["No findings confirmed yet.", ""]
     for c in memo["findings"]:
-        lines += _claim_lines(c) + [f"  - Investor note: {c['review']['reason']}", ""]
+        lines += _claim_lines(c) + ([f"  - Investor note: {c['review']['reason']}"] if c["review"]["reason"] else []) + [""]
 
     lines += [f"## Awaiting review ({len(memo['awaiting_review'])})", "",
               "Flagged by the system. Not conclusions until an investor confirms them.", ""]
@@ -62,14 +63,18 @@ def memo_to_markdown(memo: dict) -> str:
 
     if memo["dismissed"]:
         lines += [f"## Dismissed ({len(memo['dismissed'])})", ""]
-        lines += [f"- {c['statement']} Reason: {c['review']['reason']}" for c in memo["dismissed"]] + [""]
+        lines += [f"- {c['label']}: \"{c['quote']}\" Reason: {c['review']['reason']}" for c in memo["dismissed"]] + [""]
 
-    changed = [c for c in memo["changes"] if c["kind"] == "changed"]
-    updated = [c for c in memo["changes"] if c["kind"] == "updated"]
-    if changed or updated:
+    shown = [c for c in memo["changes"] if c["review_state"] != "dismissed"]
+    if shown:
         lines += ["## Changed since the last deck", ""]
-        lines += [f"- **Changed** ({c['key']}): {c['note']}" for c in changed]
-        lines += [f"- Updated ({c['key']}): {c['note']}" for c in updated] + [""]
+        for c in sorted(shown, key=lambda c: c["kind"] != "changed"):
+            head = f"**Changed** ({c['label']})" if c["kind"] == "changed" else f"Updated ({c['label']})"
+            confirmed = ""
+            if c["review_state"] == "confirmed":
+                confirmed = " Confirmed" + (f": {c['review']['reason']}" if c["review"]["reason"] else ".")
+            lines.append(f"- {head}: {c['note']}{confirmed}")
+        lines.append("")
 
     signals = memo["signals"]
     if signals:
@@ -77,8 +82,9 @@ def memo_to_markdown(memo: dict) -> str:
         waiting = [s for s in signals if s["review_state"] == "awaiting_review"]
         dismissed = [s for s in signals if s["review_state"] == "dismissed"]
         lines += ["## Portfolio signals confirmed by the investment team", ""]
-        lines += [f"- **{s['level'].title()}** ({s['period_end']}): {s['title']}. {s['detail']} "
-                  f"Investor note: {s['review']['reason']}" for s in confirmed] or ["No signals confirmed yet."]
+        lines += [f"- **{s['level'].title()}** ({s['period_end']}): {s['title']}. {s['detail']}"
+                  + (f" Investor note: {s['review']['reason']}" if s["review"]["reason"] else "")
+                  for s in confirmed] or ["No signals confirmed yet."]
         lines += ["", f"## Portfolio signals awaiting review ({len(waiting)})", "",
                   "Computed by rule from the updates. Not conclusions until an investor confirms them.", ""]
         for s in waiting:
@@ -99,9 +105,9 @@ def memo_to_markdown(memo: dict) -> str:
 
 
 def _claim_lines(c: dict) -> list[str]:
-    lines = [f"- **{STATUS_LABELS[c['status']]}**: \"{c['quote']}\" ({c['loc_label']})"]
+    lines = [f"- **{STATUS_LABELS[c['status']]}** · {c['label']}: \"{c['quote']}\" ({c['loc_label']})"]
     for e in c["evidence"]:
         kind = f" ({e['source_type']})" if e.get("source_type") else ""
         source = f" Source{kind}: {e['url']}" if e.get("url") else ""
-        lines.append(f"  - {e['note']}{source}")
+        lines.append(f"  - **{e['headline']}.** {e['note']}{source}")
     return lines

@@ -215,15 +215,17 @@ CREATE INDEX IF NOT EXISTS idx_signals_run ON signals(run_id);
 
 -- Investor decisions. Append-only: the latest row for a fingerprint wins, so a decision can be undone.
 -- Keyed by fingerprint, not by claim id, so a decision carries over to later runs of the same claim.
+-- Dismissing needs a reason; confirming may have one.
 CREATE TABLE IF NOT EXISTS reviews (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     item_type    TEXT NOT NULL CHECK (item_type IN ('claim', 'signal', 'drift')),
     fingerprint  TEXT NOT NULL,
     decision     TEXT NOT NULL CHECK (decision IN ('confirmed', 'dismissed')),
-    reason       TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+    reason       TEXT,
     item_json    TEXT,                       -- what the investor saw when deciding
-    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (decision = 'confirmed' OR length(trim(coalesce(reason, ''))) > 0)
 );
 CREATE INDEX IF NOT EXISTS idx_reviews_company ON reviews(company_id, fingerprint);
 """
@@ -247,7 +249,22 @@ ADDED_COLUMNS = [
 ]
 
 
+def _relax_review_reason(conn: sqlite3.Connection) -> None:
+    """Databases made before 2026-11-08 required a reason for every review; now only dismissing does.
+    SQLite cannot change a CHECK in place, so the table is copied into the new definition."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reviews'").fetchone()
+    if row and "reason       TEXT NOT NULL" in row[0]:
+        conn.executescript("""
+            ALTER TABLE reviews RENAME TO reviews_before_2026_11_08;
+            DROP INDEX IF EXISTS idx_reviews_company;
+        """)
+        conn.executescript(SCHEMA)
+        conn.execute("INSERT INTO reviews SELECT * FROM reviews_before_2026_11_08")
+        conn.execute("DROP TABLE reviews_before_2026_11_08")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
+    _relax_review_reason(conn)
     conn.executescript(SCHEMA)
     for table, column, definition in ADDED_COLUMNS:
         have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}

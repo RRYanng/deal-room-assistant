@@ -71,8 +71,8 @@ def test_memory_survives_deleting_the_earlier_deck(db, checked):
 def test_changes_are_in_the_memo(db, checked):
     text = memo_to_markdown(build_memo(db, checked[0]))
     section = text.split("## Changed since the last deck")[1].split("##")[0]
-    assert "**Changed** (market.customer_count): 250,000" in section
-    assert "Updated (traction.paying_customers): 40" in section
+    assert "**Changed** (Number of target customers): 250,000" in section
+    assert "Updated (Paying customers): 40" in section
 
 
 def test_a_single_deck_has_nothing_to_compare(db):

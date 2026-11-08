@@ -19,7 +19,7 @@ from app.claims import run_claims
 from app.monitor import latest_results as latest_monitor_results
 
 DECISIONS = ("confirmed", "dismissed")
-ITEM_TYPES = ("claim", "signal")
+ITEM_TYPES = ("claim", "signal", "drift")
 FLAG_STATUSES = ("contradicted", "possibly_overstated", "unverified")
 
 
@@ -41,10 +41,17 @@ def signal_signature(signal: dict) -> str:
     return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
 
 
+def drift_signature(change: dict) -> str:
+    parts = [f"{side['value_raw']}|{normalize_ws(side['quote']).lower()}" for side in (change["old"], change["new"])]
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:16]
+
+
 def _state(item: dict, item_type: str) -> tuple[str, str]:
-    """What the investor saw: (status or level, evidence signature)."""
+    """What the investor saw: (status, level or kind; evidence signature)."""
     if item_type == "signal":
         return item["level"], signal_signature(item)
+    if item_type == "drift":
+        return item["kind"], drift_signature(item)
     return item["status"], evidence_signature(item)
 
 
@@ -54,15 +61,16 @@ def record_review(conn: sqlite3.Connection, company_id: int, fingerprint: str, d
         raise ReviewError(f"Unknown item type '{item_type}'.")
     if decision not in DECISIONS:
         raise ReviewError("Decision must be 'confirmed' or 'dismissed'.")
-    reason = normalize_ws(reason or "")
-    if not reason:
-        raise ReviewError("A reason is required.")
-    item = (_latest_signal if item_type == "signal" else _latest_claim)(conn, company_id, fingerprint)
+    reason = normalize_ws(reason or "") or None
+    if decision == "dismissed" and not reason:
+        raise ReviewError("A reason is required to dismiss.")
+    finder = {"claim": _latest_claim, "signal": _latest_signal, "drift": _latest_drift}[item_type]
+    item = finder(conn, company_id, fingerprint)
     if item is None:  # also refuses a fingerprint of another company
         raise ReviewError("No such item for this company.")
     status, signature = _state(item, item_type)
     snapshot = {"status": status, "evidence_signature": signature,
-                "summary": item.get("quote") or item.get("title"), "key": item.get("key") or item.get("kind")}
+                "summary": item.get("quote") or item.get("title") or item.get("note"), "key": item.get("key") or item.get("kind")}
     with conn:
         review_id = conn.execute(
             "INSERT INTO reviews(company_id, item_type, fingerprint, decision, reason, item_json) VALUES (?, ?, ?, ?, ?, ?)",
@@ -119,3 +127,9 @@ def _latest_claim(conn: sqlite3.Connection, company_id: int, fingerprint: str) -
 def _latest_signal(conn: sqlite3.Connection, company_id: int, fingerprint: str) -> dict | None:
     """The signal with this fingerprint in the company's newest finished monitoring run."""
     return next((s for s in latest_monitor_results(conn, company_id)["signals"] if s["fingerprint"] == fingerprint), None)
+
+
+def _latest_drift(conn: sqlite3.Connection, company_id: int, fingerprint: str) -> dict | None:
+    """The change with this fingerprint in the company's newest finished claim check."""
+    from app.claims import latest_results  # noqa: PLC0415 (claims -> memory -> claims at import time)
+    return next((c for c in latest_results(conn, company_id)["changes"] if c["fingerprint"] == fingerprint), None)

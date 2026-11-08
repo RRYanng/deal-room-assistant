@@ -22,6 +22,7 @@ from app.intake import analyze_upload, consistency_warnings
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
 from app.memo import build_memo, memo_to_markdown
+from app.presentation import build_summary
 from app import monitor
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
 from app.resolve import resolve_question_company
@@ -439,7 +440,10 @@ def list_claims(company_id: int, conn=Depends(get_db)):
     require_company(conn, company_id)
     result = latest_results(conn, company_id)
     apply_reviews(conn, company_id, result["claims"])
-    return result | {"counts": review_counts(result["claims"])}
+    apply_reviews(conn, company_id, result["changes"], "drift")
+    counts = review_counts(result["claims"])
+    counts["dismissed"] += sum(c["review_state"] == "dismissed" for c in result["changes"])
+    return result | {"counts": counts, "summary": build_summary(result["claims"], result["changes"])}
 
 
 class ReviewIn(BaseModel):
