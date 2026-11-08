@@ -109,6 +109,16 @@ def test_e5_industry_survey_quoted_in_the_notes_is_dropped(db, clearclaim):
     assert any("industry-level data" in r["output_json"] for r in dropped)
 
 
+def test_industry_data_the_company_cites_is_not_company_data(results):
+    """The live run marked the problem statement "Consistent with company data" from a survey the founder
+    quoted. Industry data repeated by the company is shown, but the claim stays Unverified."""
+    claim = by_quote(results["claims"], "spend hours every day on the phone with insurers")
+    assert claim["status"] == "unverified"
+    [e] = claim["evidence"]
+    assert e["scope"] == "industry"
+    assert e["note"].startswith("Company cites an industry survey (not independently verified)")
+
+
 def test_e6_claim_backed_by_notes_and_crm_is_consistent_with_company_data(results):
     claim = by_quote(results["claims"], "85 dental practices pay")
     assert claim["status"] == "consistent_with_company_data"

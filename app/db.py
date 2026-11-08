@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS web_sources (
     url          TEXT NOT NULL,
     title        TEXT,
     content      TEXT NOT NULL,              -- the text the search returned; quotes are checked against it
-    fetched_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    fetched_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source_type  TEXT                        -- government/association, news, competitor site, other
 );
 CREATE INDEX IF NOT EXISTS idx_web_sources_run ON web_sources(run_id);
 
@@ -141,7 +142,8 @@ CREATE TABLE IF NOT EXISTS evidence (
     web_source_id INTEGER REFERENCES web_sources(id) ON DELETE CASCADE,     -- external evidence
     quote         TEXT,                      -- verbatim from the chunk or the web source
     value_raw     TEXT,
-    note          TEXT NOT NULL              -- written by the program
+    note          TEXT NOT NULL,             -- written by the program
+    scope         TEXT NOT NULL DEFAULT 'company'  -- 'industry': industry data the company cites; never counted
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_claim ON evidence(claim_id);
 
@@ -182,6 +184,18 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after a table first shipped: (table, column, definition). CREATE TABLE IF NOT EXISTS
+# leaves an existing table alone, so a database made earlier gets these with ALTER TABLE.
+ADDED_COLUMNS = [
+    ("web_sources", "source_type", "TEXT"),
+    ("evidence", "scope", "TEXT NOT NULL DEFAULT 'company'"),
+]
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table, column, definition in ADDED_COLUMNS:
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     conn.commit()

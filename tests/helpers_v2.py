@@ -15,6 +15,8 @@ DECK = "clearclaim_deck_2025-12.pdf"
 
 # What a careful model lists for the December 2025 deck (and the matching sentences of the September deck).
 CLAIM_RULES = [
+    {"key": "other", "value_raw": None,
+     "quote": "Front-desk staff at dental practices spend hours every day on the phone with insurers."},
     {"key": "market.industry_spend_usd", "value_raw": "$400 billion",
      "quote": "Americans spend $400 billion a year on dental care."},
     {"key": "market.customer_count", "value_raw": "400,000",
@@ -58,6 +60,9 @@ EVIDENCE_RULES = [
      "value_raw": None, "stance": "supports"},
     {"claim": "15 hours per week", "quote": "front desks spend up to 20 hours a week on insurance verification",
      "value_raw": "20 hours", "stance": "contradicts", "scope": "industry"},
+    # The live run linked the same survey to the deck's problem statement.
+    {"claim": "spend hours every day on the phone", "value_raw": None, "stance": "supports", "scope": "industry",
+     "quote": "Maya cited an industry survey that says front desks spend up to 20 hours a week on insurance verification."},
 ]
 
 

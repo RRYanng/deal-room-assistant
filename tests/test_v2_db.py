@@ -71,3 +71,17 @@ def test_unknown_status_and_stance_are_refused(db):
         db.execute("UPDATE claims SET status = 'true'")
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("UPDATE evidence SET stance = 'proves'")
+
+
+def test_columns_added_later_reach_an_earlier_v2_database(tmp_path):
+    """dev databases made before source_type and scope existed get the columns on startup."""
+    path = tmp_path / "early.db"
+    conn = connect(path)
+    early = SCHEMA.replace(",\n    source_type  TEXT", "").replace(
+        ",             -- written by the program\n    scope         TEXT NOT NULL DEFAULT 'company'", "")
+    conn.executescript(early)
+    have = lambda t: {r[1] for r in conn.execute(f"PRAGMA table_info({t})")}
+    assert "source_type" not in have("web_sources") and "scope" not in have("evidence")
+    init_db(conn)
+    init_db(conn)  # idempotent
+    assert "source_type" in have("web_sources") and "scope" in have("evidence")

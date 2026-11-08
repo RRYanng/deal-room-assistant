@@ -67,6 +67,7 @@ TOLERANCE = 0.10          # single values within 10% agree
 OVERSTATED_RATIO = 1.5    # a claim at least 1.5x its benchmark is possibly overstated
 CONTEXT_WINDOW_DAYS = 60  # other materials count as evidence only if dated this close to the deck
 CANDIDATES_PER_CLAIM = 6
+INDUSTRY_CITED_NOTE = "Company cites an industry survey (not independently verified):"
 
 # Floor for operating cost per full-time employee: the yearly employer cost of one worker in the
 # lowest-cost occupation group. BLS Employer Costs for Employee Compensation, December 2025 (released
@@ -256,9 +257,9 @@ def _usd(value: float) -> str:
 
 
 def evidence_item(claim: int, source: str, stance: str, note: str, chunk_id=None, web_source_id=None,
-              quote=None, value_raw=None) -> dict:
+                  quote=None, value_raw=None, scope="company") -> dict:
     return {"claim": claim, "source": source, "stance": stance, "chunk_id": chunk_id,
-            "web_source_id": web_source_id, "quote": quote, "value_raw": value_raw, "note": note}
+            "web_source_id": web_source_id, "quote": quote, "value_raw": value_raw, "note": note, "scope": scope}
 
 
 # --- 3. internal evidence ---------------------------------------------------------------
@@ -350,9 +351,14 @@ def _validate_internal(conn, company_id, item, claims, candidates) -> tuple[dict
         return None, "quote is not verbatim in the passage"
     quote = normalize_ws(item["quote"])
     claim = claims[i]
-    if claim["key"] in COMPANY_OWN_KEYS and item.get("scope") != "company":
-        return None, "industry-level data is not evidence about the company's own results"
     where = f"{row['filename']}, {row['loc_label'].replace(row['filename'], '').strip()}".rstrip(", ")
+    if item.get("scope") != "company":
+        if claim["key"] in COMPANY_OWN_KEYS:
+            return None, "industry-level data is not evidence about the company's own results"
+        # Kept for the reader, never counted: the company repeating industry data is not company data.
+        stance = item.get("stance") if item.get("stance") in ("supports", "contradicts") else "supports"
+        return evidence_item(i, "internal", stance, chunk_id=row["id"], quote=quote, scope="industry",
+                             note=f"{INDUSTRY_CITED_NOTE} {where}."), ""
     if claim["range"] is None:  # no number: the stance is the model's reading of a verified quote
         stance = item.get("stance")
         if stance not in ("supports", "contradicts"):
@@ -376,8 +382,10 @@ def _validate_internal(conn, company_id, item, claims, candidates) -> tuple[dict
 # --- 5. status ----------------------------------------------------------------------------
 
 def derive_status(evidence: list[dict]) -> str:
-    """The claim's evidence status, decided by these rules only (highest first)."""
-    stances = {(e["source"], e["stance"]) for e in evidence}
+    """The claim's evidence status, decided by these rules only (highest first). Industry data the
+    company cites (scope "industry") is shown but never counted, so it cannot make a claim
+    "Consistent with company data"."""
+    stances = {(e["source"], e["stance"]) for e in evidence if e.get("scope", "company") == "company"}
     if any(stance == "contradicts" for _, stance in stances):
         return "contradicted"
     if any(stance == "overstates" for _, stance in stances):
@@ -475,9 +483,9 @@ def _save(conn: sqlite3.Connection, run_id: int, company_id: int, claims: list[d
             for e in mine:
                 conn.execute(
                     "INSERT INTO evidence(claim_id, company_id, source, stance, chunk_id, web_source_id, quote,"
-                    " value_raw, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " value_raw, note, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (claim_id, company_id, e["source"], e["stance"], e["chunk_id"], e["web_source_id"],
-                     e["quote"], e["value_raw"], e["note"]))
+                     e["quote"], e["value_raw"], e["note"], e.get("scope", "company")))
         conn.execute("UPDATE claim_runs SET status = 'done', stage = NULL, notes_json = ?,"
                      " finished_at = CURRENT_TIMESTAMP WHERE id = ?", (json.dumps(notes), run_id))
 
@@ -560,8 +568,8 @@ def run_claims(conn: sqlite3.Connection, company_id: int, run_id: int) -> list[d
         " JOIN documents d ON d.id = cl.document_id WHERE cl.run_id = ? AND cl.company_id = ? ORDER BY cl.id",
         (run_id, company_id)).fetchall()
     evidence = conn.execute(
-        "SELECT e.claim_id, e.source, e.stance, e.quote, e.value_raw, e.note, e.chunk_id, ch.loc_label,"
-        " d.filename, w.url, w.title FROM evidence e JOIN claims cl ON cl.id = e.claim_id"
+        "SELECT e.claim_id, e.source, e.stance, e.quote, e.value_raw, e.note, e.scope, e.chunk_id, ch.loc_label,"
+        " d.filename, w.url, w.title, w.source_type FROM evidence e JOIN claims cl ON cl.id = e.claim_id"
         " LEFT JOIN chunks ch ON ch.id = e.chunk_id LEFT JOIN documents d ON d.id = ch.document_id"
         " LEFT JOIN web_sources w ON w.id = e.web_source_id"
         " WHERE cl.run_id = ? AND e.company_id = ? ORDER BY e.id", (run_id, company_id)).fetchall()
