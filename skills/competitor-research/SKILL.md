@@ -15,8 +15,13 @@ What the program does with the answer:
 - A query that contains the company's name is refused before it reaches the search engine. The model
   never sees the name: it is masked as "[the company]".
 - A competitor is kept only if its source is a result `search_web` returned in this run, its quote is
-  verbatim in the stored page text, and the quote contains the competitor's name. The company itself
-  is removed.
+  verbatim in the stored page text, and the quote names the competitor (compared without case,
+  punctuation or possessives; one brand word of the name is enough). The company itself is removed.
+- A competitor's own website can describe that competitor, but it is not neutral evidence about other
+  companies: a competitor known only from another competitor's site is dropped.
+- Every page gets a source type: government/association, news, competitor site or other.
+- Only claims that assert something about competitors ("no other company offers this", "we are the
+  fastest") are compared with the list. A claim about how customers work today is not.
 - A competition claim is marked contradicted (or supported) only if at least one kept competitor is
   named for it. The note listing the competitors is written by the program.
 
@@ -29,7 +34,8 @@ How to work:
 - First write a one-line description of the market without the company's name, for example
   "AI insurance verification and claims automation for dental practices".
 - Search for companies in that market: startups, established software vendors and services that do
-  the same job. Use several phrasings (for example "AI dental insurance verification startup",
+  the same job. Prefer neutral sources (news, directories, each competitor's own site) over
+  one vendor's list of its rivals. Use several phrasings (for example "AI dental insurance verification startup",
   "dental claims automation software").
 - Four to six searches are enough. List at most ten competitors, the most direct first.
 

@@ -33,6 +33,9 @@ CLAIM_RULES = [
      "quote": "Gross margin is 67-82%, depending on payer mix and the share of claims that need manual review."},
     {"key": "competition.landscape", "value_raw": None,
      "quote": "No other company offers AI agents for dental insurance claims."},
+    # Keyed as competition the way the live model did; it says how practices work today, not about rivals.
+    {"key": "competition.landscape", "value_raw": None,
+     "quote": "Today practices rely on manual work or outsourced billing services."},
     {"key": "team.headcount", "value_raw": "14", "quote": "We are a team of 14 full-time employees."},
     {"key": "risk.stated", "value_raw": None,
      "quote": "Payers may change claim submission rules or restrict clearinghouse access, which could lower "

@@ -15,6 +15,7 @@ Rules enforced here, not left to the model:
 
 import re
 import sqlite3
+from urllib.parse import urlparse
 
 from app.agent import run_agent
 from app.citations import normalize_ws, quote_in_text
@@ -35,6 +36,22 @@ MASK = "[the company]"
 GENERIC_NAME_WORDS = {"ai", "inc", "llc", "ltd", "co", "corp", "company", "the", "and", "labs", "lab", "tech",
                       "technology", "technologies", "health", "insurance", "finance", "financial", "capital",
                       "group", "systems", "software", "solutions", "holdings", "hq", "app", "io"}
+
+# Words in product and company names that say nothing about which brand it is.
+GENERIC_PRODUCT_WORDS = GENERIC_NAME_WORDS | {"dental", "dentistry", "insurance", "verification", "eligibility", "claims",
+                                              "claim", "billing", "agent", "agents", "platform", "service", "services",
+                                              "solution", "health", "care"}
+# A competitor list can only contradict (or support) a claim that asserts something about competitors.
+COMPETITION_ASSERTION = re.compile(
+    r"\b(no (other|one|company|companies|competitors?|direct)|nobody|none|only|first|unique(ly)?|unlike|"
+    r"fast(er|est)|cheap(er|est)|best|better than|lead(ing|er)|#1|number one|competitors?|competition|rivals?)\b",
+    re.IGNORECASE)
+ASSOCIATION_DOMAINS = {"ada.org", "adea.org", "aapd.org", "nadp.org", "ama-assn.org", "aha.org", "ncqa.org", "who.int"}
+NEWS_DOMAINS = {"reuters.com", "apnews.com", "bloomberg.com", "wsj.com", "nytimes.com", "cnbc.com", "forbes.com",
+                "fortune.com", "axios.com", "statnews.com", "fiercehealthcare.com", "healthcaredive.com",
+                "modernhealthcare.com", "beckersdental.com", "beckershospitalreview.com", "drbicuspid.com",
+                "dentistrytoday.com", "techcrunch.com", "businessinsider.com", "news.example.com"}
+SOURCE_TYPES = ("government/association", "news", "competitor site", "other")
 
 SEARCH_TOOL = ToolSpec(
     "search_web",
@@ -208,7 +225,10 @@ def competitor_research(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row
     company_name = deck["company_name"]
     about = conn.execute("SELECT text FROM chunks WHERE document_id = ? ORDER BY chunk_index LIMIT 4",
                          (deck["id"],)).fetchall()
-    indexes = [i for i, c in enumerate(claims) if c["key"] == "competition.landscape"]
+    # Only claims that assert something about competitors can be checked against a competitor list:
+    # "no other company offers this" can, "practices rely on manual work today" cannot.
+    indexes = [i for i, c in enumerate(claims)
+               if c["key"] == "competition.landscape" and COMPETITION_ASSERTION.search(c["quote"])]
     prompt = "\n".join(
         ["What the deck says the company does (the name is withheld):",
          *(mask_company(" ".join(r["text"].split()), company_name) for r in about), "",
@@ -219,13 +239,22 @@ def competitor_research(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row
                     max_steps=RESEARCH_STEPS, run_id=log_id, tools=[SEARCH_TOOL], tool_runner=tool)
     final = run["final"] or {}
 
-    kept: dict[str, dict] = {}
+    found: dict[str, dict] = {}
     for item in final.get("competitors") or []:
         competitor, reason = _competitor(item, company_name, tool)
         if competitor is None:
             log_event(conn, log_id, 0, "competitor_dropped", input=item, output=reason)
-        elif competitor["name"].lower() not in kept:
-            kept[competitor["name"].lower()] = competitor
+        elif competitor["key"] not in found:
+            found[competitor["key"]] = competitor
+    # A competitor's own site may describe that competitor, but it is not neutral evidence about others.
+    kept: dict[str, dict] = {}
+    for key, c in found.items():
+        owner = site_owner(c["url"], list(found.values()))
+        if owner and owner != key:
+            log_event(conn, log_id, 0, "competitor_dropped", input=c,
+                      output=f"source is the site of another competitor ({found[owner]['name']})")
+        else:
+            kept[key] = c
 
     evidence = []
     for item in final.get("comparison") or []:
@@ -233,7 +262,8 @@ def competitor_research(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row
                 item.get("stance") not in ("supports", "contradicts"):
             log_event(conn, log_id, 0, "comparison_dropped", input=item, output="unknown claim or stance")
             continue
-        named = [kept[n.lower()] for n in item.get("competitors") or [] if isinstance(n, str) and n.lower() in kept]
+        named = [kept[normalize_name(n)] for n in item.get("competitors") or []
+                 if isinstance(n, str) and normalize_name(n) in kept]
         if not named:
             log_event(conn, log_id, 0, "comparison_dropped", input=item, output="no verified competitor named")
             continue
@@ -244,6 +274,52 @@ def competitor_research(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row
                                   note=f"Competitor research found {len(named)} "
                                        f"{'company' if len(named) == 1 else 'companies'} in this market: {names}."))
     return list(kept.values()), evidence
+
+
+def normalize_name(text: str) -> str:
+    """Lowercase, possessives and punctuation removed: "Pearl’s Precheck" -> "pearl precheck"."""
+    text = text.lower().replace("\u2019", "'")
+    text = re.sub(r"'s\b", "", text)
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
+
+
+def brand_words(name: str) -> list[str]:
+    """The words of a name that identify the brand ("Curve Dental Eligibility+" -> ["curve"])."""
+    words = normalize_name(name).split()
+    return [w for w in words if w not in GENERIC_PRODUCT_WORDS and len(w) >= 3] or words
+
+
+def quote_names(quote: str, name: str) -> bool:
+    """True if the quote names the competitor: its full name, or one of its brand words, after normalizing."""
+    text = f" {normalize_name(quote)} "
+    full = normalize_name(name)
+    return bool(full) and (f" {full} " in text or any(f" {w} " in text for w in brand_words(name)))
+
+
+def host_of(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def site_owner(url: str, competitors: list[dict]) -> str | None:
+    """The competitor whose own site this is, judged by a brand word in the host name."""
+    label = host_of(url).rsplit(".", 1)[0]
+    for c in competitors:
+        if any(len(w) >= 4 and w in label for w in brand_words(c["name"])):
+            return c["key"]
+    return None
+
+
+def source_type(url: str, competitors: list[dict]) -> str:
+    host = host_of(url)
+    domains = {host, ".".join(host.split(".")[-2:])}
+    if host.endswith(".gov") or ".gov." in host or host.endswith(".mil") or domains & ASSOCIATION_DOMAINS:
+        return "government/association"
+    if site_owner(url, competitors):
+        return "competitor site"
+    if domains & NEWS_DOMAINS:
+        return "news"
+    return "other"
 
 
 def _competitor(item, company_name: str, tool: WebTool) -> tuple[dict | None, str]:
@@ -260,9 +336,10 @@ def _competitor(item, company_name: str, tool: WebTool) -> tuple[dict | None, st
     quote = verified_quote(source, item.get("quote"))
     if quote is None:
         return None, "quote is not verbatim in the stored page"
-    if name.lower() not in quote.lower():
+    if not quote_names(quote, name):
         return None, "the quote does not name the competitor"
-    return {"name": name, "description": normalize_ws(str(item.get("description") or "")) or None,
+    return {"key": normalize_name(name), "name": name,
+            "description": normalize_ws(str(item.get("description") or "")) or None,
             "web_source_id": source["id"], "quote": quote, "url": source["url"]}, ""
 
 
@@ -284,6 +361,9 @@ def research_claims(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row, cl
             conn.execute("INSERT INTO competitors(run_id, company_id, name, description, web_source_id, quote)"
                          " VALUES (?, ?, ?, ?, ?, ?)",
                          (run_id, deck["company_id"], c["name"], c["description"], c["web_source_id"], c["quote"]))
+        for page in conn.execute("SELECT id, url FROM web_sources WHERE run_id = ?", (run_id,)).fetchall():
+            conn.execute("UPDATE web_sources SET source_type = ? WHERE id = ?",
+                         (source_type(page["url"], competitors), page["id"]))
     notes = []
     if tool.rejected:
         notes.append(f"{len(tool.rejected)} search {'query was' if len(tool.rejected) == 1 else 'queries were'} "

@@ -263,3 +263,84 @@ def test_a_run_records_its_cost(db):
     assert usage["complete_json"] == 2 and usage["chat"] == 4 and usage["model_calls"] == 6
     assert usage["web_searches"] == 4 and usage["search_credits"] is None  # the fake does not report credits
     assert usage["seconds"] >= 0
+
+
+# --- competitor evidence: only for claims about competitors; names; source types ------------
+
+def test_competitor_list_never_contradicts_a_claim_that_is_not_about_competitors(db):
+    """Even when the model compares every claim, only claims asserting something about rivals count."""
+    from tests.helpers_v2 import COMPETITOR_RULES
+
+    def answer(call, pages):
+        out = competitor_answer()(call, pages)
+        names = [c["name"] for c in out["competitors"]]
+        out["comparison"] = [{"claim": i, "stance": "contradicts", "competitors": names} for i in range(40)]
+        return out
+
+    llm = research_llm(competitors=research_loop(COMPETITOR_QUERIES, answer))
+    out = check(db, llm)
+    assert by_quote(out["claims"], "Today practices rely on manual work")["status"] == "unverified"
+    assert by_quote(out["claims"], "No other company offers")["status"] == "contradicted"
+    prompt = next(c for c in llm.calls if c["method"] == "chat" and "map the competitors" in c["system"])
+    assert "Today practices rely" not in prompt["messages"][0]["content"]
+    assert len(COMPETITOR_RULES) == 2
+
+
+PEARL = WebResult("https://review.example.com/verification-tools", "Verification tools",
+                  "Pearl\u2019s Precheck, for example, can automate verification for scheduled patients in advance.")
+CURVE = WebResult("https://software.example.com/curve", "Curve",
+                  "Eligibility+ is a fully automated, AI-powered dental insurance verification solution\u2014built right "
+                  "into Curve.")
+
+
+def test_competitor_names_are_matched_after_normalizing(db):
+    rules = [{"name": "Pearl (Precheck)", "description": "x", "quote": PEARL.content},
+             {"name": "Curve Dental Eligibility+", "description": "x", "quote": CURVE.content}]
+    web = FakeWebSearch(lambda q: [PEARL, CURVE])
+    out = check(db, research_llm(competitors=research_loop(COMPETITOR_QUERIES, competitor_answer(rules))), web)
+    assert [c["name"] for c in out["competitors"]] == ["Pearl (Precheck)", "Curve Dental Eligibility+"]
+
+
+@pytest.mark.parametrize("quote, name, ok", [
+    ("Pearl\u2019s Precheck can automate verification.", "Pearl (Precheck)", True),
+    ("Eligibility+ is built right into Curve.", "Curve Dental Eligibility+", True),
+    ("ZUUB: API-first benefit breakdowns.", "Zuub", True),
+    ("Dental insurance verification software.", "Curve Dental Eligibility+", False),
+    ("Practices curve their spending.", "Pearl", False),
+])
+def test_quote_names(quote, name, ok):
+    from app.research import quote_names
+    assert quote_names(quote, name) is ok
+
+
+@pytest.mark.parametrize("url, kind", [
+    ("https://www.cms.gov/files/document/highlights.pdf", "government/association"),
+    ("https://www.ada.org/resources/research", "government/association"),
+    ("https://www.healthcaredive.com/press-release/x", "news"),
+    ("https://molarflow.example.com/about", "competitor site"),
+    ("https://www.getweave.com/dental-practice-statistics", "other"),
+])
+def test_source_type(url, kind):
+    from app.research import source_type
+    assert source_type(url, [{"key": "molarflow", "name": "Molarflow"}]) == kind
+
+
+def test_source_types_are_stored_and_returned(results):
+    spending = by_quote(results["claims"], "$400 billion a year on dental care")
+    assert [e["source_type"] for e in spending["evidence"]] == ["government/association"]
+    types = {c["name"]: c["source_type"] for c in results["competitors"]}
+    assert types == {"Molarflow": "competitor site", "Toothledger": "news"}
+
+
+def test_a_competitor_known_only_from_another_competitors_site_is_dropped(db):
+    rival_page = WebResult("https://molarflow.example.com/compare", "Molarflow vs others",
+                           "Molarflow uses AI agents to verify dental insurance and submit claims for dental offices. "
+                           "Bitewise offers a slower verification tool.")
+    rules = [{"name": "Molarflow", "description": "x",
+              "quote": "Molarflow uses AI agents to verify dental insurance and submit claims for dental offices."},
+             {"name": "Bitewise", "description": "x", "quote": "Bitewise offers a slower verification tool."}]
+    web = FakeWebSearch(lambda q: [rival_page])
+    out = check(db, research_llm(competitors=research_loop(COMPETITOR_QUERIES, competitor_answer(rules))), web)
+    assert [c["name"] for c in out["competitors"]] == ["Molarflow"]
+    dropped = db.execute("SELECT output_json FROM agent_logs WHERE kind = 'competitor_dropped'").fetchall()
+    assert any("site of another competitor (Molarflow)" in r["output_json"] for r in dropped)
