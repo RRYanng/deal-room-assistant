@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
@@ -30,6 +31,7 @@ from app.logs import log_event
 from app.numbers import parse_range, ranges_agree
 from app.rag import search
 from app.skills import skill_prompt
+from app.usage import CountingLLM, CountingWeb
 
 log = logging.getLogger(__name__)
 
@@ -409,6 +411,7 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
     run = conn.execute("SELECT company_id, document_id FROM claim_runs WHERE id = ?", (run_id,)).fetchone()
     company_id, log_id = run["company_id"], f"claims-run{run_id}"
     notes: list[str] = []
+    llm, web, started = CountingLLM(llm), web and CountingWeb(web), time.monotonic()
     try:
         deck = conn.execute(
             "SELECT d.id, d.company_id, d.filename, d.doc_type, d.doc_date, c.name AS company_name"
@@ -440,6 +443,11 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
     except Exception as e:  # noqa: BLE001 (the run must end in a stored state the page can show)
         log.exception("Claim check %s failed", run_id)
         _fail(conn, run_id, f"Claim check failed ({type(e).__name__}: {e}).", notes)
+    finally:
+        log_event(conn, log_id, 0, "usage", output={
+            "model": llm.model, "model_calls": sum(llm.calls.values()), **llm.calls,
+            "web_searches": web.searches if web else 0, "search_credits": web.credits if web else None,
+            "seconds": round(time.monotonic() - started, 1)})
 
 
 def _stage(conn: sqlite3.Connection, run_id: int, stage: str) -> None:
@@ -521,7 +529,9 @@ def get_run(conn: sqlite3.Connection, company_id: int, run_id: int) -> dict | No
         return None
     run = {k: row[k] for k in ("id", "company_id", "document_id", "filename", "status", "stage", "error",
                                "started_at", "finished_at")}
-    return run | {"notes": json.loads(row["notes_json"] or "[]")}
+    usage = conn.execute("SELECT output_json FROM agent_logs WHERE run_id = ? AND kind = 'usage' ORDER BY id DESC LIMIT 1",
+                         (f"claims-run{run_id}",)).fetchone()
+    return run | {"notes": json.loads(row["notes_json"] or "[]"), "usage": usage and json.loads(usage["output_json"])}
 
 
 def latest_results(conn: sqlite3.Connection, company_id: int) -> dict:

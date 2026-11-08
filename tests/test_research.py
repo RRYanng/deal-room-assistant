@@ -177,22 +177,28 @@ def tavily(handler):
     return TavilyProvider("test-key-123", client=httpx.Client(transport=httpx.MockTransport(handler)))
 
 
-def test_tavily_reads_page_text_and_sends_the_key_as_a_header():
+def test_tavily_request_follows_the_api_reference():
+    """Bearer key, basic depth (1 credit, not 2), page text, and the credits used are read back."""
     def handler(request):
+        assert request.url == "https://api.tavily.com/search"
         assert request.headers["Authorization"] == "Bearer test-key-123"
         body = json.loads(request.content)
-        assert body["query"] == "dental practices" and body["include_raw_content"] is True
-        return httpx.Response(200, json={"results": [
+        assert body == {"query": "dental practices", "max_results": 5, "search_depth": "basic",
+                        "include_raw_content": "text", "include_usage": True}
+        return httpx.Response(200, json={"usage": {"credits": 1}, "results": [
             {"url": "https://a.example", "title": "A", "content": "snippet", "raw_content": "full page text"},
             {"url": "https://b.example", "title": "B", "content": "only a snippet", "raw_content": None},
             {"url": "", "title": "no url", "content": "dropped"}]})
 
-    pages = tavily(handler).search("dental practices")
+    provider = tavily(handler)
+    pages = provider.search("dental practices")
     assert [(p.url, p.content) for p in pages] == [("https://a.example", "full page text"),
                                                    ("https://b.example", "only a snippet")]
+    assert provider.credits_used == 1
 
 
-@pytest.mark.parametrize("status, message", [(401, "rejected the API key"), (429, "quota"), (500, "HTTP 500")])
+@pytest.mark.parametrize("status, message", [(401, "rejected the API key"), (429, "rate limit"),
+                                             (432, "1,000 credits a month"), (500, "HTTP 500")])
 def test_tavily_errors_never_show_the_key(status, message):
     with pytest.raises(WebSearchError) as e:
         tavily(lambda request: httpx.Response(status, json={"detail": "x"})).search("q")
@@ -248,3 +254,12 @@ def test_e5_web_page_with_an_industry_figure_cannot_support_a_product_outcome(db
 def test_e5_product_outcome_stays_unverified_with_web_research_on(results):
     claim = by_quote(results["claims"], "15 hours per week")
     assert claim["status"] == "unverified" and claim["evidence"] == []
+
+
+def test_a_run_records_its_cost(db):
+    out = check(db)
+    usage = out["run"]["usage"]
+    # 1 extraction + 1 evidence review + 2 turns of each research loop.
+    assert usage["complete_json"] == 2 and usage["chat"] == 4 and usage["model_calls"] == 6
+    assert usage["web_searches"] == 4 and usage["search_credits"] is None  # the fake does not report credits
+    assert usage["seconds"] >= 0
