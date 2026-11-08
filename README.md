@@ -46,6 +46,11 @@ Branch `feature/v2`. Design: [docs/v2_design.md](docs/v2_design.md).
    the search engine, and every quote must appear in a page the search returned.
 8. **Review**: an investor confirms or dismisses each flag, with a reason. The memo lists only
    confirmed items as findings. A dismissed flag stays quiet unless its evidence changes.
+9. **Portfolio monitoring**: reads a company's quarterly updates and computes three signals by
+   rule: cash runway (under 12 months is a warning; high when revenue also grew under 10%), key
+   person departure, and a milestone that keeps slipping. The model only quotes the figures.
+   Competitors moving faster, customer concentration, regulatory issues and next-round risk are
+   further signals worth adding; they are not built.
 
 ### Evaluation
 
@@ -67,10 +72,16 @@ FakeWebSearch. They test the program's checks and rules, not the real model's ju
 | E9 | Competitor research lists competitors with links and contradicts "no other company" | pass |
 | E10 | Invented sources and altered quotes are dropped; queries naming the company are refused | pass |
 | E13 | Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; a reason is required | pass |
+| E14 | Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1 | pass |
 | FP | The same file checked twice gives identical fingerprints | pass |
 
-Whole offline suite at the last run: 365 passed (the 274 v1.1 tests included). Not yet run with
-the real model or real web search. Memory (E11, E12) and portfolio monitoring (E14) are not built yet.
+Whole offline suite at the last run: 403 passed (the 274 v1.1 tests included). Memory (E11, E12)
+is not built yet.
+
+**Live run** (real Claude Opus 5.5 and Tavily, ClearClaim deck, 2026-11-08): E1-E9 matched the
+expected statuses in both runs. In the second run 18 of 18 claims found in both runs had the same
+fingerprint and status; it cost 8 model calls, about $0.78 and 8 search credits in 78 seconds.
+Portfolio monitoring has not been run with the real model yet.
 
 ## Quick start
 
@@ -251,6 +262,9 @@ numpy matrix product; BM25 is rebuilt per query. Both are simple to explain and 
 | GET | `/api/companies/{id}/claims` | v2: latest claims with evidence, statuses and review state |
 | POST | `/api/companies/{id}/reviews` | v2: confirm or dismiss (`{"fingerprint", "decision", "reason"}`) |
 | GET | `/api/companies/{id}/memo` | v2: memo, JSON + Markdown |
+| POST | `/api/companies/{id}/monitor` | v2: read the company's updates and compute signals in the background |
+| GET | `/api/companies/{id}/monitor-runs/{run_id}` | v2: progress of a monitoring run |
+| GET | `/api/companies/{id}/monitor` | v2: figures per period and signals |
 
 ## Verification
 

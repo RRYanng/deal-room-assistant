@@ -28,6 +28,7 @@ CASES = {
     "E9": "Competitor research lists competitors with links and contradicts 'no other company'",
     "E10": "Invented sources and altered quotes are dropped; queries naming the company are refused",
     "E13": "Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; reason required",
+    "E14": "Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1",
     "FP": "The same file checked twice gives identical fingerprints",
 }
 FINGERPRINT_TEST = "test_same_file_checked_twice_gives_identical_fingerprints"

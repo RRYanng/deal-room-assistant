@@ -177,3 +177,24 @@ evaluation and approvals are not cut.
   evidence needs scope "company", and web sources are never counted for those claims. Trap in the
   notes: an industry survey of 20 hours a week next to the deck's "15 hours per week".
 - The unverified YC batch of a real competitor was removed from SOURCES.md.
+
+## 12. Changes on 2026-11-08 (afternoon) and portfolio monitoring
+
+- Industry data that a company cites (scope "industry") is shown with "Company cites an industry
+  survey (not independently verified)" and never counts, so it cannot give "Consistent with company data".
+- A competitor list is compared only with claims that assert something about competitors (none, only,
+  first, faster...). New key `market.status_quo` for how customers work today.
+- Competitor names are matched after normalizing; one brand word in the quote is enough. A competitor
+  known only from another competitor's site is dropped. Every web page has a source type:
+  government/association, news, competitor site, other.
+- The 135,333 "ADA" practice count traced to a Census County Business Patterns establishment count
+  (2020, NAICS 621210) quoted by a vendor; the Census table needs an API key, so it is not used.
+- Each run records tokens and an estimated dollar cost (`app/llm/pricing.py`).
+- Portfolio monitoring (`app/monitor.py`, `skills/portfolio-monitor/SKILL.md`): a notes file is a
+  quarterly update only if it reports cash, net burn or revenue. The model quotes the figures; the
+  program computes runway (warning under 12 months; high with revenue growth under 10%, growth
+  calculated from two revenues when both are known), key person departure (founder, C-level, VP, Head
+  of; absence counts only when the update lists the team) and milestone slips (target moved later at
+  least twice, or passed and not done). Departure is level high; a slip is a warning. Signal
+  fingerprints use company, kind, period and the numbers or names, so a second run gives the same ones.
+  Signals cannot be confirmed or dismissed yet.

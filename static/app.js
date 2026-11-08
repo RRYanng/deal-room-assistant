@@ -1202,6 +1202,7 @@ document.addEventListener("keydown", (e) => {
   if (document.querySelector("dialog[open]")) return; // a dialog handles its own Escape
   if (!$("brief-overlay").hidden) $("brief-overlay").hidden = true;
   else if (!$("claims-overlay").hidden) closeClaims();
+  else if (!$("monitor-overlay").hidden) closeMonitor();
   else if (state.drawer) closeDrawer();
 });
 $("brief-copy").onclick = async () => {
@@ -1506,6 +1507,149 @@ $("claims-body").addEventListener("click", async (e) => {
   const button = e.target.closest("[data-review]");
   if (button) openReview(button.dataset.fp, button.dataset.review);
 });
+
+// ---------------------------------------------------------------- portfolio monitoring
+
+// Signals are computed by the server from the figures in each update; the page only shows them.
+const SIGNAL_LEVEL = { high: ["High", "st-bad"], warning: ["Warning", "st-warn"] };
+const SIGNAL_KIND = { cash_runway: "Cash runway", key_person_departure: "Key person", milestone_slip: "Milestone" };
+const mon = { companyId: null, data: null, timer: null };
+
+async function openMonitor() {
+  await loadCompanies().catch(() => {});
+  const ids = state.companies.map((c) => c.id);
+  if (!ids.includes(mon.companyId)) mon.companyId = state.current ? state.current.id : ids[0] ?? null;
+  $("monitor-company").innerHTML = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("monitor-company").value = mon.companyId ? String(mon.companyId) : "";
+  $("monitor-overlay").hidden = false;
+  await loadMonitor();
+}
+
+function closeMonitor() {
+  $("monitor-overlay").hidden = true;
+  clearTimeout(mon.timer);
+}
+
+async function loadMonitor() {
+  clearTimeout(mon.timer);
+  const companyId = mon.companyId;
+  if (!companyId) {
+    $("monitor-body").innerHTML = '<div class="muted">No companies yet.</div>';
+    return;
+  }
+  try {
+    const data = await api(`/api/companies/${companyId}/monitor`);
+    if (companyId !== mon.companyId) return;
+    mon.data = data;
+    renderMonitor();
+    if (data.running) mon.timer = setTimeout(() => pollMonitor(companyId, data.running.id), CLAIM_POLL_MS);
+  } catch (err) {
+    $("monitor-body").innerHTML = `<div class="answer error">${esc(err.message)}</div>`;
+  }
+}
+
+async function pollMonitor(companyId, runId) {
+  if (companyId !== mon.companyId || $("monitor-overlay").hidden) return;
+  try {
+    const run = await api(`/api/companies/${companyId}/monitor-runs/${runId}`);
+    if (run.status === "running") {
+      mon.data.running = run;
+      renderMonitor();
+      mon.timer = setTimeout(() => pollMonitor(companyId, runId), CLAIM_POLL_MS);
+    } else {
+      await loadMonitor();
+    }
+  } catch {
+    mon.timer = setTimeout(() => pollMonitor(companyId, runId), CLAIM_POLL_MS * 3);
+  }
+}
+
+const money = (m) => (m ? esc(m.value_raw) : '<span class="muted">—</span>');
+
+function monitorUsageText(u) {
+  if (!u) return "";
+  const parts = [`${u.model_calls} model call${u.model_calls === 1 ? "" : "s"}`];
+  if (u.estimated_usd != null) parts.push(`about $${u.estimated_usd.toFixed(2)} (estimate)`);
+  parts.push(`${Math.round(u.seconds)} s`);
+  return ` · ${parts.map(esc).join(" · ")}`;
+}
+
+function signalHtml(s) {
+  const [label, cls] = SIGNAL_LEVEL[s.level] || [s.level, "st-none"];
+  const evidence = s.evidence.map((e) => `<div class="ev"><div class="quote">“${esc(e.quote)}”</div>
+    <div class="source-loc">${esc(e.filename)} · ${esc(locationOf(e))}</div></div>`).join("");
+  return `<div class="issue-card signal">
+    <div><span class="status ${cls}">${esc(label)}</span> <span class="muted small">${esc(SIGNAL_KIND[s.kind] || s.kind)}</span></div>
+    <div class="issue-title">${esc(s.title)}</div>
+    <div class="small">${esc(s.detail)}</div>
+    ${evidence}
+  </div>`;
+}
+
+function renderMonitor() {
+  const d = mon.data;
+  const running = !!d.running;
+  $("monitor-run").disabled = !mon.companyId || running;
+  $("monitor-run").textContent = running ? "Reading…" : "Run monitoring";
+  const head = [];
+  if (running) head.push(`<div class="answer pending">${esc(d.running.stage || "Starting")}…</div>`);
+  if (d.failed_run) head.push(`<div class="answer error">The latest run failed: ${esc(d.failed_run.error)}</div>`);
+  if (d.run) {
+    head.push(`<div class="muted small">Last run: ${esc(d.run.finished_at || "")} UTC${monitorUsageText(d.run.usage)}</div>`);
+    if (d.run.notes.length) head.push(`<ul class="run-notes">${d.run.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`);
+  }
+  if (!d.run) {
+    $("monitor-body").innerHTML = head.join("") + (running || d.failed_run ? "" : `<div class="muted">No monitoring yet.
+      Run it to read the company's updates and check cash runway, key people and milestones.</div>`);
+    return;
+  }
+  const byPeriod = {};
+  for (const s of d.signals) (byPeriod[s.period_end] ||= []).push(s);
+  const rows = d.periods.map((p) => {
+    const growth = p.revenue_growth_pct == null ? '<span class="muted">—</span>'
+      : `${p.revenue_growth_pct}%${p.revenue_growth_calculated ? ' <span class="calculated-note">(calculated)</span>' : ""}`;
+    const runway = p.runway_months == null ? '<span class="muted">—</span>'
+      : `${p.runway_months} months <span class="calculated-note">(calculated)</span>`;
+    const flags = (byPeriod[p.period_end] || []).map((s) =>
+      `<span class="status ${(SIGNAL_LEVEL[s.level] || [])[1] || "st-none"}">${esc(SIGNAL_KIND[s.kind] || s.kind)}</span>`).join(" ");
+    return `<tr><td>${esc(p.period_end)}<div class="muted small">${esc(p.filename)}</div></td>
+      <td class="num">${money(p.metrics.cash)}</td><td class="num">${money(p.metrics.monthly_net_burn)}</td>
+      <td class="num">${runway}</td><td class="num">${money(p.metrics.revenue)}</td><td class="num">${growth}</td>
+      <td>${flags || '<span class="muted small">none</span>'}</td></tr>`;
+  }).join("");
+  const signals = d.periods.filter((p) => byPeriod[p.period_end]).map((p) =>
+    `<h3>${esc(p.period_end)}</h3>${byPeriod[p.period_end].map(signalHtml).join("")}`).join("");
+  $("monitor-body").innerHTML = `${head.join("")}
+    <div class="muted small">Figures are quoted from each update; runway and growth are calculated by the program. Signals
+      are rules, not conclusions.</div>
+    <table class="monitor-table">
+      <thead><tr><th>Period</th><th>Cash</th><th>Net burn / month</th><th>Runway</th><th>Revenue</th><th>Growth</th>
+      <th>Signals</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${signals || '<p class="muted">No signals in any period.</p>'}`;
+}
+
+$("nav-monitor").onclick = openMonitor;
+$("monitor-close").onclick = closeMonitor;
+$("monitor-overlay").onclick = (e) => { if (e.target === $("monitor-overlay")) closeMonitor(); };
+$("monitor-company").onchange = () => {
+  mon.companyId = Number($("monitor-company").value) || null;
+  loadMonitor();
+};
+$("monitor-run").onclick = async () => {
+  if (!mon.companyId) return;
+  $("monitor-run").disabled = true;
+  try {
+    const run = await postJson(`/api/companies/${mon.companyId}/monitor`, {});
+    mon.data = { ...(mon.data || { run: null, failed_run: null, periods: [], signals: [] }), running: run };
+    renderMonitor();
+    mon.timer = setTimeout(() => pollMonitor(mon.companyId, run.id), CLAIM_POLL_MS);
+  } catch (err) {
+    $("monitor-body").insertAdjacentHTML("afterbegin", `<div class="answer error">${esc(err.message)}</div>`);
+    $("monitor-run").disabled = false;
+  }
+};
 
 // ---------------------------------------------------------------- review dialog
 

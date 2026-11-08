@@ -34,6 +34,7 @@
         <button type="button" id="nav-library" class="nav-item">Library</button>
         <button type="button" id="nav-issues" class="nav-item">Issues <span id="issues-badge" class="count" hidden></span></button>
         <button type="button" id="nav-claims" class="nav-item">Claim check</button>
+        <button type="button" id="nav-monitor" class="nav-item">Portfolio</button>
       </nav>
       <label class="company-picker">Company:
         <select id="company-select"><option value="">Auto-detect</option></select>
@@ -190,6 +191,21 @@
         </div>
       </div>
       <div id="claims-body" class="brief-body claims-body"></div>
+    </div>
+  </div>
+
+  <!-- Portfolio monitoring: figures per update and risk signals -->
+  <div id="monitor-overlay" class="overlay" hidden>
+    <div class="overlay-card claims-card" role="dialog" aria-modal="true" aria-labelledby="monitor-title">
+      <div class="overlay-head">
+        <h2 id="monitor-title">Portfolio monitoring</h2>
+        <div class="overlay-actions">
+          <select id="monitor-company" aria-label="Company"></select>
+          <button type="button" id="monitor-run">Run monitoring</button>
+          <button type="button" id="monitor-close" class="secondary">Close</button>
+        </div>
+      </div>
+      <div id="monitor-body" class="brief-body claims-body"></div>
     </div>
   </div>
 
