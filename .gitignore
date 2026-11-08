@@ -7,3 +7,4 @@ data/*
 !data/.gitkeep
 .claude/
 docs/walkthrough_zh.md
+docs/DEV_NOTES.md
