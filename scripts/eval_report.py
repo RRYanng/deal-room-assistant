@@ -23,7 +23,7 @@ CASES = {
     "E4": "A projection that assumes away a risk the deck states is Possibly overstated",
     "E5": "A claim with no evidence (15 hours saved per week) stays Unverified",
     "E6": "A claim backed by notes and CRM is Consistent with company data",
-    "E7": "400,000 practices vs public data (205,088 dentists) is Possibly overstated, with a real link",
+    "E7": "400,000 practices vs public data (205,088 dentists, a ceiling) is Contradicted, with a real link",
     "E8": "40% denial rate vs public data (19.3%) is Possibly overstated, with a real link",
     "E9": "Competitor research lists competitors with links and contradicts 'no other company'",
     "E10": "Invented sources and altered quotes are dropped; queries naming the company are refused",

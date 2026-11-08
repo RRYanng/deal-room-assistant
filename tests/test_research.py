@@ -30,11 +30,12 @@ def results(db):
 
 # --- E7-E9: planted claims checked against public sources -----------------------------------
 
-def test_e7_practice_count_is_possibly_overstated_against_a_real_source(results):
+def test_e7_practice_count_above_the_number_of_dentists_is_contradicted(results):
+    """205,088 dentists is a ceiling on the number of practices: exceeding it at all is contradicted."""
     claim = by_quote(results["claims"], "400,000 independent dental practices")
-    assert claim["status"] == "possibly_overstated"
+    assert claim["status"] == "contradicted"
     [e] = [e for e in claim["evidence"] if e["source"] == "external"]
-    assert e["url"] == ADA.url and e["stance"] == "overstates"
+    assert e["url"] == ADA.url and e["stance"] == "contradicts"
     assert "205,088" in e["quote"] and "upper bound" in e["note"]
 
 
@@ -67,9 +68,10 @@ def test_a_matching_public_figure_externally_supports_a_claim(db):
 
 
 @pytest.mark.parametrize("claim, public, relation, stance", [
-    ("400,000", "205,088", "upper_bound", "overstates"),
-    ("250,000", "205,088", "upper_bound", "contradicts"),
-    ("150,000", "205,088", "upper_bound", None),        # under a ceiling: no conclusion
+    ("400,000", "205,088", "upper_bound", "contradicts"),  # above a ceiling, by any margin
+    ("210,000", "205,088", "upper_bound", "contradicts"),
+    ("205,088", "205,088", "upper_bound", None),
+    ("150,000", "205,088", "upper_bound", None),           # under a ceiling: no conclusion
     ("40%", "19.3%", "same_quantity", "overstates"),
     ("21%", "19.3%", "same_quantity", "supports"),
     ("25%", "19.3%", "same_quantity", "contradicts"),

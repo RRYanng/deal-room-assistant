@@ -141,11 +141,9 @@ def compare_external(claim_range: tuple[float, float], public: tuple[float, floa
     claim_low = claim_range[0] if claim_range[0] != float("-inf") else claim_range[1]
     public_high = public[1] if public[1] != float("inf") else public[0]
     if relation == "upper_bound":
-        if claim_low >= OVERSTATED_RATIO * public_high:
-            return "overstates"
-        if claim_low > public_high * (1 + TOLERANCE):
-            return "contradicts"
-        return None  # at or below a ceiling: consistent with it, but not support
+        # A ceiling cannot be exceeded at all: above it is contradicted, by any margin. Under it says
+        # nothing for or against the claim. The 1.5x rule is only for figures of the same quantity.
+        return "contradicts" if claim_low > public_high else None
     if ranges_agree(claim_range, public, TOLERANCE):
         return "supports"
     if claim_low >= OVERSTATED_RATIO * public_high:

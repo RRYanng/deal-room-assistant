@@ -109,7 +109,7 @@ risk) are described in the README but not built.
 | | risk page: payers may change rules; projections assume 0% churn and 98% first-pass acceptance | E4 possibly overstated |
 | | "saves front-desk staff 15 hours per week", no evidence anywhere | E5 unverified, never supported |
 | | 85 paying practices, also in notes and CRM | E6 consistent with company data |
-| | 400,000 independent practices (public data: 205,088 dentists in total, ADA 2025); 40% of claims denied (public: about 15-20%) | E7/E8 possibly overstated with real links |
+| | 400,000 independent practices (public data: 205,088 dentists in total, ADA 2025); 40% of claims denied (public: about 15-20%) | E7 contradicted (above a ceiling), E8 possibly overstated, with real links |
 | | "no other company offers AI agents for dental claims" | E9 competitor research finds verified competitors |
 | `clearclaim_meeting_notes.md`, `clearclaim_crm.csv` | internal evidence for 85 practices and ~70% margin | E1, E6 |
 | `clearclaim_update_2026-Q1/Q2/Q3.txt` | runway about 22 -> 11 -> 7 months, revenue growth 15% -> 2%; CTO leaves in Q3; one milestone slips in Q2 and Q3 | E14: Q2 runway warning, Q3 runway high + departure + slip, nothing in Q1 |
@@ -148,8 +148,9 @@ evaluation and approvals are not cut.
   used as written (67-82% and above 90% do not agree); only single values get +/-10%.
 - **External comparison**: the model labels a public figure as the same quantity or an upper bound
   (dentists are a ceiling on practices). Same quantity: within 10% supports, at least 1.5x
-  overstates, otherwise contradicts (including a claim that is lower). Upper bound: at least 1.5x
-  overstates, above the bound contradicts, under it gives no conclusion.
+  overstates, otherwise contradicts (including a claim that is lower). Upper bound (revised
+  2026-11-08): above the bound is contradicted by any margin; under it gives no conclusion. The 1.5x
+  rule applies only to the same quantity.
 - **E3** is attached to both the cost claim and the headcount claim, since either may be wrong.
 - **Fingerprint** = company + item type + key + numbers read by the program; a claim with no number
   uses the hash of its verbatim source sentence (document text, not model wording).

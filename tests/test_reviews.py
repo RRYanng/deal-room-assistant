@@ -73,7 +73,7 @@ def test_e13_dismissed_item_is_raised_again_when_its_evidence_changes(db, checke
     again = run(db, company_id, deck_id, research_llm(), fake_web())
     same = by_quote(again["claims"], "400,000 independent dental practices")
     assert same["fingerprint"] == claim["fingerprint"]
-    assert same["status"] == "possibly_overstated"
+    assert same["status"] == "contradicted"
     assert same["review_state"] == "awaiting_review" and same["evidence_changed"]
     assert same["review"]["status_then"] == "unverified"
     assert "Evidence changed since it was dismissed." in memo_to_markdown(build_memo(db, company_id))
@@ -151,7 +151,7 @@ def test_api_check_review_and_memo(client):
     claims = client.get(f"/api/companies/{cid}/claims").json()
     statuses = {c["quote"]: c["status"] for c in claims["claims"]}
     assert statuses["Current gross margin: above 90%."] == "contradicted"
-    assert statuses["There are 400,000 independent dental practices in the United States."] == "possibly_overstated"
+    assert statuses["There are 400,000 independent dental practices in the United States."] == "contradicted"
     assert claims["counts"]["awaiting_review"] == len(CLAIM_RULES)
     assert [c["name"] for c in claims["competitors"]] == ["Molarflow", "Toothledger"]
 

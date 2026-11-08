@@ -15,9 +15,10 @@ What the program does with the answer:
   deal stays confidential. The model never sees the name: it is masked as "[the company]".
 - A source must be one that `search_web` returned in this run, and the quote must be verbatim in the
   page text that was stored. Otherwise the evidence is dropped and the claim stays "Unverified".
-- The program compares the numbers: within 10% supports; a claim at least 1.5x the public figure is
-  "possibly overstated"; anything else contradicts. For an upper bound (for example the number of
-  dentists as a ceiling on the number of practices), only a claim above the bound counts.
+- The program compares the numbers. For the same quantity: within 10% supports; a claim at least 1.5x
+  the public figure is "possibly overstated"; anything else contradicts. For an upper bound (for
+  example the number of dentists as a ceiling on the number of practices): a claim above the bound
+  is contradicted, by any margin; a claim under it gives no conclusion.
 
 ## Research
 
