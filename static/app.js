@@ -1236,7 +1236,7 @@ const EVIDENCE_STANCE = { supports: "supports", contradicts: "contradicts", over
 const CLAIM_POLL_MS = 1000;
 
 const claims = { companyId: null, data: null, view: "claims", showDismissed: false, showOther: false, timer: null, memo: null,
-  reviewing: null };
+  reviewing: null, openSources: new Set() };
 // Flags first: contradicted, then possibly overstated, then the rest in the order of CLAIM_STATUS.
 const STATUS_ORDER = Object.keys(CLAIM_STATUS);
 
@@ -1313,6 +1313,22 @@ function siteOf(url) {
   return url.replace(/^https?:\/\/(www\.)?/i, "").split("/")[0];
 }
 
+// Times from the server are UTC ("2026-11-08 17:25:14"); show them in the viewer's own time zone.
+function localTime(s) {
+  if (!s) return "";
+  const d = new Date(String(s).replace(" ", "T") + "Z");
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+// The claim's own figure, in bold inside its quote.
+function boldValue(quote, value) {
+  const text = esc(quote);
+  if (!value) return text;
+  const v = esc(value);
+  const at = text.indexOf(v);
+  return at < 0 ? text : `${text.slice(0, at)}<b>${v}</b>${text.slice(at + v.length)}`;
+}
+
 function evidenceItemHtml(e) {
   const url = safeUrl(e.url);
   const where = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>`
@@ -1322,35 +1338,47 @@ function evidenceItemHtml(e) {
       + (EVIDENCE_STANCE[e.stance] || e.stance);
   return `<div class="ev ev-${esc(e.scope === "industry" ? "context" : e.stance)}">
     <div class="ev-kind">${esc(kind)}</div>
-    <div>${esc(e.note)}</div>
+    <div class="ev-head">${esc(e.headline)}</div>
+    <div class="small muted">${esc(e.note)}</div>
     ${e.quote ? `<div class="quote">“${esc(e.quote)}”</div>` : ""}
     ${where ? `<div class="source-loc">${where}</div>` : ""}
   </div>`;
 }
 
-function reviewCellHtml(c) {
-  const actions = `<div class="review-actions">
-      <button type="button" class="secondary small-button" data-review="confirmed" data-fp="${esc(c.fingerprint)}">Confirm</button>
-      <button type="button" class="secondary small-button" data-review="dismissed" data-fp="${esc(c.fingerprint)}">Dismiss</button>
-    </div>`;
+// With an official source present, pages of the "other" type are folded.
+function evidenceListHtml(c) {
+  if (!c.evidence.length) return '<div class="muted small">No evidence found.</div>';
+  const official = c.evidence.some((e) => e.source_type === "government/association");
+  const folded = official ? c.evidence.filter((e) => e.source_type === "other") : [];
+  const shown = c.evidence.filter((e) => !folded.includes(e));
+  const open = claims.openSources.has(c.fingerprint);
+  const toggle = folded.length ? `<button type="button" class="link small" data-sources="${esc(c.fingerprint)}">
+    ${open ? "Hide" : "Show"} ${folded.length} other source${folded.length === 1 ? "" : "s"}</button>` : "";
+  return shown.map(evidenceItemHtml).join("") + (open ? folded.map(evidenceItemHtml).join("") : "") + toggle;
+}
+
+function reviewCellHtml(c, type = "claim") {
+  const button = (decision, text) => `<button type="button" class="secondary small-button" data-review="${decision}"
+    data-type="${type}" data-fp="${esc(c.fingerprint)}">${text}</button>`;
+  const actions = `<div class="review-actions">${button("confirmed", "Confirm")}${button("dismissed", "Dismiss")}</div>`;
+  const reason = (r) => (r && r.reason ? `<div class="small">${esc(r.reason)}</div>` : "");
   if (c.review_state === "awaiting_review") {
     const changed = c.evidence_changed
-      ? `<div class="muted small">Evidence changed since it was ${esc(c.review.decision)}: ${esc(c.review.reason)}</div>` : "";
+      ? `<div class="muted small">Evidence changed since it was ${esc(c.review.decision)}.</div>${reason(c.review)}` : "";
     return `<div class="muted small">Awaiting review</div>${changed}${actions}`;
   }
   const label = c.review_state === "confirmed" ? "Confirmed" : "Dismissed";
-  return `<div class="review-done ${c.review_state}"><b>${label}</b></div>
-    <div class="small">${esc(c.review.reason)}</div>${actions}`;
+  return `<div class="review-done ${c.review_state}"><b>${label}</b></div>${reason(c.review)}${actions}`;
 }
 
 function claimRowHtml(c) {
   const [label, cls] = CLAIM_STATUS[c.status] || [c.status, "st-none"];
-  const evidence = c.evidence.length ? c.evidence.map(evidenceItemHtml).join("")
-    : '<div class="muted small">No evidence found.</div>';
   return `<tr class="${c.review_state === "dismissed" ? "dismissed" : ""}">
     <td><span class="status ${cls}">${esc(label)}</span></td>
-    <td><div class="claim-quote">“${esc(c.quote)}”</div><div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div></td>
-    <td>${evidence}</td>
+    <td><div class="claim-label">${esc(c.label)}${c.category ? ` <span class="muted small">· ${esc(c.category)}</span>` : ""}</div>
+      <div class="claim-quote">“${boldValue(c.quote, c.value_raw)}”</div>
+      <div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div></td>
+    <td>${evidenceListHtml(c)}</td>
     <td>${reviewCellHtml(c)}</td>
   </tr>`;
 }
@@ -1365,7 +1393,7 @@ function runSummaryHtml(d) {
     parts.push(`<div class="answer error">The latest claim check failed: ${esc(d.failed_run.error)}${kept}</div>`);
   }
   if (d.run) {
-    const when = d.run.finished_at ? ` · ${esc(d.run.finished_at)} UTC` : "";
+    const when = d.run.finished_at ? ` · ${esc(localTime(d.run.finished_at))}` : "";
     parts.push(`<div class="muted small">Last check: ${esc(d.run.filename)}${when}${usageText(d.run.usage)}</div>`);
     if (d.run.notes.length) parts.push(`<ul class="run-notes">${d.run.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`);
   }
@@ -1381,6 +1409,42 @@ function usageText(u) {
   parts.push(`${u.web_searches} web search${u.web_searches === 1 ? "" : "es"}`);
   parts.push(`${Math.round(u.seconds)} s`);
   return ` · ${parts.map(esc).join(" · ")}`;
+}
+
+function summaryHtml(s) {
+  if (!s) return "";
+  const cats = s.categories.map((c) => `<span class="summary-cat${c.issues ? " has-issues" : ""}"><b>${c.issues}</b>
+    ${esc(c.category)}${c.unverified ? ` <span class="muted small">(${c.unverified} unverified)</span>` : ""}</span>`).join("");
+  const label = (t) => (t.status === "changed" ? ["Changed", "st-warn"] : CLAIM_STATUS[t.status] || [t.status, "st-none"]);
+  const top = s.top.map((t) => {
+    const [name, cls] = label(t);
+    const cut = t.text.indexOf(": ");
+    const text = cut > 0 ? `<b>${esc(t.text.slice(0, cut))}</b>${esc(t.text.slice(cut))}` : esc(t.text);
+    return `<li><span class="status ${cls}">${esc(name)}</span> ${text}</li>`;
+  }).join("");
+  return `<section class="summary-box" aria-label="Summary">
+    <div class="summary-title">Summary <span class="muted small">issues by category (contradicted, possibly overstated, or
+      changed since the last deck; dismissed items are not counted)</span></div>
+    <div class="summary-cats">${cats}</div>
+    ${top ? `<div class="summary-sub">Most important</div><ol class="summary-top">${top}</ol>`
+      : '<div class="muted small">No issues found.</div>'}
+  </section>`;
+}
+
+function changesHtml(changes) {
+  const shown = changes.filter((c) => claims.showDismissed || c.review_state !== "dismissed");
+  if (!shown.length) return "";
+  const rows = shown.map((c) => `<div class="change ${c.review_state === "dismissed" ? "dismissed" : ""}">
+      <div>${c.kind === "changed" ? '<span class="status st-warn">Changed</span>' : '<span class="status st-none">Updated</span>'}
+        <b>${esc(c.label)}</b>: <b>${esc(c.old.value_raw)}</b> → <b>${esc(c.new.value_raw)}</b>
+        <span class="muted small">(${esc(c.old.filename)} → ${esc(c.new.filename)})</span></div>
+      <div class="quote">Before: “${esc(c.old.quote)}” · Now: “${esc(c.new.quote)}”</div>
+      ${reviewCellHtml(c, "drift")}
+    </div>`).join("");
+  return `<div class="issue-card changes">
+    <div class="issue-title">Changed since the last deck</div>${rows}
+    <div class="muted small">Market figures should not move between decks; traction, team and costs change with time.</div>
+  </div>`;
 }
 
 function renderClaims() {
@@ -1412,14 +1476,7 @@ function renderClaims() {
       ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>` : ""}
       ${c.source_type ? `<span class="muted small">(${esc(c.source_type)})</span>` : ""}</li>`;
   }).join("")}</ul>` : "";
-  const changes = (d.changes || []).length ? `<div class="issue-card changes">
-    <div class="issue-title">Changed since the last deck</div>
-    ${d.changes.map((c) => `<div class="small">${c.kind === "changed" ? '<span class="status st-warn">Changed</span>'
-      : '<span class="status st-none">Updated</span>'} <b>${esc(c.key)}</b>: ${esc(c.note)}
-      <div class="quote">Before: “${esc(c.old.quote)}” · Now: “${esc(c.new.quote)}”</div></div>`).join("")}
-    <div class="muted small">Market figures should not move between decks; traction, team and costs change with time.</div>
-  </div>` : "";
-  $("claims-body").innerHTML = `${head}${changes}
+  $("claims-body").innerHTML = `${summaryHtml(d.summary)}${head}${changesHtml(d.changes || [])}
     <div class="claims-summary">${byStatus.join(" ")}
       <span class="muted small">${d.counts.awaiting_review} awaiting review · ${d.counts.confirmed} confirmed</span> ${dismissed}</div>
     <div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true. Nothing is a
@@ -1497,6 +1554,12 @@ $("claims-body").addEventListener("click", async (e) => {
     claims.showOther = !claims.showOther;
     return renderClaims();
   }
+  const sources = e.target.closest("[data-sources]");
+  if (sources) {
+    const fp = sources.dataset.sources;
+    if (claims.openSources.has(fp)) claims.openSources.delete(fp); else claims.openSources.add(fp);
+    return renderClaims();
+  }
   if (e.target.closest("#memo-copy")) {
     const button = $("memo-copy");
     try { await navigator.clipboard.writeText(claims.memo.markdown); button.textContent = "Copied"; }
@@ -1512,7 +1575,7 @@ $("claims-body").addEventListener("click", async (e) => {
     return URL.revokeObjectURL(a.href);
   }
   const button = e.target.closest("[data-review]");
-  if (button) openReview(button.dataset.fp, button.dataset.review, "claim");
+  if (button) openReview(button.dataset.fp, button.dataset.review, button.dataset.type || "claim");
 });
 
 // ---------------------------------------------------------------- portfolio monitoring
@@ -1520,7 +1583,7 @@ $("claims-body").addEventListener("click", async (e) => {
 // Signals are computed by the server from the figures in each update; the page only shows them.
 const SIGNAL_LEVEL = { high: ["High", "st-bad"], warning: ["Warning", "st-warn"] };
 const SIGNAL_KIND = { cash_runway: "Cash runway", key_person_departure: "Key person", milestone_slip: "Milestone" };
-const mon = { companyId: null, data: null, timer: null };
+const mon = { companyId: null, data: null, timer: null, showDismissed: false };
 
 async function openMonitor() {
   await loadCompanies().catch(() => {});
@@ -1585,12 +1648,12 @@ function signalHtml(s) {
   const [label, cls] = SIGNAL_LEVEL[s.level] || [s.level, "st-none"];
   const evidence = s.evidence.map((e) => `<div class="ev"><div class="quote">“${esc(e.quote)}”</div>
     <div class="source-loc">${esc(e.filename)} · ${esc(locationOf(e))}</div></div>`).join("");
-  return `<div class="issue-card signal">
+  return `<div class="issue-card signal${s.review_state === "dismissed" ? " dismissed" : ""}">
     <div><span class="status ${cls}">${esc(label)}</span> <span class="muted small">${esc(SIGNAL_KIND[s.kind] || s.kind)}</span></div>
     <div class="issue-title">${esc(s.title)}</div>
     <div class="small">${esc(s.detail)}</div>
     ${evidence}
-    <div class="signal-review">${reviewCellHtml(s)}</div>
+    <div class="signal-review">${reviewCellHtml(s, "signal")}</div>
   </div>`;
 }
 
@@ -1603,7 +1666,7 @@ function renderMonitor() {
   if (running) head.push(`<div class="answer pending">${esc(d.running.stage || "Starting")}…</div>`);
   if (d.failed_run) head.push(`<div class="answer error">The latest run failed: ${esc(d.failed_run.error)}</div>`);
   if (d.run) {
-    head.push(`<div class="muted small">Last run: ${esc(d.run.finished_at || "")} UTC${monitorUsageText(d.run.usage)}</div>`);
+    head.push(`<div class="muted small">Last run: ${esc(localTime(d.run.finished_at))}${monitorUsageText(d.run.usage)}</div>`);
     if (d.run.notes.length) head.push(`<ul class="run-notes">${d.run.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`);
   }
   if (!d.run) {
@@ -1612,7 +1675,12 @@ function renderMonitor() {
     return;
   }
   const byPeriod = {};
-  for (const s of d.signals) (byPeriod[s.period_end] ||= []).push(s);
+  const dismissedCount = d.signals.filter((s) => s.review_state === "dismissed").length;
+  for (const s of d.signals) {
+    if (mon.showDismissed || s.review_state !== "dismissed") (byPeriod[s.period_end] ||= []).push(s);
+  }
+  const dismissedToggle = dismissedCount ? `<button type="button" class="link small" id="monitor-toggle-dismissed">
+    ${mon.showDismissed ? "Hide" : "Show"} dismissed (${dismissedCount})</button>` : "";
   const rows = d.periods.map((p) => {
     const growth = p.revenue_growth_pct == null ? '<span class="muted">—</span>'
       : `${p.revenue_growth_pct}%${p.revenue_growth_calculated ? ' <span class="calculated-note">(calculated)</span>' : ""}`;
@@ -1630,15 +1698,20 @@ function renderMonitor() {
   $("monitor-body").innerHTML = `${head.join("")}
     <div class="muted small">Figures are quoted from each update; runway and growth are calculated by the program. Signals
       are rules, not conclusions.</div>
-    <table class="monitor-table">
+    <div class="table-scroll"><table class="monitor-table">
       <thead><tr><th>Period</th><th>Cash</th><th>Net burn / month</th><th>Runway</th><th>Revenue</th><th>Growth</th>
       <th>Signals</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>
-    ${signals || '<p class="muted">No signals in any period.</p>'}`;
+    </table></div>
+    <div class="claims-more">${dismissedToggle}</div>
+    ${signals || '<p class="muted">No signals to show.</p>'}`;
 }
 
 $("monitor-body").addEventListener("click", (e) => {
+  if (e.target.closest("#monitor-toggle-dismissed")) {
+    mon.showDismissed = !mon.showDismissed;
+    return renderMonitor();
+  }
   const button = e.target.closest("[data-review]");
   if (button) openReview(button.dataset.fp, button.dataset.review, "signal");
 });
@@ -1648,6 +1721,7 @@ $("monitor-close").onclick = closeMonitor;
 $("monitor-overlay").onclick = (e) => { if (e.target === $("monitor-overlay")) closeMonitor(); };
 $("monitor-company").onchange = () => {
   mon.companyId = Number($("monitor-company").value) || null;
+  mon.showDismissed = false;
   loadMonitor();
 };
 $("monitor-run").onclick = async () => {
@@ -1667,28 +1741,34 @@ $("monitor-run").onclick = async () => {
 // ---------------------------------------------------------------- review dialog
 
 function openReview(fingerprint, decision, itemType = "claim") {
-  const item = itemType === "signal" ? mon.data.signals.find((s) => s.fingerprint === fingerprint)
-    : claims.data.claims.find((c) => c.fingerprint === fingerprint);
+  const pool = itemType === "signal" ? mon.data.signals : itemType === "drift" ? claims.data.changes : claims.data.claims;
+  const item = pool.find((x) => x.fingerprint === fingerprint);
   if (!item) return;
   claims.reviewing = { fingerprint, decision, itemType,
     companyId: itemType === "signal" ? mon.companyId : claims.companyId };
   $("review-title").textContent = decision === "confirmed" ? "Confirm this finding?" : "Dismiss this flag?";
-  $("review-claim").textContent = itemType === "signal" ? `${item.period_end}: ${item.title}` : `“${item.quote}”`;
+  $("review-claim").textContent = itemType === "signal" ? `${item.period_end}: ${item.title}`
+    : itemType === "drift" ? `${item.label}: ${item.old.value_raw} → ${item.new.value_raw}` : `“${item.quote}”`;
+  const required = decision === "dismissed";  // confirming may skip the reason; dismissing may not
+  $("review-reason-label").firstChild.textContent = required ? "Reason (required) " : "Reason (optional) ";
   $("review-reason").value = "";
   $("review-error").hidden = true;
-  $("review-save").disabled = true;
+  $("review-save").disabled = required;
   $("review-save").textContent = decision === "confirmed" ? "Confirm" : "Dismiss";
   $("review-dialog").showModal();
   $("review-reason").focus();
 }
 
-$("review-reason").addEventListener("input", () => { $("review-save").disabled = !$("review-reason").value.trim(); });
+$("review-reason").addEventListener("input", () => {
+  const r = claims.reviewing;
+  $("review-save").disabled = !!r && r.decision === "dismissed" && !$("review-reason").value.trim();
+});
 $("review-cancel").onclick = () => $("review-dialog").close();
 $("review-form").onsubmit = async (e) => {
   e.preventDefault();
   const r = claims.reviewing;
   const reason = $("review-reason").value.trim();
-  if (!r || !reason) return;
+  if (!r || (r.decision === "dismissed" && !reason)) return;
   $("review-save").disabled = true;
   try {
     await postJson(`/api/companies/${r.companyId}/reviews`,

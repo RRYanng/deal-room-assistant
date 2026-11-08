@@ -363,4 +363,6 @@ def latest_results(conn: sqlite3.Connection, company_id: int) -> dict:
             " WHERE run_id = ? AND company_id = ? ORDER BY period_end, id", (last, company_id))]
         for s in result["signals"]:
             s.pop("evidence_json")
+            # Runs stored before quotes were de-duplicated may hold one sentence twice.
+            s["evidence"] = list({(e["filename"], e["quote"]): e for e in s["evidence"]}.values())
     return result

@@ -279,8 +279,25 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ev-overstates { border-left-color: var(--warn); }
 .ev-context { border-left-style: dashed; }
 .claims-more { margin-top: 8px; }
-.monitor-table { margin: 10px 0 6px; }
+/* The quarter table scrolls inside its own box on narrow windows; the page itself never scrolls sideways. */
+.table-scroll { overflow-x: auto; margin: 10px 0 6px; max-width: 100%; }
+.monitor-table { min-width: 640px; }
 .monitor-table td:last-child { width: auto; }
+.monitor-table td.num { white-space: normal; }
+.issue-card.dismissed, .change.dismissed { opacity: .6; }
+/* Summary at the top of the claim check */
+.summary-box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg);
+  padding: 12px 14px; margin-bottom: 12px; display: grid; gap: 8px; }
+.summary-title { font-weight: 650; }
+.summary-cats { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.summary-cat b { font-size: 16px; margin-right: 2px; color: var(--muted); }
+.summary-cat.has-issues b { color: var(--danger); }
+.summary-sub { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.summary-top { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.claim-label { font-weight: 600; margin-bottom: 2px; }
+.ev-head { font-weight: 650; }
+.change { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
+.change .review-actions { margin-top: 2px; }
 .issue-card.signal { margin-top: 8px; }
 .signal-review { margin-top: 6px; }
 .issue-card.changes { margin: 10px 0; border-left: 3px solid var(--warn); display: grid; gap: 6px; }
@@ -311,5 +328,5 @@ pre.memo { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg)
   .claims-table thead { display: none; }
   .claims-table tr { display: block; border-top: 1px solid var(--border); padding: 8px 0; }
   .claims-table td { display: block; width: auto !important; border-top: 0; padding: 4px 0; }
-  .monitor-table { display: block; overflow-x: auto; }
+
 }

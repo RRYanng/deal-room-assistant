@@ -23,7 +23,7 @@ KEY_LABELS = {
     "finance.opex_annual_usd": "Operating costs",
     "projection.assumption": "Projection assumption",
     "risk.stated": "Risk the deck states",
-    "competition.landscape": "Competition",
+    "competition.landscape": "Competitors",
     "other": "Other claim",
 }
 CATEGORIES = ("Market", "Financials", "Competition", "Team", "Regulatory")
@@ -82,6 +82,9 @@ def evidence_headline(e: dict, claim: dict) -> str:
     if e["stance"] == "overstates":
         return "Assumes away a risk the deck itself states"
     where = _doc_name(e, claim)
+    if where == "Same deck" and e.get("value_raw"):
+        page = (e.get("loc_label") or "").replace(e.get("filename") or "", "").strip()
+        return f"Deck says {deck} here and {e['value_raw']} on {page}"
     if e.get("value_raw"):
         return f"{where}: {e['value_raw']}; deck says {deck}"
     return f"{'Consistent with' if e['stance'] == 'supports' else 'Contradicted by'} {where.lower()}"

@@ -34,7 +34,9 @@ def test_evidence_has_a_one_line_conclusion(checked):
     size = next(c for c in claims if c["key"] == "market.size_usd")
     assert size["evidence"][0]["headline"] == "400,000 x $3,600 = $1,440,000,000, not $12B"
     margin = by_quote(claims, "Current gross margin: above 90%")
-    assert "Meeting notes: around 70%; deck says above 90%" in [e["headline"] for e in margin["evidence"]]
+    heads_margin = [e["headline"] for e in margin["evidence"]]
+    assert "Meeting notes: around 70%; deck says above 90%" in heads_margin
+    assert "Deck says above 90% here and 67-82% on p.5 ¶2" in heads_margin
     heads = by_quote(claims, "team of 14")
     assert heads["evidence"][0]["headline"] == "$420,000 / 14 = $30,000 per full-time employee, below the $48,651 floor"
     competition = by_quote(claims, "No other company offers")
