@@ -282,6 +282,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .monitor-table { margin: 10px 0 6px; }
 .monitor-table td:last-child { width: auto; }
 .issue-card.signal { margin-top: 8px; }
+.signal-review { margin-top: 6px; }
 .ev-kind { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .ev a, .claims-body li a { color: var(--accent); }
 .review-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }

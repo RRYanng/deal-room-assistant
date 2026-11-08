@@ -491,4 +491,6 @@ def monitor_run(company_id: int, run_id: int, conn=Depends(get_db)):
 def monitor_results(company_id: int, conn=Depends(get_db)):
     """Figures per update period and the signals computed from them, from the latest finished run."""
     require_company(conn, company_id)
-    return monitor.latest_results(conn, company_id)
+    result = monitor.latest_results(conn, company_id)
+    apply_reviews(conn, company_id, result["signals"], "signal")
+    return result

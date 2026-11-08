@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from app.claims import latest_results
+from app.monitor import latest_results as latest_monitor_results
 from app.reviews import apply_reviews
 
 STATUS_LABELS = {
@@ -33,6 +34,7 @@ def build_memo(conn: sqlite3.Connection, company_id: int) -> dict:
         "awaiting_review": [c for c in claims if c["review_state"] == "awaiting_review"],
         "dismissed": [c for c in claims if c["review_state"] == "dismissed"],
         "competitors": results["competitors"],
+        "signals": apply_reviews(conn, company_id, latest_monitor_results(conn, company_id)["signals"], "signal"),
     }
 
 
@@ -60,6 +62,23 @@ def memo_to_markdown(memo: dict) -> str:
     if memo["dismissed"]:
         lines += [f"## Dismissed ({len(memo['dismissed'])})", ""]
         lines += [f"- {c['statement']} Reason: {c['review']['reason']}" for c in memo["dismissed"]] + [""]
+
+    signals = memo["signals"]
+    if signals:
+        confirmed = [s for s in signals if s["review_state"] == "confirmed"]
+        waiting = [s for s in signals if s["review_state"] == "awaiting_review"]
+        dismissed = [s for s in signals if s["review_state"] == "dismissed"]
+        lines += ["## Portfolio signals confirmed by the investment team", ""]
+        lines += [f"- **{s['level'].title()}** ({s['period_end']}): {s['title']}. {s['detail']} "
+                  f"Investor note: {s['review']['reason']}" for s in confirmed] or ["No signals confirmed yet."]
+        lines += ["", f"## Portfolio signals awaiting review ({len(waiting)})", "",
+                  "Computed by rule from the updates. Not conclusions until an investor confirms them.", ""]
+        for s in waiting:
+            changed = f" (evidence changed since it was {s['review']['decision']})" if s["evidence_changed"] else ""
+            lines.append(f"- **{s['level'].title()}** ({s['period_end']}): {s['title']}. {s['detail']}{changed}")
+        if dismissed:
+            lines += ["", f"Dismissed signals: {len(dismissed)}."]
+        lines.append("")
 
     if memo["competitors"]:
         lines += ["## Competitors found by web research (not reviewed)", ""]

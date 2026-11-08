@@ -154,3 +154,62 @@ def test_api_monitoring(tmp_path, monkeypatch):
         assert len(out["signals"]) == 4
         empty = client.post("/api/companies", json={"name": "No Updates Co"}).json()["id"]
         assert client.post(f"/api/companies/{empty}/monitor").status_code == 400
+
+
+# --- reviewing signals ----------------------------------------------------------------------------
+
+from app.memo import build_memo, memo_to_markdown  # noqa: E402
+from app.reviews import ReviewError, apply_reviews, record_review  # noqa: E402
+
+
+def reviewed(db, company_id):
+    return apply_reviews(db, company_id, latest_results(db, company_id)["signals"], "signal")
+
+
+def test_confirmed_signal_enters_the_memo_with_the_reason(db):
+    company_id, _ = load_clearclaim(db, stage=STAGES)
+    signals = monitor(db, company_id)["signals"]
+    departure = next(s for s in signals if s["kind"] == "key_person_departure")
+    record_review(db, company_id, departure["fingerprint"], "confirmed", "Board confirmed; CTO search started.",
+                  item_type="signal")
+    text = memo_to_markdown(build_memo(db, company_id))
+    confirmed = text.split("## Portfolio signals confirmed")[1].split("## Portfolio signals awaiting")[0]
+    assert "CTO Daniel Okafor departed" in confirmed and "Board confirmed; CTO search started." in confirmed
+    assert "## Portfolio signals awaiting review (3)" in text
+
+
+def test_dismissed_signal_stays_quiet_on_the_next_run(db):
+    company_id, _ = load_clearclaim(db, stage=STAGES)
+    q2 = next(s for s in monitor(db, company_id)["signals"] if s["period_end"] == "2026-06-30")
+    record_review(db, company_id, q2["fingerprint"], "dismissed", "Bridge round closed in July.", item_type="signal")
+    monitor(db, company_id)
+    again = next(s for s in reviewed(db, company_id) if s["period_end"] == "2026-06-30")
+    assert again["fingerprint"] == q2["fingerprint"] and again["review_state"] == "dismissed"
+
+
+def test_dismissed_signal_is_raised_again_when_its_basis_changes(db):
+    """Same cash and burn (same fingerprint), but Q2 revenue now shrank: the level rises to high."""
+    company_id, _ = load_clearclaim(db, stage=STAGES)
+    q2 = next(s for s in monitor(db, company_id)["signals"] if s["period_end"] == "2026-06-30")
+    record_review(db, company_id, q2["fingerprint"], "dismissed", "Growth is fine.", item_type="signal")
+    # A different reading of Q2: revenue $300,000 (a quote must contain the figure, so it cites a Q2 sentence
+    # with that number). Growth from Q1's $310,000 is now negative.
+    rules = [r for r in MONITOR_RULES if not (r.get("kpi") == "revenue" and r["value_raw"] == "$357,000")]
+    rules.append({"list": "metrics", "kpi": "revenue", "value_raw": "$300,000",
+                  "quote": "Net burn averaged $300,000 per month in Q2, as we added two engineers."})
+    monitor(db, company_id, monitor_llm(rules))
+    again = next(s for s in reviewed(db, company_id) if s["period_end"] == "2026-06-30")
+    assert again["fingerprint"] == q2["fingerprint"]
+    assert again["level"] == "high" and again["review_state"] == "awaiting_review" and again["evidence_changed"]
+
+
+def test_a_signal_review_needs_a_reason_and_its_own_company(db):
+    company_id, _ = load_clearclaim(db, stage=STAGES)
+    fp = monitor(db, company_id)["signals"][0]["fingerprint"]
+    with pytest.raises(ReviewError, match="reason is required"):
+        record_review(db, company_id, fp, "dismissed", " ", item_type="signal")
+    other = db.execute("INSERT INTO companies(name) VALUES ('Other Co')").lastrowid
+    with pytest.raises(ReviewError, match="No such item"):
+        record_review(db, other, fp, "dismissed", "x", item_type="signal")
+    with pytest.raises(ReviewError, match="No such item"):  # a signal fingerprint is not a claim
+        record_review(db, company_id, fp, "dismissed", "x", item_type="claim")

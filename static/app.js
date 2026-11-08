@@ -1505,7 +1505,7 @@ $("claims-body").addEventListener("click", async (e) => {
     return URL.revokeObjectURL(a.href);
   }
   const button = e.target.closest("[data-review]");
-  if (button) openReview(button.dataset.fp, button.dataset.review);
+  if (button) openReview(button.dataset.fp, button.dataset.review, "claim");
 });
 
 // ---------------------------------------------------------------- portfolio monitoring
@@ -1583,6 +1583,7 @@ function signalHtml(s) {
     <div class="issue-title">${esc(s.title)}</div>
     <div class="small">${esc(s.detail)}</div>
     ${evidence}
+    <div class="signal-review">${reviewCellHtml(s)}</div>
   </div>`;
 }
 
@@ -1630,6 +1631,11 @@ function renderMonitor() {
     ${signals || '<p class="muted">No signals in any period.</p>'}`;
 }
 
+$("monitor-body").addEventListener("click", (e) => {
+  const button = e.target.closest("[data-review]");
+  if (button) openReview(button.dataset.fp, button.dataset.review, "signal");
+});
+
 $("nav-monitor").onclick = openMonitor;
 $("monitor-close").onclick = closeMonitor;
 $("monitor-overlay").onclick = (e) => { if (e.target === $("monitor-overlay")) closeMonitor(); };
@@ -1653,12 +1659,14 @@ $("monitor-run").onclick = async () => {
 
 // ---------------------------------------------------------------- review dialog
 
-function openReview(fingerprint, decision) {
-  const claim = claims.data.claims.find((c) => c.fingerprint === fingerprint);
-  if (!claim) return;
-  claims.reviewing = { fingerprint, decision, companyId: claims.companyId };
+function openReview(fingerprint, decision, itemType = "claim") {
+  const item = itemType === "signal" ? mon.data.signals.find((s) => s.fingerprint === fingerprint)
+    : claims.data.claims.find((c) => c.fingerprint === fingerprint);
+  if (!item) return;
+  claims.reviewing = { fingerprint, decision, itemType,
+    companyId: itemType === "signal" ? mon.companyId : claims.companyId };
   $("review-title").textContent = decision === "confirmed" ? "Confirm this finding?" : "Dismiss this flag?";
-  $("review-claim").textContent = `“${claim.quote}”`;
+  $("review-claim").textContent = itemType === "signal" ? `${item.period_end}: ${item.title}` : `“${item.quote}”`;
   $("review-reason").value = "";
   $("review-error").hidden = true;
   $("review-save").disabled = true;
@@ -1676,9 +1684,10 @@ $("review-form").onsubmit = async (e) => {
   if (!r || !reason) return;
   $("review-save").disabled = true;
   try {
-    await postJson(`/api/companies/${r.companyId}/reviews`, { fingerprint: r.fingerprint, decision: r.decision, reason });
+    await postJson(`/api/companies/${r.companyId}/reviews`,
+      { fingerprint: r.fingerprint, decision: r.decision, reason, item_type: r.itemType });
     $("review-dialog").close();
-    await loadClaims();
+    await (r.itemType === "signal" ? loadMonitor() : loadClaims());
   } catch (err) {
     $("review-error").textContent = err.message;
     $("review-error").hidden = false;
