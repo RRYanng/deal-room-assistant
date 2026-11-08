@@ -16,6 +16,12 @@ an industry survey (up to 20 hours a week on insurance verification): industry-l
 kind must not count as evidence for or against a company's own results, so the claim stays
 Unverified.
 
+Business model (added 2026-11-08): part of ClearClaim's revenue is 8% of the amounts it recovers on
+previously denied claims. Fees tied to recovered amounts are common in revenue-cycle services; the
+alignment check raises it as a question for the founder, not as a problem. No ClearClaim file mentions
+HIPAA or a Business Associate Agreement, so the regulatory checklist shows both as "Not addressed in
+materials" (absence from the materials, not a finding of non-compliance).
+
 Changed 2026-11-08: the earlier "40% of claims denied" claim was replaced, because only vendor blogs
 gave a figure for it; the YC batch of Toothy AI was removed, because it was not verified.
 

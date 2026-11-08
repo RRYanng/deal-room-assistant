@@ -45,6 +45,9 @@ CLAIM_RULES = [
     {"key": "unit.gross_margin_pct", "value_raw": "above 90%", "quote": "Current gross margin: above 90%."},
     {"key": "projection.assumption", "value_raw": None,
      "quote": "Our model assumes 0% customer churn and 98% first-pass claim acceptance through 2029."},
+    {"key": "business.pricing", "value_raw": "8%",
+     "quote": "Practices pay a monthly subscription per location, plus 8% of the amounts ClearClaim recovers on "
+              "previously denied claims."},
 ]
 
 # The September 2025 deck, read once by memory. (Its "$400 billion" sentence matches a rule above.)

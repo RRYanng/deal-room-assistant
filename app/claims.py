@@ -54,13 +54,14 @@ KEYS = {
     "competition.landscape": "claims about competitors: that there are none or few, or how the company compares "
                              "with them (only, first, fastest, cheaper)",
     "market.status_quo": "how customers handle the problem today, without the product (manual work, outsourcing)",
+    "business.pricing": "how the company charges customers (subscription, per claim, share of amounts recovered)",
     "other": "any other claim worth checking",
 }
 STATUSES = ("contradicted", "possibly_overstated", "externally_supported", "consistent_with_company_data",
             "unverified")
 # Two values of one key in the same deck are compared only for keys that name one figure.
 NOT_COMPARED_IN_DECK = {"other", "product.outcome", "projection.assumption", "risk.stated", "competition.landscape",
-                        "market.status_quo"}
+                        "market.status_quo", "business.pricing"}
 # Claims about the company's own results. Only data about this company counts as evidence for or against
 # them: an industry figure ("front desks spend up to 20 hours a week on verification") says nothing about
 # what this product saves.

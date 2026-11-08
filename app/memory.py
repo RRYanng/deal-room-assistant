@@ -23,7 +23,8 @@ from app.numbers import ranges_agree
 from app.presentation import label
 
 STABLE_PREFIXES = ("market.", "unit.", "product.")  # should not move between decks: a change is a flag
-NOT_COMPARED = {"other", "risk.stated", "competition.landscape", "market.status_quo", "projection.assumption"}
+NOT_COMPARED = {"other", "risk.stated", "competition.landscape", "market.status_quo", "projection.assumption",
+                "business.pricing"}
 
 
 def save_deck(conn: sqlite3.Connection, company_id: int, deck: sqlite3.Row, claims: list[dict]) -> None:

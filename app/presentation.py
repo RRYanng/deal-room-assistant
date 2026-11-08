@@ -24,12 +24,13 @@ KEY_LABELS = {
     "projection.assumption": "Projection assumption",
     "risk.stated": "Risk the deck states",
     "competition.landscape": "Competitors",
+    "business.pricing": "Pricing",
     "other": "Other claim",
 }
 CATEGORIES = ("Market", "Financials", "Competition", "Team", "Regulatory")
 KEY_CATEGORY = {
     "market.": "Market", "product.": "Market", "traction.": "Financials", "unit.": "Financials",
-    "finance.": "Financials", "projection.": "Financials", "competition.": "Competition", "team.": "Team",
+    "finance.": "Financials", "projection.": "Financials", "business.": "Financials", "competition.": "Competition", "team.": "Team",
     "risk.": "Regulatory",
 }
 ISSUE_STATUSES = ("contradicted", "possibly_overstated")

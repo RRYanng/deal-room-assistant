@@ -80,6 +80,14 @@ DECK_2025_12 = [
      "Total annual operating costs for 2025 are $420,000.",
      "Current gross margin: above 90%.",
      "Our model assumes 0% customer churn and 98% first-pass claim acceptance through 2029."],
+    ["Business Model",
+     # Alignment discussion point: part of the revenue is a share of what is recovered. Common in the
+     # industry; a question to ask, not a problem in itself.
+     "Practices pay a monthly subscription per location, plus 8% of the amounts ClearClaim recovers on "
+     "previously denied claims.",
+     "Practices get paid faster and spend less staff time on insurance; patients get clearer cost estimates "
+     "before treatment."],
+    # Not mentioned anywhere: HIPAA or a Business Associate Agreement (regulatory checklist).
 ]
 
 NOTES_2025_12 = """\
