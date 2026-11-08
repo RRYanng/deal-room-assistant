@@ -54,6 +54,16 @@ Branch `feature/v2`. Design: [docs/v2_design.md](docs/v2_design.md).
 10. **Memory**: every checked deck's claims are kept per company. A figure that differs from the
    previous deck is shown as "Changed since the last deck" (market figures) or "Updated" (traction,
    team, costs), on the page and in the memo.
+11. **Questions for the founder**: every contradicted or possibly overstated claim, portfolio signal and
+   changed figure gets one question, written by the program from the verified quotes. A question may
+   only contain numbers that appear in the quotes it cites.
+12. **Alignment check**: who pays, how the company charges and who benefits, each with a quote, and
+   points to discuss (for example a fee tied to amounts recovered), written neutrally as questions.
+13. **Regulatory checklist**: per industry, in `config/regulatory.toml` (healthcare: HIPAA, a Business
+   Associate Agreement, a security assessment). An item the files do not mention is "Not addressed in
+   materials", never a breach; these count in the summary's Regulatory category.
+14. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
+   alignment, risks the deck states), portfolio signals, awaiting review, questions for the founder.
 
 ### Evaluation
 
@@ -80,7 +90,7 @@ FakeWebSearch. They test the program's checks and rules, not the real model's ju
 | E14 | Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1 | pass |
 | FP | The same file checked twice gives identical fingerprints | pass |
 
-Whole offline suite at the last run: 417 passed (the 274 v1.1 tests included).
+Whole offline suite at the last run: 451 passed (the 274 v1.1 tests included).
 
 **Live run** (real Claude Opus 5.5 and Tavily, ClearClaim deck, 2026-11-08): E1-E9 matched the
 expected statuses in both runs. In the second run 18 of 18 claims found in both runs had the same
@@ -90,7 +100,10 @@ same fingerprint and status for all 20 claims as the second run. Portfolio monit
 model (E14 live): the expected signal in every quarter and every cash, burn and revenue figure as in
 the updates, for 4 model calls and about $0.08. With prompt caching in the research loops, a
 fourth run cost about $0.65 instead of $0.78 (87,915 tokens written to cache, 57,145 read back,
-10,832 uncached), with the same 20 fingerprints and statuses as the third run.
+10,832 uncached), with the same 20 fingerprints and statuses as the third run. After the business model
+page was added, a sixth run still matched E1-E9, found the fee tied to recovered amounts as a point to
+discuss, and showed HIPAA, BAA and a security assessment as not addressed, for about $0.61 and 7 search
+credits.
 
 ## Quick start
 
