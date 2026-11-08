@@ -1,7 +1,11 @@
 """Anthropic Claude implementation of LLMClient.
 
 Credentials come from the environment (ANTHROPIC_API_KEY, or an `ant auth login` profile).
-Model, effort and refusal fallback are set in app.config.
+Model, effort, refusal fallback and prompt caching are set in app.config.
+
+Prompt caching: multi-turn tool loops (chat) resend every earlier turn, so they use automatic caching
+(a top-level cache_control; each turn reads the previous turns from cache). Single structured calls
+(complete_json) are not cached: nothing would read the entry back, and writes cost 1.25x input.
 """
 
 import json
@@ -18,10 +22,11 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 class AnthropicLLM(LLMClient):
     def __init__(self, model: str, effort: str = "medium", fallbacks: str = "default",
-                 client: Any | None = None):
+                 client: Any | None = None, cache_chat: bool = True):
         self.model = model
         self.effort = effort
         self.fallbacks = fallbacks
+        self.cache_chat = cache_chat
         self._client = client or anthropic.Anthropic()
         self.usage = dict.fromkeys(USAGE_FIELDS, 0)  # summed over this client's calls
 
@@ -30,6 +35,8 @@ class AnthropicLLM(LLMClient):
     def chat(self, system: str, messages: list[dict[str, Any]],
              tools: list[ToolSpec] | None = None) -> LLMResponse:
         kwargs: dict[str, Any] = {"system": system, "messages": messages}
+        if self.cache_chat:
+            kwargs["cache_control"] = {"type": "ephemeral"}
         if tools:
             kwargs["tools"] = [
                 {"name": t.name, "description": t.description, "input_schema": t.input_schema}

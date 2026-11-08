@@ -144,6 +144,15 @@ def test_anthropic_converts_tool_use_and_keeps_full_content():
     assert stub.kwargs["tools"][0]["name"] == "search_documents"
     assert stub.kwargs["output_config"] == {"effort": "medium"}
     assert stub.kwargs["fallbacks"] == "default"
+    assert stub.kwargs["cache_control"] == {"type": "ephemeral"}  # tool loops resend earlier turns
+
+
+def test_anthropic_chat_caching_can_be_turned_off(monkeypatch):
+    stub = StubSDK(sdk_message([SimpleNamespace(type="text", text="ok")], "end_turn"))
+    AnthropicLLM("m", client=stub, cache_chat=False).chat("sys", [{"role": "user", "content": "q"}])
+    assert "cache_control" not in stub.kwargs
+    monkeypatch.setenv("LLM_PROMPT_CACHE", "off")
+    assert get_settings().llm_prompt_cache is False
 
 
 def test_anthropic_tool_results_message_format():
@@ -164,6 +173,7 @@ def test_anthropic_complete_json_parses_and_sends_schema():
     assert llm.complete_json("sys", "doc", schema) == {"metrics": []}
     assert stub.kwargs["output_config"]["format"] == {"type": "json_schema", "schema": schema}
     assert "fallbacks" not in stub.kwargs
+    assert "cache_control" not in stub.kwargs  # a single call: a cache write would never be read
 
 
 def test_anthropic_complete_json_raises_on_refusal():
