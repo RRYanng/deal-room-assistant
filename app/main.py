@@ -15,14 +15,18 @@ from app.db import connect, init_db
 from app.agent import OUT_OF_SCOPE_MESSAGE, answer_question, is_out_of_scope
 from app.batch import BatchFile, get_batch, start_batch
 from app.brief import brief_to_markdown, generate_brief
+from app.claims import get_run, latest_deck, latest_results, start_claim_check
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
 from app.intake import analyze_upload, consistency_warnings
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
+from app.memo import build_memo, memo_to_markdown
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
 from app.resolve import resolve_question_company
+from app.reviews import ReviewError, apply_reviews, record_review, review_counts
 from app.rules import company_checks, get_metrics, issue_counts
+from app.web import WebSearchProvider, get_web_search
 
 STATIC_DIR = PROJECT_ROOT / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -386,3 +390,73 @@ def brief(company_id: int, body: BriefIn, conn=Depends(get_db), llm: LLMClient =
         raise HTTPException(503, str(e)) from None
     result["markdown"] = brief_to_markdown(result)
     return result
+
+
+# --- v2: claim check, reviews and memo --------------------------------------------------------
+
+def get_web() -> WebSearchProvider | None:
+    return get_web_search()
+
+
+class ClaimCheckIn(BaseModel):
+    document_id: int | None = None  # default: the company's newest deck
+
+
+@app.post("/api/companies/{company_id}/claim-check", status_code=202)
+def start_check(company_id: int, request: Request, body: ClaimCheckIn | None = None, conn=Depends(get_db),
+                llm: LLMClient = Depends(get_extract_llm), web: WebSearchProvider | None = Depends(get_web)):
+    """Check a deck's claims in the background; read progress with GET .../claim-runs/{run_id}."""
+    require_company(conn, company_id)
+    if conn.execute("SELECT 1 FROM claim_runs WHERE company_id = ? AND status = 'running'", (company_id,)).fetchone():
+        raise HTTPException(409, "A claim check for this company is already running.")
+    document_id = body.document_id if body and body.document_id else None
+    if document_id is None:
+        deck = latest_deck(conn, company_id)
+        if not deck:
+            raise HTTPException(400, "This company has no pitch deck to check.")
+        document_id = deck["id"]
+    try:
+        run_id = start_claim_check(request.app.state.db_path, company_id, document_id, llm, web)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return get_run(conn, company_id, run_id)
+
+
+@app.get("/api/companies/{company_id}/claim-runs/{run_id}")
+def claim_run(company_id: int, run_id: int, conn=Depends(get_db)):
+    run = get_run(conn, company_id, run_id)
+    if not run:
+        raise HTTPException(404, f"Claim check {run_id} not found for this company.")
+    return run
+
+
+@app.get("/api/companies/{company_id}/claims")
+def list_claims(company_id: int, conn=Depends(get_db)):
+    """The latest finished claim check with evidence and review state, plus a run still in progress."""
+    require_company(conn, company_id)
+    result = latest_results(conn, company_id)
+    apply_reviews(conn, company_id, result["claims"])
+    return result | {"counts": review_counts(result["claims"])}
+
+
+class ReviewIn(BaseModel):
+    fingerprint: str
+    decision: str
+    reason: str = ""
+    item_type: str = "claim"
+
+
+@app.post("/api/companies/{company_id}/reviews", status_code=201)
+def review(company_id: int, body: ReviewIn, conn=Depends(get_db)):
+    require_company(conn, company_id)
+    try:
+        return record_review(conn, company_id, body.fingerprint, body.decision, body.reason, body.item_type)
+    except ReviewError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.get("/api/companies/{company_id}/memo")
+def memo(company_id: int, conn=Depends(get_db)):
+    require_company(conn, company_id)
+    result = build_memo(conn, company_id)
+    return result | {"markdown": memo_to_markdown(result)}
