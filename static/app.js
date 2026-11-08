@@ -1371,13 +1371,43 @@ function reviewCellHtml(c, type = "claim") {
   return `<div class="review-done ${c.review_state}"><b>${label}</b></div>${reason(c.review)}${actions}`;
 }
 
+// A question for the founder, written by the program from verified quotes (never a conclusion).
+function questionHtml(q) {
+  return q ? `<div class="founder-q"><span class="q-label">Ask the founder</span> ${esc(q.text)}</div>` : "";
+}
+
+function alignmentHtml(a) {
+  if (!a || (!a.points.length && !a.pricing.length && !a.payer.length && !a.beneficiary.length)) return "";
+  const roles = [["payer", "Who pays"], ["pricing", "How it charges"], ["beneficiary", "Who benefits"]]
+    .flatMap(([role, title]) => a[role].map((r) => `<div class="small"><b>${title}:</b> “${esc(r.quote)}”
+      <span class="muted">(${esc(locationOf({ loc_label: r.loc_label, filename: claims.data.run.filename }))})</span></div>`)).join("");
+  const points = a.points.map((p) => `<div class="align-point"><div><span class="status st-info">To discuss</span>
+      <b>${esc(p.title)}</b></div><div class="small muted">${esc(p.note)}</div>${questionHtml(p.question)}</div>`).join("");
+  return `<div class="issue-card panel"><div class="issue-title">Alignment: does the company earn more when its customers are
+    better off?</div>${roles}${points}</div>`;
+}
+
+function regulatoryHtml(r) {
+  if (!r || !r.industry) return "";
+  const items = r.items.map((i) => {
+    const addressed = i.status === "Addressed in materials";
+    return `<div class="reg-item"><div><span class="status ${addressed ? "st-ok" : "st-warn"}">${esc(i.status)}</span>
+        <b>${esc(i.name)}</b></div>
+      <div class="small muted">${esc(i.why)}</div>
+      ${addressed ? `<div class="quote">“${esc(i.quote)}” (${esc(i.filename)})</div>` : questionHtml(i.question)}</div>`;
+  }).join("");
+  return `<div class="issue-card panel"><div class="issue-title">Regulatory checklist (${esc(r.industry.name)})</div>
+    <div class="muted small">"Not addressed in materials" means the files do not mention it. It is not a finding of
+      non-compliance. The checklist is kept in config/regulatory.toml.</div>${items}</div>`;
+}
+
 function claimRowHtml(c) {
   const [label, cls] = CLAIM_STATUS[c.status] || [c.status, "st-none"];
   return `<tr class="${c.review_state === "dismissed" ? "dismissed" : ""}">
     <td><span class="status ${cls}">${esc(label)}</span></td>
     <td><div class="claim-label">${esc(c.label)}${c.category ? ` <span class="muted small">· ${esc(c.category)}</span>` : ""}</div>
       <div class="claim-quote">“${boldValue(c.quote, c.value_raw)}”</div>
-      <div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div></td>
+      <div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div>${questionHtml(c.question)}</td>
     <td>${evidenceListHtml(c)}</td>
     <td>${reviewCellHtml(c)}</td>
   </tr>`;
@@ -1415,7 +1445,8 @@ function summaryHtml(s) {
   if (!s) return "";
   const cats = s.categories.map((c) => `<span class="summary-cat${c.issues ? " has-issues" : ""}"><b>${c.issues}</b>
     ${esc(c.category)}${c.unverified ? ` <span class="muted small">(${c.unverified} unverified)</span>` : ""}</span>`).join("");
-  const label = (t) => (t.status === "changed" ? ["Changed", "st-warn"] : CLAIM_STATUS[t.status] || [t.status, "st-none"]);
+  const label = (t) => (t.status === "changed" ? ["Changed", "st-warn"]
+    : t.status === "not_addressed" ? ["Not addressed", "st-warn"] : CLAIM_STATUS[t.status] || [t.status, "st-none"]);
   const top = s.top.map((t) => {
     const [name, cls] = label(t);
     const cut = t.text.indexOf(": ");
@@ -1439,6 +1470,7 @@ function changesHtml(changes) {
         <b>${esc(c.label)}</b>: <b>${esc(c.old.value_raw)}</b> → <b>${esc(c.new.value_raw)}</b>
         <span class="muted small">(${esc(c.old.filename)} → ${esc(c.new.filename)})</span></div>
       <div class="quote">Before: “${esc(c.old.quote)}” · Now: “${esc(c.new.quote)}”</div>
+      ${questionHtml(c.question)}
       ${reviewCellHtml(c, "drift")}
     </div>`).join("");
   return `<div class="issue-card changes">
@@ -1477,6 +1509,7 @@ function renderClaims() {
       ${c.source_type ? `<span class="muted small">(${esc(c.source_type)})</span>` : ""}</li>`;
   }).join("")}</ul>` : "";
   $("claims-body").innerHTML = `${summaryHtml(d.summary)}${head}${changesHtml(d.changes || [])}
+    ${regulatoryHtml(d.regulatory)}${alignmentHtml(d.alignment)}
     <div class="claims-summary">${byStatus.join(" ")}
       <span class="muted small">${d.counts.awaiting_review} awaiting review · ${d.counts.confirmed} confirmed</span> ${dismissed}</div>
     <div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true. Nothing is a
@@ -1653,6 +1686,7 @@ function signalHtml(s) {
     <div class="issue-title">${esc(s.title)}</div>
     <div class="small">${esc(s.detail)}</div>
     ${evidence}
+    ${questionHtml(s.question)}
     <div class="signal-review">${reviewCellHtml(s, "signal")}</div>
   </div>`;
 }
