@@ -33,6 +33,45 @@ The screen is one conversation, with an Upload / Ask switch above the input. The
 **Library** (files and key metrics per company), **Issues**, an optional **Company** selector and
 **Generate Brief**.
 
+## v2 (in progress): claim check
+
+Branch `feature/v2`. Design: [docs/v2_design.md](docs/v2_design.md).
+
+6. **Claim check**: lists a deck's key claims and the evidence for or against each. Each claim gets
+   an evidence status: Contradicted, Possibly overstated, Externally supported, Consistent with
+   company data, or Unverified. The program sets the status from the evidence; the model only
+   finds evidence and never says whether a claim is true.
+7. **Web research**: market figures are checked against public sources, and competitors are listed
+   with source links (Tavily, behind a replaceable interface). The company's name is never sent to
+   the search engine, and every quote must appear in a page the search returned.
+8. **Review**: an investor confirms or dismisses each flag, with a reason. The memo lists only
+   confirmed items as findings. A dismissed flag stays quiet unless its evidence changes.
+
+### Evaluation
+
+Cases planted in the synthetic company ClearClaim AI (`samples/company_c/`; public figures in
+`samples/company_c/SOURCES.md`). Run with `python scripts/eval_report.py`. These results are
+**offline**: the model is FakeLLM scripted to behave like a careful model, and web search is
+FakeWebSearch. They test the program's checks and rules, not the real model's judgment.
+
+| Case | What is checked | Result (offline) |
+|---|---|---|
+| E1 | Gross margin stated two ways in one deck (67-82% vs above 90%) is Contradicted | pass |
+| E2 | Market size arithmetic that does not add up ($12B vs 400,000 x $3,600) is Contradicted | pass |
+| E3 | Operating cost per employee below the BLS-based floor ($48,000) is Possibly overstated | pass |
+| E4 | A projection that assumes away a risk the deck states is Possibly overstated | pass |
+| E5 | A claim with no evidence (15 hours saved per week) stays Unverified | pass |
+| E6 | A claim backed by notes and CRM is Consistent with company data | pass |
+| E7 | 400,000 practices vs public data (205,088 dentists) is Possibly overstated, with a real link | pass |
+| E8 | 40% denial rate vs public data (19.3%) is Possibly overstated, with a real link | pass |
+| E9 | Competitor research lists competitors with links and contradicts "no other company" | pass |
+| E10 | Invented sources and altered quotes are dropped; queries naming the company are refused | pass |
+| E13 | Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; a reason is required | pass |
+| FP | The same file checked twice gives identical fingerprints | pass |
+
+Whole offline suite at the last run: 364 passed (the 274 v1.1 tests included). Not yet run with
+the real model or real web search. Memory (E11, E12) and portfolio monitoring (E14) are not built yet.
+
 ## Quick start
 
 Requires Python 3.11+.
@@ -207,6 +246,11 @@ numpy matrix product; BM25 is rebuilt per query. Both are simple to explain and 
 | POST | `/api/companies/{id}/ask` | Q&A for a company the user picked (`{"question": …}`) |
 | POST | `/api/companies/{id}/brief` | Brief (`{"requirements": …}`), JSON + Markdown |
 | GET | `/api/runs/{run_id}/log` | Agent log for one question or brief |
+| POST | `/api/companies/{id}/claim-check` | v2: check the newest deck (or `{"document_id": …}`) in the background |
+| GET | `/api/companies/{id}/claim-runs/{run_id}` | v2: progress of a claim check |
+| GET | `/api/companies/{id}/claims` | v2: latest claims with evidence, statuses and review state |
+| POST | `/api/companies/{id}/reviews` | v2: confirm or dismiss (`{"fingerprint", "decision", "reason"}`) |
+| GET | `/api/companies/{id}/memo` | v2: memo, JSON + Markdown |
 
 ## Verification
 
@@ -231,7 +275,8 @@ What went wrong along the way, and how each problem was found and fixed: [docs/l
   shown in the bullet; the program does not redo the arithmetic.
 - **Date suggestions are heuristics.** A file name with only a month gives the 1st of that month, so
   check the date in the confirmation.
-- **The number parser is English-only** ("sixty", "1.2M"); ranges such as "50–60" are not parsed.
+- **The number parser is English-only** ("sixty", "1.2M"). v1 metrics do not parse ranges such as
+  "50–60"; the v2 claim check does ("67-82%", "above 90%").
 - **Model output varies between runs.** Citations are always verified, but wording and which
   facts the model chooses to mention can differ.
 - **Single user, no authentication**, local SQLite; chat history is not persisted; no streaming.
