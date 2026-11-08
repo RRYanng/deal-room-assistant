@@ -170,3 +170,25 @@ def test_anthropic_complete_json_raises_on_refusal():
     stub = StubSDK(sdk_message([], "refusal"))
     with pytest.raises(LLMError, match="refusal"):
         AnthropicLLM("m", client=stub).complete_json("sys", "doc", {})
+
+
+def test_anthropic_client_sums_token_usage_and_estimates_cost():
+    from types import SimpleNamespace
+
+    from app.llm.anthropic_client import AnthropicLLM
+    from app.llm.pricing import estimate_usd
+    from app.usage import CountingLLM
+
+    usage = SimpleNamespace(input_tokens=1000, output_tokens=200, cache_creation_input_tokens=0,
+                            cache_read_input_tokens=500)
+    message = SimpleNamespace(content=[SimpleNamespace(type="text", text="ok")], stop_reason="end_turn", usage=usage)
+    sdk = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: message))
+    llm = CountingLLM(AnthropicLLM("claude-opus-5-5", fallbacks="", client=sdk))
+    llm.chat("s", [{"role": "user", "content": "hi"}])
+    llm.chat("s", [{"role": "user", "content": "hi"}])
+    summary = llm.summary()
+    assert summary["tokens"] == {"input_tokens": 2000, "output_tokens": 400, "cache_creation_input_tokens": 0,
+                                 "cache_read_input_tokens": 1000}
+    # 2,000 x $4 + 400 x $20 + 1,000 x $0.20, per million tokens
+    assert summary["estimated_usd"] == round((2000 * 4 + 400 * 20 + 1000 * 0.2) / 1e6, 4)
+    assert estimate_usd("unknown-model", summary["tokens"]) is None

@@ -10,6 +10,7 @@ from typing import Any
 import anthropic
 
 from .base import LLMAuthError, LLMClient, LLMError, LLMResponse, ToolCall, ToolResult, ToolSpec
+from .pricing import USAGE_FIELDS
 
 MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
@@ -22,6 +23,7 @@ class AnthropicLLM(LLMClient):
         self.effort = effort
         self.fallbacks = fallbacks
         self._client = client or anthropic.Anthropic()
+        self.usage = dict.fromkeys(USAGE_FIELDS, 0)  # summed over this client's calls
 
     # --- public API -------------------------------------------------------
 
@@ -71,9 +73,12 @@ class AnthropicLLM(LLMClient):
 
         try:
             if self.fallbacks:
-                return self._client.beta.messages.create(
+                response = self._client.beta.messages.create(
                     betas=[FALLBACK_BETA], fallbacks=self.fallbacks, **kwargs)
-            return self._client.messages.create(**kwargs)
+            else:
+                response = self._client.messages.create(**kwargs)
+            self._add_usage(getattr(response, "usage", None))
+            return response
         except anthropic.AuthenticationError as e:
             raise LLMAuthError("API key invalid or missing. Check .env and restart the server.") from e
         except anthropic.APIStatusError as e:
@@ -84,6 +89,12 @@ class AnthropicLLM(LLMClient):
             if "authentication" in str(e).lower():
                 raise LLMAuthError("API key invalid or missing. Check .env and restart the server.") from e
             raise
+
+    def _add_usage(self, usage: Any) -> None:
+        for field in USAGE_FIELDS:
+            value = getattr(usage, field, None)
+            if isinstance(value, int):
+                self.usage[field] += value
 
     @staticmethod
     def to_response(response: Any) -> LLMResponse:

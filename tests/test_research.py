@@ -263,6 +263,7 @@ def test_a_run_records_its_cost(db):
     assert usage["complete_json"] == 2 and usage["chat"] == 4 and usage["model_calls"] == 6
     assert usage["web_searches"] == 4 and usage["search_credits"] is None  # the fake does not report credits
     assert usage["seconds"] >= 0
+    assert usage["tokens"] is None and usage["estimated_usd"] is None  # FakeLLM reports no usage
 
 
 # --- competitor evidence: only for claims about competitors; names; source types ------------

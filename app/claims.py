@@ -455,8 +455,7 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
         log.exception("Claim check %s failed", run_id)
         _fail(conn, run_id, f"Claim check failed ({type(e).__name__}: {e}).", notes)
     finally:
-        log_event(conn, log_id, 0, "usage", output={
-            "model": llm.model, "model_calls": sum(llm.calls.values()), **llm.calls,
+        log_event(conn, log_id, 0, "usage", output=llm.summary() | {
             "web_searches": web.searches if web else 0, "search_credits": web.credits if web else None,
             "seconds": round(time.monotonic() - started, 1)})
 
