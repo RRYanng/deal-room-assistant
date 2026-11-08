@@ -277,6 +277,8 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ev-supports { border-left-color: var(--ok); }
 .ev-contradicts { border-left-color: var(--danger); }
 .ev-overstates { border-left-color: var(--warn); }
+.ev-context { border-left-style: dashed; }
+.claims-more { margin-top: 8px; }
 .ev-kind { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .ev a, .claims-body li a { color: var(--accent); }
 .review-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }

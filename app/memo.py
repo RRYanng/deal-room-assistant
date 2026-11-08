@@ -23,7 +23,8 @@ STATUS_LABELS = {
 def build_memo(conn: sqlite3.Connection, company_id: int) -> dict:
     company = conn.execute("SELECT name FROM companies WHERE id = ?", (company_id,)).fetchone()["name"]
     results = latest_results(conn, company_id)
-    claims = apply_reviews(conn, company_id, results["claims"])
+    order = list(STATUS_LABELS)  # flags first, as on the page
+    claims = sorted(apply_reviews(conn, company_id, results["claims"]), key=lambda c: order.index(c["status"]))
     return {
         "company": company,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -73,6 +74,7 @@ def memo_to_markdown(memo: dict) -> str:
 def _claim_lines(c: dict) -> list[str]:
     lines = [f"- **{STATUS_LABELS[c['status']]}**: \"{c['quote']}\" ({c['loc_label']})"]
     for e in c["evidence"]:
-        source = f" Source: {e['url']}" if e.get("url") else ""
+        kind = f" ({e['source_type']})" if e.get("source_type") else ""
+        source = f" Source{kind}: {e['url']}" if e.get("url") else ""
         lines.append(f"  - {e['note']}{source}")
     return lines

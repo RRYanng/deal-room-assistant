@@ -1234,7 +1234,10 @@ const EVIDENCE_SOURCE = { internal: "Company materials", external: "Web source",
 const EVIDENCE_STANCE = { supports: "supports", contradicts: "contradicts", overstates: "suggests overstated" };
 const CLAIM_POLL_MS = 1000;
 
-const claims = { companyId: null, data: null, view: "claims", showDismissed: false, timer: null, memo: null, reviewing: null };
+const claims = { companyId: null, data: null, view: "claims", showDismissed: false, showOther: false, timer: null, memo: null,
+  reviewing: null };
+// Flags first: contradicted, then possibly overstated, then the rest in the order of CLAIM_STATUS.
+const STATUS_ORDER = Object.keys(CLAIM_STATUS);
 
 async function openClaims() {
   await loadCompanies().catch(() => {});
@@ -1313,8 +1316,11 @@ function evidenceItemHtml(e) {
   const url = safeUrl(e.url);
   const where = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>`
     : e.filename ? esc(`${e.filename} · ${locationOf(e)}`) : "";
-  return `<div class="ev ev-${esc(e.stance)}">
-    <div class="ev-kind">${esc(EVIDENCE_SOURCE[e.source] || e.source)} · ${esc(EVIDENCE_STANCE[e.stance] || e.stance)}</div>
+  const kind = e.scope === "industry" ? "Company materials · cites industry data (not counted)"
+    : `${EVIDENCE_SOURCE[e.source] || e.source}${e.source_type ? ` (${e.source_type})` : ""} · `
+      + (EVIDENCE_STANCE[e.stance] || e.stance);
+  return `<div class="ev ev-${esc(e.scope === "industry" ? "context" : e.stance)}">
+    <div class="ev-kind">${esc(kind)}</div>
     <div>${esc(e.note)}</div>
     ${e.quote ? `<div class="quote">“${esc(e.quote)}”</div>` : ""}
     ${where ? `<div class="source-loc">${where}</div>` : ""}
@@ -1359,10 +1365,21 @@ function runSummaryHtml(d) {
   }
   if (d.run) {
     const when = d.run.finished_at ? ` · ${esc(d.run.finished_at)} UTC` : "";
-    parts.push(`<div class="muted small">Last check: ${esc(d.run.filename)}${when}</div>`);
+    parts.push(`<div class="muted small">Last check: ${esc(d.run.filename)}${when}${usageText(d.run.usage)}</div>`);
     if (d.run.notes.length) parts.push(`<ul class="run-notes">${d.run.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`);
   }
   return parts.join("");
+}
+
+function usageText(u) {
+  if (!u) return "";
+  const parts = [`${u.model_calls} model call${u.model_calls === 1 ? "" : "s"}`];
+  if (u.tokens) parts.push(`${(u.tokens.input_tokens + u.tokens.cache_read_input_tokens
+    + u.tokens.cache_creation_input_tokens).toLocaleString()} input / ${u.tokens.output_tokens.toLocaleString()} output tokens`);
+  if (u.estimated_usd != null) parts.push(`about $${u.estimated_usd.toFixed(2)} (estimate)`);
+  parts.push(`${u.web_searches} web search${u.web_searches === 1 ? "" : "es"}`);
+  parts.push(`${Math.round(u.seconds)} s`);
+  return ` · ${parts.map(esc).join(" · ")}`;
 }
 
 function renderClaims() {
@@ -1375,7 +1392,14 @@ function renderClaims() {
       to list the deck's key claims and the evidence for and against each.</div>`);
     return;
   }
-  const visible = d.claims.filter((c) => claims.showDismissed || c.review_state !== "dismissed");
+  const visible = d.claims.filter((c) => claims.showDismissed || c.review_state !== "dismissed")
+    .map((c, i) => [c, i])
+    .sort(([a, i], [b, j]) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || i - j)
+    .map(([c]) => c);
+  const main = visible.filter((c) => c.key !== "other");
+  const other = visible.filter((c) => c.key === "other");
+  const otherToggle = other.length ? `<button type="button" class="link small" id="claims-toggle-other">
+    ${claims.showOther ? "Hide" : "Show"} ${other.length} other claim${other.length === 1 ? "" : "s"} (bios, descriptions)</button>` : "";
   const byStatus = Object.keys(CLAIM_STATUS).map((s) => [s, visible.filter((c) => c.status === s).length])
     .filter(([, n]) => n).map(([s, n]) => `<span class="status ${CLAIM_STATUS[s][1]}">${esc(CLAIM_STATUS[s][0])}: ${n}</span>`);
   const dismissed = d.counts.dismissed
@@ -1384,7 +1408,8 @@ function renderClaims() {
   const competitors = d.competitors.length ? `<h3>Competitors found by web research</h3><ul>${d.competitors.map((c) => {
     const url = safeUrl(c.url);
     return `<li><b>${esc(c.name)}</b>${c.description ? ` — ${esc(c.description)}` : ""}
-      ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>` : ""}</li>`;
+      ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>` : ""}
+      ${c.source_type ? `<span class="muted small">(${esc(c.source_type)})</span>` : ""}</li>`;
   }).join("")}</ul>` : "";
   $("claims-body").innerHTML = `${head}
     <div class="claims-summary">${byStatus.join(" ")}
@@ -1393,8 +1418,9 @@ function renderClaims() {
       finding until you confirm it.</div>
     <table class="claims-table">
       <thead><tr><th>Evidence status</th><th>Claim</th><th>Evidence</th><th>Review</th></tr></thead>
-      <tbody>${visible.map(claimRowHtml).join("")}</tbody>
+      <tbody>${main.map(claimRowHtml).join("")}${claims.showOther ? other.map(claimRowHtml).join("") : ""}</tbody>
     </table>
+    <div class="claims-more">${otherToggle}</div>
     ${competitors}`;
 }
 
@@ -1435,6 +1461,7 @@ $("claims-company").onchange = () => {
   claims.companyId = Number($("claims-company").value) || null;
   claims.view = "claims";
   claims.showDismissed = false;
+  claims.showOther = false;
   loadClaims();
 };
 $("claims-memo").onclick = toggleMemo;
@@ -1456,6 +1483,10 @@ $("claims-run").onclick = async () => {
 $("claims-body").addEventListener("click", async (e) => {
   if (e.target.closest("#claims-toggle-dismissed")) {
     claims.showDismissed = !claims.showDismissed;
+    return renderClaims();
+  }
+  if (e.target.closest("#claims-toggle-other")) {
+    claims.showOther = !claims.showOther;
     return renderClaims();
   }
   if (e.target.closest("#memo-copy")) {
