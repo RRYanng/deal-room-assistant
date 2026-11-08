@@ -483,6 +483,15 @@ def start_claim_check(db_path: Path | str, company_id: int, document_id: int, ll
     return run_id
 
 
+def fail_interrupted_runs(conn: sqlite3.Connection) -> int:
+    """At startup: a run still marked running was cut off by a restart. Without this it would block
+    new checks for its company forever."""
+    with conn:
+        return conn.execute("UPDATE claim_runs SET status = 'failed', stage = NULL, finished_at = CURRENT_TIMESTAMP,"
+                            " error = 'The server restarted during this check. Run it again.'"
+                            " WHERE status = 'running'").rowcount
+
+
 def _run_in_background(db_path, run_id: int, llm: LLMClient, web) -> None:
     conn = connect(db_path)
     try:

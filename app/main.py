@@ -15,7 +15,7 @@ from app.db import connect, init_db
 from app.agent import OUT_OF_SCOPE_MESSAGE, answer_question, is_out_of_scope
 from app.batch import BatchFile, get_batch, start_batch
 from app.brief import brief_to_markdown, generate_brief
-from app.claims import get_run, latest_deck, latest_results, start_claim_check
+from app.claims import fail_interrupted_runs, get_run, latest_deck, latest_results, start_claim_check
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
 from app.intake import analyze_upload, consistency_warnings
@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     app.state.db_path = get_settings().db_path
     conn = connect(app.state.db_path)
     init_db(conn)
+    fail_interrupted_runs(conn)
     conn.close()
     yield
 

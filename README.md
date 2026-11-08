@@ -69,7 +69,7 @@ FakeWebSearch. They test the program's checks and rules, not the real model's ju
 | E13 | Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; a reason is required | pass |
 | FP | The same file checked twice gives identical fingerprints | pass |
 
-Whole offline suite at the last run: 364 passed (the 274 v1.1 tests included). Not yet run with
+Whole offline suite at the last run: 365 passed (the 274 v1.1 tests included). Not yet run with
 the real model or real web search. Memory (E11, E12) and portfolio monitoring (E14) are not built yet.
 
 ## Quick start

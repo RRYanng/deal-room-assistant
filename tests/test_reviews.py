@@ -185,3 +185,21 @@ def test_api_run_of_another_company_is_not_found(client):
     other = client.post("/api/companies", json={"name": "Other Co"}).json()["id"]
     assert client.get(f"/api/companies/{other}/claim-runs/{run_id}").status_code == 404
     assert client.get(f"/api/companies/{other}/claims").json()["claims"] == []
+
+
+def test_a_run_cut_off_by_a_restart_does_not_block_new_checks(tmp_path, monkeypatch):
+    path = tmp_path / "app.db"
+    monkeypatch.setenv("DB_PATH", str(path))
+    with TestClient(app):
+        conn = connect(path)
+        company_id, docs = load_clearclaim(conn)
+        create_run(conn, company_id, docs[DECK])  # never started: as if the server stopped mid-run
+        conn.close()
+    with TestClient(app) as c:  # restart
+        app.dependency_overrides[get_extract_llm] = claim_llm
+        latest = c.get(f"/api/companies/{company_id}/claims").json()
+        assert latest["running"] is None and "server restarted" in latest["failed_run"]["error"]
+        started = c.post(f"/api/companies/{company_id}/claim-check", json={})
+        assert started.status_code == 202
+        c.company_id = company_id
+        assert wait_for(c, started.json()["id"])["status"] == "done"  # leave no background job behind
