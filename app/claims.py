@@ -205,7 +205,7 @@ def deck_checks(claims: list[dict]) -> list[dict]:
             for j in indexes:
                 if i != j and not ranges_agree(claims[i]["range"], claims[j]["range"], TOLERANCE):
                     other = claims[j]
-                    found.append(_evidence(i, "internal", "contradicts", chunk_id=other["chunk_id"],
+                    found.append(evidence_item(i, "internal", "contradicts", chunk_id=other["chunk_id"],
                                            quote=other["quote"], value_raw=other["value_raw"],
                                            note=f"The same deck also states {other['value_raw']} "
                                                 f"({other['loc_label']})."))
@@ -216,7 +216,7 @@ def deck_checks(claims: list[dict]) -> list[dict]:
     if count and price and size and _is_point(count) and _is_point(price) and _is_point(size):
         product = count["range"][0] * price["range"][0]
         if not ranges_agree((product, product), size["range"], TOLERANCE):
-            found.append(_evidence(claims.index(size), "calculation", "contradicts",
+            found.append(evidence_item(claims.index(size), "calculation", "contradicts",
                                    note=f"{count['value_raw']} x {price['value_raw']} = {_usd(product)} "
                                         f"(calculated), not {size['value_raw']}."))
 
@@ -230,7 +230,7 @@ def deck_checks(claims: list[dict]) -> list[dict]:
                     f"employer cost of one worker, BLS, December 2025). The team size may be overstated or "
                     f"the costs understated.")
             for claim in (opex, heads):
-                found.append(_evidence(claims.index(claim), "calculation", "overstates", note=note))
+                found.append(evidence_item(claims.index(claim), "calculation", "overstates", note=note))
     return found
 
 
@@ -243,7 +243,7 @@ def _usd(value: float) -> str:
     return f"${value:,.0f}"
 
 
-def _evidence(claim: int, source: str, stance: str, note: str, chunk_id=None, web_source_id=None,
+def evidence_item(claim: int, source: str, stance: str, note: str, chunk_id=None, web_source_id=None,
               quote=None, value_raw=None) -> dict:
     return {"claim": claim, "source": source, "stance": stance, "chunk_id": chunk_id,
             "web_source_id": web_source_id, "quote": quote, "value_raw": value_raw, "note": note}
@@ -311,23 +311,23 @@ def review_internal_evidence(conn: sqlite3.Connection, company_id: int, claims: 
             found.append(evidence)
     for pair in answer.get("risk_conflicts") or []:
         a, r = pair.get("assumption_claim"), pair.get("risk_claim")
-        if not (_valid_index(a, claims) and _valid_index(r, claims)) or claims[a]["key"] != "projection.assumption" \
+        if not (valid_index(a, claims) and valid_index(r, claims)) or claims[a]["key"] != "projection.assumption" \
                 or claims[r]["key"] != "risk.stated":
             log_event(conn, log_id, 2, "risk_conflict_dropped", input=pair, output="not an assumption and a stated risk")
             continue
         risk = claims[r]
-        found.append(_evidence(a, "internal", "overstates", chunk_id=risk["chunk_id"], quote=risk["quote"],
+        found.append(evidence_item(a, "internal", "overstates", chunk_id=risk["chunk_id"], quote=risk["quote"],
                                note=f"The deck states this risk ({risk['loc_label']}), but the projection "
                                     f"assumes it away."))
     return found
 
 
-def _valid_index(i, items) -> bool:
+def valid_index(i, items) -> bool:
     return isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(items)
 
 
 def _validate_internal(conn, company_id, item, claims, candidates) -> tuple[dict | None, str]:
-    if not isinstance(item, dict) or not _valid_index(item.get("claim"), claims):
+    if not isinstance(item, dict) or not valid_index(item.get("claim"), claims):
         return None, "unknown claim"
     i = item["claim"]
     hit = next((h for h in candidates[i] if h["chunk_id"] == item.get("chunk_id")), None)
@@ -343,7 +343,7 @@ def _validate_internal(conn, company_id, item, claims, candidates) -> tuple[dict
         stance = item.get("stance")
         if stance not in ("supports", "contradicts"):
             return None, "unknown stance"
-        return _evidence(i, "internal", stance, chunk_id=row["id"], quote=quote,
+        return evidence_item(i, "internal", stance, chunk_id=row["id"], quote=quote,
                          note=f"{'Consistent with' if stance == 'supports' else 'Contradicted by'} {where}."), ""
     # A claim with a number: the program compares the numbers and decides the stance itself.
     value_raw = normalize_ws(str(item.get("value_raw") or ""))
@@ -353,9 +353,9 @@ def _validate_internal(conn, company_id, item, claims, candidates) -> tuple[dict
     if value_range is None:
         return None, "value_raw is not a number"
     if ranges_agree(claim["range"], value_range, TOLERANCE):
-        return _evidence(i, "internal", "supports", chunk_id=row["id"], quote=quote, value_raw=value_raw,
+        return evidence_item(i, "internal", "supports", chunk_id=row["id"], quote=quote, value_raw=value_raw,
                          note=f"Same figure in {where}: {value_raw}."), ""
-    return _evidence(i, "internal", "contradicts", chunk_id=row["id"], quote=quote, value_raw=value_raw,
+    return evidence_item(i, "internal", "contradicts", chunk_id=row["id"], quote=quote, value_raw=value_raw,
                      note=f"Different figure in {where}: {value_raw}."), ""
 
 

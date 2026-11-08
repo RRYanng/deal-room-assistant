@@ -141,3 +141,120 @@ def by_quote(claims: list[dict], fragment: str) -> dict:
     found = [c for c in claims if fragment in c["quote"]]
     assert len(found) == 1, f"{len(found)} claims match {fragment!r}"
     return found[0]
+
+
+# --- web research ---------------------------------------------------------------------------
+# Market pages: real URLs with the one sentence each page was checked to contain (samples/company_c/SOURCES.md).
+# Competitor pages: fictional companies on example.com, so tests never make claims about real ones.
+
+from app.web import FakeWebSearch, WebResult  # noqa: E402
+
+ADA = WebResult("https://www.ada.org/resources/research/health-policy-institute/dentist-workforce",
+                "The dentist workforce",
+                "Dentist workforce data. As of 2025, there are 205,088 professionally active dentists in the U.S. "
+                "Supply is projected to grow.")
+CLERRI = WebResult("https://clerri.com/blog/dental-insurance-claim-denial-statistics/",
+                   "Dental insurance claim denial statistics",
+                   "With 19.3% of claims denied on first submission and practices losing hundreds of thousands annually, "
+                   "denials are a major cost.")
+MOLARFLOW = WebResult("https://molarflow.example.com/about", "Molarflow",
+                      "Molarflow uses AI agents to verify dental insurance and submit claims for dental offices.")
+TOOTHLEDGER = WebResult("https://news.example.com/toothledger-seed", "Toothledger raises seed",
+                        "Toothledger automates dental insurance verification with AI voice agents that call payers. "
+                        "ClearClaim AI was not mentioned.")
+
+
+def web_pages(query: str) -> list[WebResult]:
+    q = query.lower()
+    if "dentist" in q or "practices" in q:
+        return [ADA]
+    if "denial" in q or "denied" in q:
+        return [CLERRI]
+    if "competitor" in q or "software" in q or "startup" in q or "automation" in q:
+        return [MOLARFLOW, TOOTHLEDGER]
+    return []
+
+
+def fake_web() -> FakeWebSearch:
+    return FakeWebSearch(web_pages)
+
+
+MARKET_QUERIES = ["number of dentists in the US", "dental insurance claim denial rate first submission"]
+MARKET_RULES = [  # claim fragment -> what a careful model cites
+    {"claim": "400,000 independent dental practices", "url": ADA.url, "relation": "upper_bound",
+     "quote": "As of 2025, there are 205,088 professionally active dentists in the U.S.", "value_raw": "205,088"},
+    {"claim": "40% of dental insurance claims", "url": CLERRI.url, "relation": "same_quantity",
+     "quote": "With 19.3% of claims denied on first submission", "value_raw": "19.3%"},
+]
+COMPETITOR_QUERIES = ["AI dental insurance verification startup", "dental claims automation software"]
+COMPETITOR_RULES = [
+    {"name": "Molarflow", "description": "AI agents for dental insurance and claims.",
+     "quote": "Molarflow uses AI agents to verify dental insurance and submit claims for dental offices."},
+    {"name": "Toothledger", "description": "AI voice agents that verify dental insurance.",
+     "quote": "Toothledger automates dental insurance verification with AI voice agents that call payers."},
+]
+
+
+def pages_returned(call) -> list[dict]:
+    """Every page the tools returned in the latest turn of a research loop."""
+    pages = []
+    for r in call["messages"][-1].get("tool_results", []):
+        out = json.loads(r["content"])
+        if isinstance(out, list):
+            pages += out
+    return pages
+
+
+def research_loop(queries, answer):
+    """FakeLLM chat reply for a research loop: search once with `queries`, then answer from the pages."""
+    def reply(call):
+        if len(call["messages"]) == 1:
+            return FakeLLM.tool_call("search_web", {"query": queries[0]},
+                                     *[("search_web", {"query": q}) for q in queries[1:]])
+        return FakeLLM.text(json.dumps(answer(call, pages_returned(call))))
+    return reply
+
+
+def market_answer(rules=MARKET_RULES):
+    def answer(call, pages):
+        claims = {int(i): quote for i, _k, quote in CLAIM_LINE.findall(call["messages"][0]["content"])}
+        evidence = []
+        for i, quote in claims.items():
+            for rule in rules:
+                page = next((p for p in pages if p["url"] == rule["url"]), None)
+                if rule["claim"] in quote and page:
+                    evidence.append({"claim": i, "source_id": page["source_id"], "quote": rule["quote"],
+                                     "value_raw": rule["value_raw"], "relation": rule["relation"]})
+        return {"evidence": evidence, "open_items": []}
+    return answer
+
+
+def competitor_answer(rules=COMPETITOR_RULES):
+    def answer(call, pages):
+        competitors = []
+        for rule in rules:
+            page = next((p for p in pages if rule["quote"] in p["content"]), None)
+            if page:
+                competitors.append({"name": rule["name"], "description": rule["description"],
+                                    "source_id": page["source_id"], "quote": rule["quote"]})
+        claims = [int(i) for i in re.findall(r"^(\d+)\. \"", call["messages"][0]["content"], re.MULTILINE)]
+        comparison = [{"claim": i, "stance": "contradicts", "competitors": [c["name"] for c in competitors]}
+                      for i in claims]
+        return {"sector": "AI insurance verification and claims automation for dental practices",
+                "competitors": competitors, "comparison": comparison, "open_items": []}
+    return answer
+
+
+def research_llm(extractor=None, reviewer=None, market=None, competitors=None) -> FakeLLM:
+    """claim_llm plus the two research loops."""
+    base = claim_llm(extractor, reviewer).default
+    market = market or research_loop(MARKET_QUERIES, market_answer())
+    competitors = competitors or research_loop(COMPETITOR_QUERIES, competitor_answer())
+
+    def reply(call):
+        if call["method"] == "chat" and "market and industry figures" in call["system"]:
+            return market(call)
+        if call["method"] == "chat" and "map the competitors" in call["system"]:
+            return competitors(call)
+        return base(call)
+    return FakeLLM(default=reply)
