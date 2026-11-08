@@ -47,7 +47,7 @@ def test_e13_confirmed_item_enters_the_memo_with_the_reason(db, checked):
     assert [c["quote"] for c in memo["findings"]] == [margin["quote"]]
     assert margin["fingerprint"] not in {c["fingerprint"] for c in memo["awaiting_review"]}
     text = memo_to_markdown(memo)
-    findings = text.split("## Findings")[1].split("## Awaiting review")[0]
+    findings = text.split("## Verified findings")[1].split("## Awaiting review")[0]
     assert "Current gross margin: above 90%." in findings and "Founder confirmed 70% in the meeting." in findings
 
 

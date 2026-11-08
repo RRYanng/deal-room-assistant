@@ -101,7 +101,7 @@ def test_confirmed_finding_without_reason_reads_cleanly_in_the_memo(db, checked)
     fp = by_quote(out["claims"], "Current gross margin: above 90%")["fingerprint"]
     record_review(db, company_id, fp, "confirmed", None)
     text = memo_to_markdown(build_memo(db, company_id))
-    findings = text.split("## Findings")[1].split("## Awaiting review")[0]
+    findings = text.split("## Verified findings")[1].split("## Awaiting review")[0]
     assert "Gross margin" in findings and "Investor note" not in findings and "None" not in findings
 
 
