@@ -158,6 +158,43 @@ CREATE TABLE IF NOT EXISTS competitors (
 );
 CREATE INDEX IF NOT EXISTS idx_competitors_run ON competitors(run_id);
 
+-- v2 portfolio monitoring: KPIs per update and the signals computed from them.
+CREATE TABLE IF NOT EXISTS monitor_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    status       TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
+    stage        TEXT,
+    error        TEXT,
+    notes_json   TEXT,
+    started_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_monitor_runs_company ON monitor_runs(company_id);
+
+CREATE TABLE IF NOT EXISTS monitor_periods (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES monitor_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    period_end   TEXT NOT NULL,              -- stated in the update, else the material date
+    data_json    TEXT NOT NULL               -- figures, people, milestones; each with chunk_id and verified quote
+);
+CREATE INDEX IF NOT EXISTS idx_monitor_periods_run ON monitor_periods(run_id);
+
+CREATE TABLE IF NOT EXISTS signals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES monitor_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    period_end   TEXT NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('cash_runway', 'key_person_departure', 'milestone_slip')),
+    level        TEXT NOT NULL CHECK (level IN ('warning', 'high')),
+    title        TEXT NOT NULL,              -- written by the program
+    detail       TEXT NOT NULL,              -- written by the program, with the calculation
+    fingerprint  TEXT NOT NULL,
+    evidence_json TEXT NOT NULL              -- the quotes the signal rests on, with their locations
+);
+CREATE INDEX IF NOT EXISTS idx_signals_run ON signals(run_id);
+
 -- Investor decisions. Append-only: the latest row for a fingerprint wins, so a decision can be undone.
 -- Keyed by fingerprint, not by claim id, so a decision carries over to later runs of the same claim.
 CREATE TABLE IF NOT EXISTS reviews (

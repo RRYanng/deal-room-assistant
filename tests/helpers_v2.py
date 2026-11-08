@@ -272,3 +272,76 @@ def research_llm(extractor=None, reviewer=None, market=None, competitors=None) -
             return competitors(call)
         return base(call)
     return FakeLLM(default=reply)
+
+
+# --- portfolio monitoring ---------------------------------------------------------------------
+# What a careful model extracts from the three quarterly updates (the meeting notes give nothing).
+
+TEAM = [("Maya Chen", "CEO"), ("Daniel Okafor", "CTO"), ("Priya Raman", "Head of Sales")]
+MONITOR_RULES = [
+    {"list": "period", "period_end": "2026-03-31", "quote": "As of March 31, 2026, we had $4.4M in cash."},
+    {"list": "metrics", "kpi": "cash", "value_raw": "$4.4M", "quote": "As of March 31, 2026, we had $4.4M in cash."},
+    {"list": "metrics", "kpi": "monthly_net_burn", "value_raw": "$200,000",
+     "quote": "Net burn averaged $200,000 per month in Q1."},
+    {"list": "metrics", "kpi": "revenue", "value_raw": "$310,000",
+     "quote": "Revenue for Q1 2026 was $310,000, up 15% from Q4 2025."},
+    *[{"list": "people", "name": n, "role": r, "status": "present",
+       "quote": "Team: Maya Chen (CEO), Daniel Okafor (CTO) and Priya Raman (Head of Sales) lead the company."}
+      for n, r in TEAM],
+    {"list": "milestones", "name": "Bluecrest Dental Plan integration", "target_date": "2026-05-31", "status": "planned",
+     "quote": "Milestone: direct integration with Bluecrest Dental Plan, target date May 31, 2026."},
+
+    {"list": "period", "period_end": "2026-06-30", "quote": "As of June 30, 2026, we had $3.3M in cash."},
+    {"list": "metrics", "kpi": "cash", "value_raw": "$3.3M", "quote": "As of June 30, 2026, we had $3.3M in cash."},
+    {"list": "metrics", "kpi": "monthly_net_burn", "value_raw": "$300,000",
+     "quote": "Net burn averaged $300,000 per month in Q2, as we added two engineers."},
+    {"list": "metrics", "kpi": "revenue", "value_raw": "$357,000",
+     "quote": "Revenue for Q2 2026 was $357,000, up 15% from Q1 2026."},
+    {"list": "milestones", "name": "Bluecrest Dental Plan integration", "target_date": "2026-08-31", "status": "delayed",
+     "quote": "Milestone: the Bluecrest Dental Plan integration is now expected on August 31, 2026 "
+              "(previously May 31, 2026)."},
+
+    {"list": "period", "period_end": "2026-09-30", "quote": "As of September 30, 2026, we had $2.1M in cash."},
+    {"list": "metrics", "kpi": "cash", "value_raw": "$2.1M", "quote": "As of September 30, 2026, we had $2.1M in cash."},
+    {"list": "metrics", "kpi": "monthly_net_burn", "value_raw": "$300,000",
+     "quote": "Net burn averaged $300,000 per month in Q3."},
+    {"list": "metrics", "kpi": "revenue", "value_raw": "$364,000",
+     "quote": "Revenue for Q3 2026 was $364,000, up 2% from Q2 2026."},
+    {"list": "people", "name": "Daniel Okafor", "role": "CTO", "status": "departed",
+     "quote": "Daniel Okafor, our CTO, left the company in August."},
+    *[{"list": "people", "name": n, "role": r, "status": "present",
+       "quote": "Team: Maya Chen (CEO) and Priya Raman (Head of Sales) lead the company."} for n, r in TEAM if n != "Daniel Okafor"],
+    {"list": "milestones", "name": "Bluecrest Dental Plan integration", "target_date": "2026-11-30", "status": "delayed",
+     "quote": "Milestone: the Bluecrest Dental Plan integration is now expected on November 30, 2026 "
+              "(previously August 31, 2026)."},
+]
+# The Q2 team sentence repeats Q1's; one rule per person matches both files.
+
+
+def kpi_extractor(rules=MONITOR_RULES):
+    """FakeLLM reply for "Extract KPIs": every rule whose quote is in a chunk of the file in the prompt."""
+    def reply(call):
+        out = {"period_end": None, "period_chunk_id": None, "period_quote": None,
+               "metrics": [], "people": [], "milestones": []}
+        for chunk_id, _label, text in chunks_in_prompt(call["prompt"]):
+            flat = " ".join(text.split())
+            for r in rules:
+                if r["quote"] not in flat:
+                    continue
+                fields = {k: v for k, v in r.items() if k != "list"} | {"chunk_id": chunk_id}
+                if r["list"] == "period":
+                    out.update(period_end=r["period_end"], period_chunk_id=chunk_id, period_quote=r["quote"])
+                else:
+                    out[r["list"]].append(fields)
+        return out
+    return reply
+
+
+def monitor_llm(rules=MONITOR_RULES) -> FakeLLM:
+    extractor = kpi_extractor(rules)
+
+    def reply(call):
+        if "investor update from a startup" in call["system"]:
+            return extractor(call)
+        raise AssertionError(f"unexpected model call: {call['system'][:80]}")
+    return FakeLLM(default=reply)

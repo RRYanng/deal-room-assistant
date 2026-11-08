@@ -22,6 +22,7 @@ from app.intake import analyze_upload, consistency_warnings
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
 from app.memo import build_memo, memo_to_markdown
+from app import monitor
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
 from app.resolve import resolve_question_company
 from app.reviews import ReviewError, apply_reviews, record_review, review_counts
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
     conn = connect(app.state.db_path)
     init_db(conn)
     fail_interrupted_runs(conn)
+    monitor.fail_interrupted_runs(conn)
     conn.close()
     yield
 
@@ -461,3 +463,32 @@ def memo(company_id: int, conn=Depends(get_db)):
     require_company(conn, company_id)
     result = build_memo(conn, company_id)
     return result | {"markdown": memo_to_markdown(result)}
+
+
+# --- v2: portfolio monitoring -------------------------------------------------------------------
+
+@app.post("/api/companies/{company_id}/monitor", status_code=202)
+def start_monitoring(company_id: int, request: Request, conn=Depends(get_db),
+                     llm: LLMClient = Depends(get_extract_llm)):
+    """Read the company's updates and compute risk signals in the background."""
+    require_company(conn, company_id)
+    if conn.execute("SELECT 1 FROM monitor_runs WHERE company_id = ? AND status = 'running'", (company_id,)).fetchone():
+        raise HTTPException(409, "Monitoring for this company is already running.")
+    if not monitor.update_documents(conn, company_id):
+        raise HTTPException(400, "This company has no updates (notes files) to read.")
+    return monitor.get_run(conn, company_id, monitor.start_monitor(request.app.state.db_path, company_id, llm))
+
+
+@app.get("/api/companies/{company_id}/monitor-runs/{run_id}")
+def monitor_run(company_id: int, run_id: int, conn=Depends(get_db)):
+    run = monitor.get_run(conn, company_id, run_id)
+    if not run:
+        raise HTTPException(404, f"Monitoring run {run_id} not found for this company.")
+    return run
+
+
+@app.get("/api/companies/{company_id}/monitor")
+def monitor_results(company_id: int, conn=Depends(get_db)):
+    """Figures per update period and the signals computed from them, from the latest finished run."""
+    require_company(conn, company_id)
+    return monitor.latest_results(conn, company_id)
