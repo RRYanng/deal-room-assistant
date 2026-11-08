@@ -90,10 +90,23 @@ def test_e4_projection_that_assumes_away_a_stated_risk_is_possibly_overstated(re
 
 
 def test_e5_claim_without_evidence_stays_unverified(results):
-    """The notes talk about saved time but give no number: that is not evidence for "15 hours"."""
+    """The notes talk about saved time with no number, and quote an industry survey (20 hours a week on
+    verification). Neither is evidence about what the product saves."""
     claim = by_quote(results["claims"], "15 hours per week")
     assert claim["status"] == "unverified"
     assert claim["evidence"] == []
+
+
+def test_e5_industry_survey_quoted_in_the_notes_is_dropped(db, clearclaim):
+    """The founder quoted an industry survey (20 hours a week). Labelled "industry", it is dropped,
+    so it neither supports nor contradicts "15 hours per week"."""
+    company_id, docs = clearclaim
+    rules = [{"claim": "15 hours per week", "quote": "front desks spend up to 20 hours a week on insurance verification",
+              "value_raw": "20 hours", "stance": "contradicts", "scope": "industry"}]
+    out = check(db, company_id, docs[DECK], claim_llm(reviewer=evidence_reviewer(rules)))
+    assert by_quote(out["claims"], "15 hours per week")["status"] == "unverified"
+    dropped = db.execute("SELECT output_json FROM agent_logs WHERE kind = 'evidence_dropped'").fetchall()
+    assert any("industry-level data" in r["output_json"] for r in dropped)
 
 
 def test_e6_claim_backed_by_notes_and_crm_is_consistent_with_company_data(results):

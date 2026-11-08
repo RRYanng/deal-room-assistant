@@ -109,9 +109,9 @@ risk) are described in the README but not built.
 | | 400,000 practices x $3,600 = "$12B TAM" (really $1.44B) | E2 contradicted (code arithmetic) |
 | | 14 full-time employees, annual operating costs $420,000 ($30,000 per FTE) | E3 possibly overstated (implausible) |
 | | risk page: payers may change rules; projections assume 0% churn and 98% first-pass acceptance | E4 possibly overstated |
-| | "saves front-desk staff 15 hours per week", no evidence anywhere | E5 unverified, never supported |
+| | "saves front-desk staff 15 hours per week", no company evidence; the notes quote an industry survey (20 hours a week on verification) | E5 unverified: industry data is not evidence about the product |
 | | 85 paying practices, also in notes and CRM | E6 consistent with company data |
-| | 400,000 independent practices (public data: 205,088 dentists in total, ADA 2025); 40% of claims denied (public: about 15-20%) | E7 contradicted (above a ceiling), E8 possibly overstated, with real links |
+| | 400,000 independent practices (public data: 205,088 dentists in total, ADA 2025); Americans spend $400 billion a year on dental care (CMS: $189.2 billion in 2024) | E7 contradicted (above a ceiling), E8 possibly overstated, with real links |
 | | "no other company offers AI agents for dental claims" | E9 competitor research finds verified competitors |
 | `clearclaim_meeting_notes.md`, `clearclaim_crm.csv` | internal evidence for 85 practices and ~70% margin | E1, E6 |
 | `clearclaim_update_2026-Q1/Q2/Q3.txt` | runway about 22 -> 11 -> 7 months, revenue growth 15% -> 2%; CTO leaves in Q3; one milestone slips in Q2 and Q3 | E14: Q2 runway warning, Q3 runway high + departure + slip, nothing in Q1 |
@@ -165,3 +165,15 @@ evaluation and approvals are not cut.
   Claim flags do not change the v1 Issues count, so v1 behaviour is unchanged.
 - **A failed re-run** shows an error and keeps the last good results on screen.
 - Skill folders use hyphens: `skills/claim-check`, `skills/market-research`, `skills/competitor-research`.
+
+## 11. Changes on 2026-11-08
+
+- Upper bound: any claim above a public ceiling is contradicted; the 1.5x rule is only for the same quantity.
+- Cost floor: BLS Service occupations, $23.39 x 2,080 = $48,651 (section 2).
+- The denial-rate claim (vendor sources only) is replaced by "Americans spend $400 billion a year on
+  dental care", checked against CMS National Health Expenditures ($189.2 billion in 2024) and the ADA
+  Health Policy Institute ($189 billion). New key `market.industry_spend_usd`.
+- Industry data is not evidence about a company's own results (keys in `COMPANY_OWN_KEYS`): internal
+  evidence needs scope "company", and web sources are never counted for those claims. Trap in the
+  notes: an industry survey of 20 hours a week next to the deck's "15 hours per week".
+- The unverified YC batch of a real competitor was removed from SOURCES.md.

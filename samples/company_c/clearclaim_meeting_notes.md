@@ -18,6 +18,8 @@ Maya said gross margin is around 70% today, because about a quarter of claims st
 
 Maya said practices tell them the product saves a lot of front-desk time. ClearClaim has not run a time study yet.
 
+Maya cited an industry survey that says front desks spend up to 20 hours a week on insurance verification.
+
 ## Open questions
 
 Ask for the payer mix and churn to date.

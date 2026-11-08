@@ -11,7 +11,7 @@ from app.numbers import parse_range
 from app.research import QueryRejected, check_query, compare_external, mask_company
 from app.web import FakeWebSearch, WebResult, WebSearchError, get_web_search
 from app.web.tavily import TavilyProvider
-from tests.helpers_v2 import (ADA, CLERRI, COMPETITOR_QUERIES, DECK, MARKET_QUERIES, by_quote,
+from tests.helpers_v2 import (ADA, CMS, INDUSTRY_HOURS, COMPETITOR_QUERIES, DECK, MARKET_QUERIES, by_quote,
                               competitor_answer, fake_web, load_clearclaim, market_answer, research_llm,
                               research_loop)
 
@@ -39,11 +39,11 @@ def test_e7_practice_count_above_the_number_of_dentists_is_contradicted(results)
     assert "205,088" in e["quote"] and "upper bound" in e["note"]
 
 
-def test_e8_denial_rate_is_possibly_overstated_against_a_real_source(results):
-    claim = by_quote(results["claims"], "40% of dental insurance claims")
+def test_e8_dental_spending_is_possibly_overstated_against_a_government_source(results):
+    claim = by_quote(results["claims"], "$400 billion a year on dental care")
     assert claim["status"] == "possibly_overstated"
     [e] = [e for e in claim["evidence"] if e["source"] == "external"]
-    assert e["url"] == CLERRI.url and e["value_raw"] == "19.3%"
+    assert e["url"] == CMS.url and e["value_raw"] == "$189.2 billion" and e["stance"] == "overstates"
 
 
 def test_e9_competitor_research_lists_competitors_with_links_and_contradicts_the_deck(results):
@@ -56,13 +56,13 @@ def test_e9_competitor_research_lists_competitors_with_links_and_contradicts_the
 
 
 def test_a_matching_public_figure_externally_supports_a_claim(db):
-    page = WebResult("https://survey.example.com/denials", "Denial survey",
-                     "In the survey, 38% of claims were denied on first submission.")
-    rules = [{"claim": "40% of dental insurance claims", "url": page.url, "relation": "same_quantity",
-              "quote": "In the survey, 38% of claims were denied on first submission.", "value_raw": "38%"}]
+    page = WebResult("https://spending.example.com/dental", "Dental spending",
+                     "Americans spent $380 billion on dental care in the survey year.")
+    rules = [{"claim": "$400 billion a year on dental care", "url": page.url, "relation": "same_quantity",
+              "quote": "Americans spent $380 billion on dental care in the survey year.", "value_raw": "$380 billion"}]
     out = check(db, research_llm(market=research_loop(MARKET_QUERIES, market_answer(rules))),
                 FakeWebSearch(lambda q: [page]))
-    claim = by_quote(out["claims"], "40% of dental insurance claims")
+    claim = by_quote(out["claims"], "$400 billion a year on dental care")
     assert claim["status"] == "externally_supported"
     assert [e["url"] for e in claim["evidence"]] == [page.url]
 
@@ -137,7 +137,7 @@ def test_check_query_refuses_the_company_name(query):
         check_query(query, "ClearClaim AI")
 
 
-@pytest.mark.parametrize("query", ["AI dental claims startups", "clear claim denial rate", "number of dentists US"])
+@pytest.mark.parametrize("query", ["AI dental claims startups", "clear claim dental spending", "number of dentists US"])
 def test_check_query_allows_market_queries(query):
     assert check_query(query, "ClearClaim AI") == query
 
@@ -167,7 +167,7 @@ def test_failed_search_is_a_note_and_internal_results_stay(db):
 def test_every_returned_page_is_stored_with_its_query(db):
     out = check(db)
     rows = db.execute("SELECT query, url FROM web_sources WHERE run_id = ?", (out["run"]["id"],)).fetchall()
-    assert {r["url"] for r in rows} >= {ADA.url, CLERRI.url}
+    assert {r["url"] for r in rows} >= {ADA.url, CMS.url}
     assert all(r["query"] for r in rows)
 
 
@@ -226,3 +226,25 @@ def test_unused_model_calls_are_not_made_without_market_or_competition_claims(db
     chats = [c["system"] for c in llm.calls if c["method"] == "chat"]
     assert not any("market and industry figures" in s for s in chats)
     assert any("map the competitors" in s for s in chats)
+
+
+# --- industry data is not evidence about the company's own results ---------------------------
+
+def test_e5_web_page_with_an_industry_figure_cannot_support_a_product_outcome(db):
+    """Even if a researcher cites an industry page for "15 hours per week", the program drops it."""
+    from app.research import _external_evidence
+
+    class Tool:
+        def source(self, source_id):
+            return {"id": 1, "url": INDUSTRY_HOURS.url, "title": INDUSTRY_HOURS.title, "content": INDUSTRY_HOURS.content}
+
+    claims = [{"key": "product.outcome", "range": (15.0, 15.0), "value_raw": "15 hours"}]
+    item = {"claim": 0, "source_id": 1, "quote": INDUSTRY_HOURS.content, "value_raw": "20 hours",
+            "relation": "same_quantity"}
+    evidence, reason = _external_evidence(item, claims, [0], Tool())
+    assert evidence is None and "not this company's own results" in reason
+
+
+def test_e5_product_outcome_stays_unverified_with_web_research_on(results):
+    claim = by_quote(results["claims"], "15 hours per week")
+    assert claim["status"] == "unverified" and claim["evidence"] == []

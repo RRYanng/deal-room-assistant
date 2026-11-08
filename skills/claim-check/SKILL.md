@@ -17,6 +17,8 @@ What the program does with the answers:
   values and the stated range for ranges.
 - Evidence whose quote is not verbatim in the cited passage is dropped. A claim with no evidence left
   is "Unverified".
+- Industry-level data (scope "industry", and every web source) is not counted for or against a claim
+  about the company's own results, such as traction, product outcomes, margins, team or costs.
 - The model never writes a status, a verdict, or whether a claim is true.
 
 ## Extract claims
@@ -55,7 +57,10 @@ Return:
   chunk_id, a quote copied character for character from that passage, the stance ("supports" or
   "contradicts"), and value_raw: the number in your quote exactly as written, or null. For a claim
   with a number, only use a passage that states a number for the same thing; a passage that only
-  talks about the topic is not evidence.
+  talks about the topic is not evidence. Also give scope: "company" if the passage states this
+  company's own data or results; "industry" if it states data about the industry, the market or
+  other companies (for example an industry survey the founder quoted). Industry data is never
+  evidence for a claim about the company's own results.
 - risk_conflicts: pairs of a projection assumption claim and a stated risk claim from the same deck
   where the assumption leaves out the risk the deck itself states (for example, the deck says
   customers may churn, but the projection assumes no churn). Give the two claim numbers.

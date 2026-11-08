@@ -18,14 +18,14 @@ import sqlite3
 
 from app.agent import run_agent
 from app.citations import normalize_ws, quote_in_text
-from app.claims import OVERSTATED_RATIO, TOLERANCE, evidence_item, valid_index
+from app.claims import COMPANY_OWN_KEYS, OVERSTATED_RATIO, TOLERANCE, evidence_item, valid_index
 from app.llm import LLMClient, ToolSpec
 from app.logs import log_event
 from app.numbers import parse_range, ranges_agree
 from app.skills import skill_prompt
 from app.web import WebSearchError, WebSearchProvider
 
-MARKET_KEYS = ("market.customer_count", "market.problem_rate_pct")  # figures public data can check
+MARKET_KEYS = ("market.customer_count", "market.problem_rate_pct", "market.industry_spend_usd")  # public data checks these
 MAX_SEARCHES = 12          # per run, both specialists together
 RESULTS_PER_SEARCH = 5
 CONTENT_SHOWN_CHARS = 6000  # per page shown to the model; the full stored text is used for checks
@@ -178,6 +178,8 @@ def market_research(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row, cl
 def _external_evidence(item, claims, indexes, tool: WebTool) -> tuple[dict | None, str]:
     if not isinstance(item, dict) or item.get("claim") not in indexes:
         return None, "not one of the claims sent for research"
+    if claims[item["claim"]]["key"] in COMPANY_OWN_KEYS:
+        return None, "web sources describe the industry, not this company's own results"
     source = tool.source(item.get("source_id"))
     if source is None:
         return None, "source was not returned by a search in this run"

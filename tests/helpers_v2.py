@@ -15,8 +15,8 @@ DECK = "clearclaim_deck_2025-12.pdf"
 
 # What a careful model lists for the December 2025 deck (and the matching sentences of the September deck).
 CLAIM_RULES = [
-    {"key": "market.problem_rate_pct", "value_raw": "40%",
-     "quote": "40% of dental insurance claims are denied on first submission."},
+    {"key": "market.industry_spend_usd", "value_raw": "$400 billion",
+     "quote": "Americans spend $400 billion a year on dental care."},
     {"key": "market.customer_count", "value_raw": "400,000",
      "quote": "There are 400,000 independent dental practices in the United States."},
     {"key": "market.price_usd", "value_raw": "$3,600",
@@ -43,7 +43,8 @@ CLAIM_RULES = [
 ]
 
 # Passages a careful model links to claims. `claim` is a fragment of the claim's quote.
-# The last rule is a careless link: a passage on the topic with no number, which the program must drop.
+# The last two rules are traps the program must drop: a passage on the topic with no number, and an
+# industry survey the founder quoted (labelled scope "industry"), linked to the product's own result.
 EVIDENCE_RULES = [
     {"claim": "85 dental practices pay", "quote": "85 dental practices were paying for ClearClaim",
      "value_raw": "85", "stance": "supports"},
@@ -55,6 +56,8 @@ EVIDENCE_RULES = [
      "value_raw": "around 70%", "stance": "contradicts"},
     {"claim": "15 hours per week", "quote": "Maya said practices tell them the product saves a lot of front-desk time.",
      "value_raw": None, "stance": "supports"},
+    {"claim": "15 hours per week", "quote": "front desks spend up to 20 hours a week on insurance verification",
+     "value_raw": "20 hours", "stance": "contradicts", "scope": "industry"},
 ]
 
 
@@ -98,7 +101,8 @@ def evidence_reviewer(rules=EVIDENCE_RULES, pair_risks=True):
                     for chunk_id, text in passages.get(i, []):
                         if rule["quote"] in text:
                             evidence.append({"claim": i, "chunk_id": chunk_id, "quote": rule["quote"],
-                                             "stance": rule["stance"], "value_raw": rule["value_raw"]})
+                                             "stance": rule["stance"], "value_raw": rule["value_raw"],
+                                             "scope": rule.get("scope", "company")})
         pairs = []
         if pair_risks:
             assumptions = [i for i, (k, _) in claims.items() if k == "projection.assumption"]
@@ -153,10 +157,11 @@ ADA = WebResult("https://www.ada.org/resources/research/health-policy-institute/
                 "The dentist workforce",
                 "Dentist workforce data. As of 2025, there are 205,088 professionally active dentists in the U.S. "
                 "Supply is projected to grow.")
-CLERRI = WebResult("https://clerri.com/blog/dental-insurance-claim-denial-statistics/",
-                   "Dental insurance claim denial statistics",
-                   "With 19.3% of claims denied on first submission and practices losing hundreds of thousands annually, "
-                   "denials are a major cost.")
+CMS = WebResult("https://www.cms.gov/files/document/highlights.pdf", "National Health Expenditures 2024 Highlights",
+                "Dental Services (4 percent share): Spending for dental services increased 6.6 percent in 2024 to "
+                "$189.2 billion following similar growth of 6.4 percent in 2023.")
+INDUSTRY_HOURS = WebResult("https://survey.example.com/front-desk", "Front desk survey",
+                           "Dental front desks spend up to 20 hours a week on insurance verification.")
 MOLARFLOW = WebResult("https://molarflow.example.com/about", "Molarflow",
                       "Molarflow uses AI agents to verify dental insurance and submit claims for dental offices.")
 TOOTHLEDGER = WebResult("https://news.example.com/toothledger-seed", "Toothledger raises seed",
@@ -168,8 +173,8 @@ def web_pages(query: str) -> list[WebResult]:
     q = query.lower()
     if "dentist" in q or "practices" in q:
         return [ADA]
-    if "denial" in q or "denied" in q:
-        return [CLERRI]
+    if "spending" in q or "expenditure" in q:
+        return [CMS, INDUSTRY_HOURS]
     if "competitor" in q or "software" in q or "startup" in q or "automation" in q:
         return [MOLARFLOW, TOOTHLEDGER]
     return []
@@ -179,12 +184,13 @@ def fake_web() -> FakeWebSearch:
     return FakeWebSearch(web_pages)
 
 
-MARKET_QUERIES = ["number of dentists in the US", "dental insurance claim denial rate first submission"]
+MARKET_QUERIES = ["number of dentists in the US", "US national spending on dental services"]
 MARKET_RULES = [  # claim fragment -> what a careful model cites
     {"claim": "400,000 independent dental practices", "url": ADA.url, "relation": "upper_bound",
      "quote": "As of 2025, there are 205,088 professionally active dentists in the U.S.", "value_raw": "205,088"},
-    {"claim": "40% of dental insurance claims", "url": CLERRI.url, "relation": "same_quantity",
-     "quote": "With 19.3% of claims denied on first submission", "value_raw": "19.3%"},
+    {"claim": "$400 billion a year on dental care", "url": CMS.url, "relation": "same_quantity",
+     "quote": "Spending for dental services increased 6.6 percent in 2024 to $189.2 billion",
+     "value_raw": "$189.2 billion"},
 ]
 COMPETITOR_QUERIES = ["AI dental insurance verification startup", "dental claims automation software"]
 COMPETITOR_RULES = [

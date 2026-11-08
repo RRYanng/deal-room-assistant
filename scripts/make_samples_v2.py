@@ -27,7 +27,7 @@ DECK_2025_09 = [
      "AI agents that verify dental insurance and file claims for independent dental practices."],
     ["The Problem",
      "Front-desk staff at dental practices spend hours every day on the phone with insurers.",
-     "40% of dental insurance claims are denied on first submission."],
+     "Americans spend $400 billion a year on dental care."],
     ["Market",
      "There are 250,000 independent dental practices in the United States.",
      "At $3,600 per practice per year, our total addressable market is $900M."],
@@ -46,8 +46,8 @@ DECK_2025_12 = [
      "before the visit, and submits clean claims to payers."],
     ["The Problem",
      "Front-desk staff at dental practices spend hours every day on the phone with insurers.",
-     # Overstated against public figures (SOURCES.md).
-     "40% of dental insurance claims are denied on first submission.",
+     # Overstated: CMS puts US dental services spending at $189.2 billion in 2024 (SOURCES.md).
+     "Americans spend $400 billion a year on dental care.",
      "Dental practices cannot hire enough front-desk staff to keep up."],
     ["Market",
      # Overstated: there are about 205,000 dentists in total, so practices are fewer still.
@@ -102,6 +102,8 @@ Maya said gross margin is around 70% today, because about a quarter of claims st
 ## Product
 
 Maya said practices tell them the product saves a lot of front-desk time. ClearClaim has not run a time study yet.
+
+Maya cited an industry survey that says front desks spend up to 20 hours a week on insurance verification.
 
 ## Open questions
 

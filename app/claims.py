@@ -39,6 +39,7 @@ KEYS = {
     "market.price_usd": "price per customer per year used to size the market",
     "market.size_usd": "total addressable market in dollars",
     "market.problem_rate_pct": "how often the problem happens in the industry, in percent",
+    "market.industry_spend_usd": "total yearly spending in the industry, in dollars",
     "traction.paying_customers": "number of paying customers",
     "traction.revenue_usd": "revenue, ARR or MRR",
     "product.outcome": "a measurable result the product delivers to customers",
@@ -54,6 +55,11 @@ STATUSES = ("contradicted", "possibly_overstated", "externally_supported", "cons
             "unverified")
 # Two values of one key in the same deck are compared only for keys that name one figure.
 NOT_COMPARED_IN_DECK = {"other", "product.outcome", "projection.assumption", "risk.stated", "competition.landscape"}
+# Claims about the company's own results. Only data about this company counts as evidence for or against
+# them: an industry figure ("front desks spend up to 20 hours a week on verification") says nothing about
+# what this product saves.
+COMPANY_OWN_KEYS = {"traction.paying_customers", "traction.revenue_usd", "product.outcome", "unit.gross_margin_pct",
+                    "team.headcount", "finance.opex_annual_usd", "projection.assumption"}
 
 TOLERANCE = 0.10          # single values within 10% agree
 OVERSTATED_RATIO = 1.5    # a claim at least 1.5x its benchmark is possibly overstated
@@ -99,8 +105,9 @@ REVIEW_SCHEMA = {
                 "quote": {"type": "string"},
                 "stance": {"type": "string", "enum": ["supports", "contradicts"]},
                 "value_raw": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "scope": {"type": "string", "enum": ["company", "industry"]},
             },
-            "required": ["claim", "chunk_id", "quote", "stance", "value_raw"],
+            "required": ["claim", "chunk_id", "quote", "stance", "value_raw", "scope"],
             "additionalProperties": False,
         }},
         "risk_conflicts": {"type": "array", "items": {
@@ -341,6 +348,8 @@ def _validate_internal(conn, company_id, item, claims, candidates) -> tuple[dict
         return None, "quote is not verbatim in the passage"
     quote = normalize_ws(item["quote"])
     claim = claims[i]
+    if claim["key"] in COMPANY_OWN_KEYS and item.get("scope") != "company":
+        return None, "industry-level data is not evidence about the company's own results"
     where = f"{row['filename']}, {row['loc_label'].replace(row['filename'], '').strip()}".rstrip(", ")
     if claim["range"] is None:  # no number: the stance is the model's reading of a verified quote
         stance = item.get("stance")

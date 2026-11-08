@@ -27,7 +27,7 @@ venture capital team. The company's name is withheld and must never be searched 
 
 How to work:
 - Search for the industry figure itself, not the company: for example "number of dental practices
-  in the US" or "dental insurance claim denial rate first submission".
+  in the US" or "US national spending on dental services".
 - Prefer primary and official sources (government statistics, industry associations, peer-reviewed
   studies) over vendor blogs. Use a vendor page only if nothing better is found.
 - Two or three searches per claim are enough. If nothing reliable is found, say so in open_items.
