@@ -84,6 +84,91 @@ CREATE TABLE IF NOT EXISTS agent_logs (
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_agent_logs_run ON agent_logs(run_id);
+
+-- v2: claim checks, web research and reviews. New tables only; the v1 tables above are unchanged.
+-- Every table carries company_id, and every query filters on it.
+
+CREATE TABLE IF NOT EXISTS claim_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,  -- the deck checked
+    status       TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
+    stage        TEXT,                       -- what the run is doing now, shown as progress
+    error        TEXT,
+    notes_json   TEXT,                       -- steps skipped or failed, e.g. no web search configured
+    started_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_claim_runs_company ON claim_runs(company_id);
+
+CREATE TABLE IF NOT EXISTS claims (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id     INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    key          TEXT NOT NULL,              -- fixed vocabulary, e.g. 'unit.gross_margin_pct'
+    statement    TEXT NOT NULL,              -- short restatement by the model, for display only
+    quote        TEXT NOT NULL,              -- verbatim from the chunk, verified
+    value_raw    TEXT,                       -- the number as written, part of the quote
+    value_lo     REAL,                       -- range read by app.numbers (equal for a single value)
+    value_hi     REAL,
+    fingerprint  TEXT NOT NULL,              -- company + type + key + numbers; never model wording
+    status       TEXT NOT NULL CHECK (status IN ('contradicted', 'possibly_overstated',
+                   'externally_supported', 'consistent_with_company_data', 'unverified'))
+);
+CREATE INDEX IF NOT EXISTS idx_claims_run ON claims(run_id);
+
+CREATE TABLE IF NOT EXISTS web_sources (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    run_id       INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    query        TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    title        TEXT,
+    content      TEXT NOT NULL,              -- the text the search returned; quotes are checked against it
+    fetched_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_web_sources_run ON web_sources(run_id);
+
+CREATE TABLE IF NOT EXISTS evidence (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id      INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+    company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    source        TEXT NOT NULL CHECK (source IN ('internal', 'external', 'calculation')),
+    stance        TEXT NOT NULL CHECK (stance IN ('supports', 'contradicts', 'overstates')),
+    chunk_id      INTEGER REFERENCES chunks(id) ON DELETE CASCADE,          -- internal evidence
+    web_source_id INTEGER REFERENCES web_sources(id) ON DELETE CASCADE,     -- external evidence
+    quote         TEXT,                      -- verbatim from the chunk or the web source
+    value_raw     TEXT,
+    note          TEXT NOT NULL              -- written by the program
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_claim ON evidence(claim_id);
+
+CREATE TABLE IF NOT EXISTS competitors (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    web_source_id INTEGER NOT NULL REFERENCES web_sources(id) ON DELETE CASCADE,
+    quote         TEXT NOT NULL              -- verbatim from the source, contains the name
+);
+CREATE INDEX IF NOT EXISTS idx_competitors_run ON competitors(run_id);
+
+-- Investor decisions. Append-only: the latest row for a fingerprint wins, so a decision can be undone.
+-- Keyed by fingerprint, not by claim id, so a decision carries over to later runs of the same claim.
+CREATE TABLE IF NOT EXISTS reviews (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    item_type    TEXT NOT NULL CHECK (item_type IN ('claim', 'signal', 'drift')),
+    fingerprint  TEXT NOT NULL,
+    decision     TEXT NOT NULL CHECK (decision IN ('confirmed', 'dismissed')),
+    reason       TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+    item_json    TEXT,                       -- what the investor saw when deciding
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_company ON reviews(company_id, fingerprint);
 """
 
 
