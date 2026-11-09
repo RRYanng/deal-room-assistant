@@ -33,77 +33,150 @@ The screen is one conversation, with an Upload / Ask switch above the input. The
 **Library** (files and key metrics per company), **Issues**, an optional **Company** selector and
 **Generate Brief**.
 
-## v2 (in progress): claim check
+## v2: diligence co-pilot
 
-Branch `feature/v2`. Design: [docs/v2_design.md](docs/v2_design.md).
+Branch `feature/v2` (features frozen on 2026-11-08; bug fixes only). Design and decisions:
+[docs/v2_design.md](docs/v2_design.md).
+
+v2 checks a pitch deck the way an associate would before a partner meeting: what does the deck
+claim, what do the company's other files and public sources say, what changed since the last deck,
+and what should we ask the founder. The models read and find evidence; **the program decides every
+status, number and signal**, and an investor confirms or dismisses each flag.
+
+### Features
 
 6. **Claim check**: lists a deck's key claims and the evidence for or against each. Each claim gets
    an evidence status: Contradicted, Possibly overstated, Externally supported, Consistent with
    company data, or Unverified. The program sets the status from the evidence; the model only
    finds evidence and never says whether a claim is true.
-7. **Web research**: market figures are checked against public sources, and competitors are listed
+7. **What counts as evidence**: the company's records (CRM, financial data, contracts) count. What the
+   founder or management said in a meeting is shown but not counted, so a claim backed only by it stays
+   Unverified ("Only supported by the founder's own statement"). Industry data the company quotes is
+   not evidence about the company's own results.
+8. **Web research**: market figures are checked against public sources, and competitors are listed
    with source links (Tavily, behind a replaceable interface). The company's name is never sent to
    the search engine, and every quote must appear in a page the search returned.
-8. **Review**: an investor confirms or dismisses each flag or portfolio signal, with a reason. The memo lists only
-   confirmed items as findings. A dismissed flag stays quiet unless its evidence changes.
-9. **Portfolio monitoring**: reads a company's quarterly updates and computes three signals by
-   rule: cash runway (under 12 months is a warning; high when revenue also grew under 10%), key
-   person departure, and a milestone that keeps slipping. The model only quotes the figures.
-   Competitors moving faster, customer concentration, regulatory issues and next-round risk are
-   further signals worth adding; they are not built.
+9. **Review**: an investor confirms (reason optional) or dismisses (reason required) each flag,
+   change or portfolio signal. The memo lists only confirmed items as findings. A dismissed item stays
+   quiet unless its evidence changes.
 10. **Memory**: every checked deck's claims are kept per company. A figure that differs from the
    previous deck is shown as "Changed since the last deck" (market figures) or "Updated" (traction,
-   team, costs), on the page and in the memo.
-11. **Questions for the founder**: every contradicted or possibly overstated claim, portfolio signal and
-   changed figure gets one question, written by the program from the verified quotes. A question may
-   only contain numbers that appear in the quotes it cites.
-12. **Alignment check**: who pays, how the company charges and who benefits, each with a quote, and
+   team, costs).
+11. **Portfolio monitoring**: reads a company's quarterly updates and computes three signals by
+   rule: cash runway (under 12 months is a warning; high when revenue also grew under 10%), key
+   person departure, and a milestone that keeps slipping. The model only quotes the figures. Four
+   further signals were considered and not built; [docs/v2_design.md](docs/v2_design.md) (section 18) says why.
+12. **Questions for the founder**: every contradicted or possibly overstated claim, portfolio signal,
+   changed figure, alignment point and unaddressed regulatory item gets one question. The program fills
+   fixed templates with the verified quotes and figures (regulatory questions are written by people in
+   the checklist file); a question may only contain numbers that appear in the quotes it cites.
+13. **Alignment check**: who pays, how the company charges and who benefits, each with a quote, and
    points to discuss (for example a fee tied to amounts recovered), written neutrally as questions.
-13. **Regulatory checklist**: per industry, in `config/regulatory.toml` (healthcare: HIPAA, a Business
-   Associate Agreement, a security assessment). An item the files do not mention is "Not addressed in
-   materials", never a breach; these count in the summary's Regulatory category.
-14. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
+14. **Regulatory checklist**: per industry, in `config/regulatory.toml` (healthcare: HIPAA, a Business
+   Associate Agreement, an independent security assessment). An item the files do not mention is "Not
+   addressed in materials", never a breach; these count in the summary's Regulatory category.
+15. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
    alignment, risks the deck states), portfolio signals, awaiting review, questions for the founder.
+   Built by the program from the results; no model writes it.
+
+### Architecture
+
+```mermaid
+flowchart LR
+  deck[Deck + notes + CRM] --> extract[Claim checker<br/>model lists claims<br/>with verbatim quotes]
+  extract --> checks[Program checks in the deck<br/>two values for one figure,<br/>arithmetic, cost floor]
+  extract --> internal[Internal evidence<br/>hybrid search + model reads;<br/>program compares numbers]
+  extract --> research[Market and competitor research<br/>Tavily; company name masked;<br/>quotes checked against pages]
+  extract --> memory[Memory<br/>earlier deck's figures]
+  extract --> alignment[Alignment reader<br/>payer, pricing, beneficiary]
+  deck --> regulatory[Regulatory checklist<br/>config/regulatory.toml, no model]
+  checks & internal & research --> status[derive_status<br/>program only]
+  updates[Quarterly updates] --> monitor[Monitor<br/>model quotes figures;<br/>program computes signals]
+  status & memory & alignment & regulatory & monitor --> questions[Questions for the founder<br/>program templates; numbers must<br/>appear in the quotes]
+  questions --> review{Investor<br/>confirm / dismiss}
+  review --> memo[Memo<br/>program-built]
+```
+
+The orchestrator is code (a fixed sequence in `app/claims.py` and `app/monitor.py`), not a model
+choosing what to do, so every run is predictable and testable offline. Each specialist keeps its
+instructions in `skills/<name>/SKILL.md`: `claim-check`, `market-research`, `competitor-research`,
+`alignment-check`, `portfolio-monitor`. Every quote a model returns must be verbatim in the source
+(a chunk of the company's files or a page the search returned), or the item is dropped.
 
 ### Evaluation
 
 Cases planted in the synthetic company ClearClaim AI (`samples/company_c/`; public figures in
-`samples/company_c/SOURCES.md`). Run with `python scripts/eval_report.py`. These results are
-**offline**: the model is FakeLLM scripted to behave like a careful model, and web search is
-FakeWebSearch. They test the program's checks and rules, not the real model's judgment.
+`samples/company_c/SOURCES.md`). Run with `python scripts/eval_report.py`. The offline column uses
+FakeLLM scripted to behave like a careful model, and FakeWebSearch: it tests the program's checks and
+rules, not the real model's judgment. The live column is the real Claude Opus 5.5 with Tavily.
 
-| Case | What is checked | Result (offline) |
-|---|---|---|
-| E1 | Gross margin stated two ways in one deck (67-82% vs above 90%) is Contradicted | pass |
-| E2 | Market size arithmetic that does not add up ($12B vs 400,000 x $3,600) is Contradicted | pass |
-| E3 | Operating cost per employee below the BLS-based floor ($48,651) is Possibly overstated | pass |
-| E4 | A projection that assumes away a risk the deck states is Possibly overstated | pass |
-| E5 | A product claim with no company evidence (15 hours saved per week) stays Unverified, even next to an industry figure | pass |
-| E6 | A claim backed by notes and CRM is Consistent with company data | pass |
-| E7 | 400,000 practices vs public data (205,088 dentists, a ceiling) is Contradicted, with a real link | pass |
-| E8 | $400B US dental spending vs CMS ($189.2B) is Possibly overstated, with a real link | pass |
-| E9 | Competitor research lists competitors with links and contradicts "no other company" | pass |
-| E10 | Invented sources and altered quotes are dropped; queries naming the company are refused | pass |
-| E11 | Memory: 250,000 practices in the September deck -> 400,000 in December is flagged as changed | pass |
-| E12 | Memory never crosses companies (ClearClaim, Tidewell, Kitebridge) | pass |
-| E13 | Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; a reason is required | pass |
-| E14 | Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1 | pass |
-| FP | The same file checked twice gives identical fingerprints | pass |
+| Case | What is checked | Offline | Live (demo database, 2026-11-08) |
+|---|---|---|---|
+| E1 | Gross margin stated two ways in one deck (67-82% vs above 90%) is Contradicted | pass | match (both claims) |
+| E2 | Market size arithmetic that does not add up ($12B vs 400,000 x $3,600) is Contradicted | pass | match |
+| E3 | Operating cost per employee below the BLS-based floor ($48,651) is Possibly overstated | pass | match (cost and headcount) |
+| E4 | A projection that assumes away a risk the deck states is Possibly overstated | pass | match |
+| E5 | A product claim with no company evidence (15 hours saved per week) stays Unverified, even next to an industry figure | pass | match |
+| E6 | 85 paying practices, backed by the CRM, is Consistent with company data | pass | match |
+| E7 | 400,000 practices vs public data (a count of dentists or practice establishments, a ceiling) is Contradicted, with a real link | pass | match (secondary sources this run, see below) |
+| E8 | $400B US dental spending vs CMS is Possibly overstated, with a real link | pass | match (CMS: $165.3B for 2022) |
+| E9 | Competitor research lists competitors with links and contradicts "no other company" | pass | match (4 competitors) |
+| E10 | Invented sources and altered quotes are dropped; queries naming the company are refused | pass | offline only |
+| E11 | Memory: 250,000 practices in the September deck -> 400,000 in December is flagged as changed | pass | match |
+| E12 | Memory never crosses companies (ClearClaim, Tidewell, Kitebridge) | pass | offline only |
+| E13 | Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; dismissing needs a reason | pass | checked in the browser walkthrough |
+| E14 | Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1 | pass | match (all 4 signals, every figure) |
+| E15 | A claim only the founder's own statement backs (meeting notes) stays Unverified | pass | match |
+| FP | The same file checked twice gives identical fingerprints | pass | 20 of 20 claims identical in two earlier live runs |
 
-Whole offline suite at the last run: 451 passed (the 274 v1.1 tests included).
+Whole offline suite at the last run: 462 passed (the 274 v1.1 tests included). The v1.1 behaviour is
+checked by that suite, not by a separate case.
 
-**Live run** (real Claude Opus 5.5 and Tavily, ClearClaim deck, 2026-11-08): E1-E9 matched the
-expected statuses in both runs. In the second run 18 of 18 claims found in both runs had the same
-fingerprint and status; it cost 8 model calls, about $0.78 and 8 search credits in 78 seconds.
-A third run, with memory, flagged 250,000 -> 400,000 practices as changed (E11 live) and gave the
-same fingerprint and status for all 20 claims as the second run. Portfolio monitoring with the real
-model (E14 live): the expected signal in every quarter and every cash, burn and revenue figure as in
-the updates, for 4 model calls and about $0.08. With prompt caching in the research loops, a
-fourth run cost about $0.65 instead of $0.78 (87,915 tokens written to cache, 57,145 read back,
-10,832 uncached), with the same 20 fingerprints and statuses as the third run. After the business model
-page was added, a sixth run still matched E1-E9, found the fee tied to recovered amounts as a point to
-discuss, and showed HIPAA, BAA and a security assessment as not addressed, for about $0.61 and 7 search
-credits.
+### Live runs and cost
+
+All runs on 2026-11-08, real Claude Opus 5.5 (`claude-opus-5-5`) and Tavily (basic search). Costs are
+estimates from the token counts and list prices in `app/llm/pricing.py`.
+
+| Run | What changed | E1-E9 | Model calls | Search credits | Cost | Time |
+|---|---|---|---|---|---|---|
+| Claim check 2 | first run with the final rules | match | 8 | 8 | about $0.78 | 78 s |
+| Claim check 3 | with memory | match; 20 of 20 fingerprints and statuses as in run 2 | not recorded | | | |
+| Claim check 4 | prompt caching in the research loops | match; 20 of 20 as in run 3 | not recorded | | about $0.65 | |
+| Claim check 6 | business model page added | match | 8 | 7 | about $0.61 | 81 s |
+| Demo database | founder-statement rule; fresh database | match | 10 | 8 | about $0.70 | 89 s |
+| Monitoring | quarterly updates Q1-Q3 | E14 match | 4 | 0 | about $0.09 | 23 s |
+
+Building the whole demo database (metric extraction of the 7 files, one claim check, monitoring) cost
+about $0.93. The first claim check in a fresh database also reads the September deck once for memory,
+hence 10 calls instead of 8.
+
+What the live runs showed beyond the table:
+- **Search results vary.** In the demo database run, the search did not return the ADA page itself; E7
+  is still Contradicted, but from three secondary pages that quote ADA or Census counts (135,333 and
+  135,665 practice establishments, 202,485 dentists). Earlier runs cited the ADA directly. Statuses held;
+  the quality of the source did not.
+- **The founder rule changed one live result.** "Practices get paid faster and spend less staff time on
+  insurance..." was Consistent with company data in run 6, backed only by "Maya said practices tell
+  them the product saves a lot of front-desk time." It is now Unverified, marked "Only supported by the
+  founder's own statement". The 85 paying practices stay Consistent because of the CRM record.
+- **The model sometimes lists two claims from one sentence** ("0% customer churn and 98% first-pass
+  claim acceptance"). Both are Possibly overstated (E4); on the page their numbers differ, in the memo
+  they read the same.
+
+### Demo
+
+```bash
+.venv/bin/python scripts/build_demo_v2.py --from ../backups/deal_room_v1.1.db   # once; real model, about $1
+scripts/demo_v2.sh                                                              # http://localhost:8002
+```
+
+`build_demo_v2.py` copies the v1.1 demo database (the backup described in
+[docs/STATE_v1.1.md](docs/STATE_v1.1.md)), uploads the ClearClaim AI files and runs one claim check and
+portfolio monitoring with the real model and Tavily, so the demo shows stored results and needs no live
+search. It refuses to touch `data/deal_room.db` or to overwrite an existing demo database without
+`--force`. `demo_v2.sh` serves a fresh copy of `data/demo_v2.db` on every start, so confirmations and
+dismissals made during a rehearsal are gone at the next start (`--keep` reuses the last copy;
+`PORT=8003` picks another port).
 
 ## Quick start
 
@@ -346,10 +419,25 @@ app/
   agent.py        Q&A tool loop and citation verification
   brief.py        company brief (program parts + verified model sections)
   logs.py         agent_logs
-  llm/            provider-neutral interface, Anthropic client, FakeLLM
+  llm/            provider-neutral interface, Anthropic client, FakeLLM, pricing
+  claims.py       v2 claim check: extraction, program checks, internal evidence, status
+  research.py     v2 market and competitor research (web)
+  web/            v2 web search interface: Tavily and a fake
+  memory.py       v2 figures per deck, changes since the last deck
+  monitor.py      v2 portfolio monitoring and signals
+  reviews.py      v2 confirm / dismiss
+  questions.py    v2 questions for the founder
+  alignment.py    v2 alignment check
+  regulatory.py   v2 regulatory checklist (items in config/regulatory.toml)
+  presentation.py v2 labels, headlines and the summary
+  memo.py         v2 investment memo
+  usage.py        v2 model calls, tokens and cost per run
+skills/           v2 instructions per specialist (SKILL.md)
+config/           v2 regulatory checklists
 static/           conversation UI (HTML, CSS, JS)
-samples/          SYNTHETIC SAMPLE files + manifest.json
-scripts/          make_samples.py, load_samples.py, verify.py
+samples/          SYNTHETIC SAMPLE files + manifest.json (+ manifest_v2.json, company_c/)
+scripts/          make_samples.py, load_samples.py, verify.py; v2: make_samples_v2.py,
+                  eval_report.py, build_demo_v2.py, demo_v2.sh
 tests/            pytest suite (offline + `-m live`)
 docs/             verification, decisions, lessons learned, demo script, screenshots
 ```

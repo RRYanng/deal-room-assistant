@@ -1,6 +1,7 @@
 # v2 design: from research assistant to diligence co-pilot
 
-Status: agreed 2026-11-07, built on branch `feature/v2`. v1.1 behaviour and its tests stay unchanged.
+Status: agreed 2026-11-07, built on branch `feature/v2`; features frozen on 2026-11-08 (bug fixes only).
+v1.1 behaviour and its tests stay unchanged.
 All sample data is synthetic (`SYNTHETIC SAMPLE`).
 
 ## 1. Architecture
@@ -16,6 +17,8 @@ Each specialist keeps its instructions, tools and output schema in `skills/<name
 | Market researcher | claims about the market or industry | external evidence: URL, verbatim quote, figure, stance | `search_web` |
 | Competitor researcher | a sector description written without the company name | competitor list with source links, compared with the deck's competition claims | `search_web` |
 | Monitor | quarterly updates | KPIs per quarter, risk signals | KPI extraction with verbatim quotes; signals computed by code |
+| Alignment reader (added 11/8) | the deck | quotes for who pays, how it charges, who benefits; tension points of fixed types | one structured call; notes and questions written by code |
+| Regulatory checklist (added 11/8) | all the company's files | per-industry items, addressed or not | no model: keywords from `config/regulatory.toml` |
 
 - Company isolation as in v1: the server injects `company_id`; a `company_id` sent by the model is
   dropped. Every new table has `company_id` and every query filters on it.
@@ -69,7 +72,7 @@ all-worker average.)
 ## 4. Approvals
 
 - Table `reviews`: company, item type (claim / signal / drift), fingerprint, decision
-  (confirmed / dismissed), reason (required), time. Append-only; the latest row wins, so a decision
+  (confirmed / dismissed), reason (required to dismiss, optional to confirm since 11/8; section 14), time. Append-only; the latest row wins, so a decision
   can be undone.
 - Fingerprint = company + item type + fixed-vocabulary key + normalized number(s) computed by code.
   Without a number, the hash of the verbatim source passage is used. Model wording never enters it,
@@ -97,8 +100,8 @@ all-worker average.)
 | Key person departure | a founder / C-level / VP / Head present last quarter and absent or stated as departed now |
 | Repeated milestone slip | the same milestone's target date moved later >= 2 times, or past its date and not done. Extraction is given last quarter's milestone names so it reuses them; code matches by name |
 
-Further signals (competitors moving faster, customer concentration, regulatory issues, next-round
-risk) are described in the README but not built.
+Four further signals (competitors moving faster, loss of a large customer, regulatory issues, a hard
+next round) were considered and not built; section 18 says why.
 
 ## 7. Synthetic company ClearClaim AI (`samples/company_c/`)
 
@@ -110,7 +113,7 @@ risk) are described in the README but not built.
 | | 14 full-time employees, annual operating costs $420,000 ($30,000 per FTE) | E3 possibly overstated (implausible) |
 | | risk page: payers may change rules; projections assume 0% churn and 98% first-pass acceptance | E4 possibly overstated |
 | | "saves front-desk staff 15 hours per week", no company evidence; the notes quote an industry survey (20 hours a week on verification) | E5 unverified: industry data is not evidence about the product |
-| | 85 paying practices, also in notes and CRM | E6 consistent with company data |
+| | 85 paying practices, also in notes and CRM | E6 consistent with company data (the CRM counts; the founder saying it in the meeting is shown, not counted) |
 | | 400,000 independent practices (public data: 205,088 dentists in total, ADA 2025); Americans spend $400 billion a year on dental care (CMS: $189.2 billion in 2024) | E7 contradicted (above a ceiling), E8 possibly overstated, with real links |
 | | "no other company offers AI agents for dental claims" | E9 competitor research finds verified competitors |
 | `clearclaim_meeting_notes.md`, `clearclaim_crm.csv` | internal evidence for 85 practices and ~70% margin | E1, E6 |
@@ -120,13 +123,16 @@ More cases: E10 an invented source or altered quote is dropped (the claim falls 
 and a query naming the company is refused; E11 drift between deck versions (memory); E12 memory never
 crosses companies (all three); E13 approvals (unreviewed not in Findings, dismissed stays quiet,
 changed evidence is raised again, reason required); FP the same file checked twice gives the same
-fingerprints; E15 v1.1 regression (274 tests, the Tidewell answer is still 60).
+fingerprints. E15 (added 11/8): a claim only the founder's own statement backs stays Unverified. The
+v1.1 regression check first planned as E15 is the whole-suite line under the evaluation table (274
+v1.1 tests, the Tidewell answer is still 60).
 
 ## 8. Demo without the network
 
 The v2 demo database is prepared in advance: ClearClaim is loaded and the claim check, research and
 monitor run once with the real model and Tavily. Results, web snapshots and links are stored, so the
-demo reads stored results and needs no live search. "Re-run" stays available.
+demo reads stored results and needs no live search. "Re-run" stays available. Built on 11/8 with
+`scripts/build_demo_v2.py`; started with `scripts/demo_v2.sh` (section 17).
 
 ## 9. Schedule
 
@@ -140,6 +146,10 @@ demo reads stored results and needs no live search. "Re-run" stays available.
 
 If behind: drop memory first (11/11 noon), then monitoring (11/11 evening). Claim check, research,
 evaluation and approvals are not cut.
+
+What happened: everything above, plus the alignment check, regulatory checklist, questions for the
+founder and the memo restructure, was built by 11/8, and features were frozen that evening instead of
+11/11. 11/9 to 11/12 are for bug fixes, rehearsal and the Loom.
 
 ## 10. Decisions made during the build (2026-11-07 night)
 
@@ -197,7 +207,7 @@ evaluation and approvals are not cut.
   of; absence counts only when the update lists the team) and milestone slips (target moved later at
   least twice, or passed and not done). Departure is level high; a slip is a warning. Signal
   fingerprints use company, kind, period and the numbers or names, so a second run gives the same ones.
-  Signals cannot be confirmed or dismissed yet.
+  Signals cannot be confirmed or dismissed yet (added in the evening, section 13).
 
 ## 13. Signal reviews and memory (2026-11-08, evening)
 
@@ -209,4 +219,116 @@ evaluation and approvals are not cut.
   against the most recent earlier deck use the same tolerance as everything else. Market, unit and
   product figures that move are "changed"; traction, team and costs are "updated". Claims keyed
   "other", risks, competition, status quo and projection assumptions are not compared. Drift items
-  cannot be confirmed or dismissed yet.
+  cannot be confirmed or dismissed yet (added later the same day, section 14).
+
+## 14. Page review round (2026-11-08)
+
+- **Summary box** at the top of the claim check: issues per category (Market, Financials, Competition,
+  Team, Regulatory; contradicted, possibly overstated, or changed since the last deck), unverified
+  counts beside them, and the three items that matter most. Strength decides the order: a calculation
+  or an official source first, then company files, then other web pages. Dismissed items are not counted.
+- Key numbers and conclusions are bold; keys are shown as labels ("Gross margin", not
+  `unit.gross_margin_pct`); evidence has one headline line each ("CMS: $165.3 billion; deck says $400
+  billion"). When a government or association source is present, "other" web pages are folded.
+- Reviews: a reason is optional to confirm and required to dismiss (checked by the server and by a
+  database CHECK). Claims, changes since the last deck and signals can all be confirmed or dismissed,
+  and dismissed items of every kind sit behind one "Show dismissed (n)" toggle.
+- The portfolio table scrolls sideways instead of truncating; times are shown in the viewer's time zone.
+
+## 15. Main features (2026-11-08)
+
+- **Questions for the founder** (`app/questions.py`): one per contradicted or possibly overstated claim,
+  signal, changed figure and alignment point, from fixed templates filled with verified quotes. Rule,
+  enforced in code: every number in a question appears in a quote the question cites (page and file
+  references in parentheses are not checked); otherwise the question is not shown. Calculated values
+  (1,440,000,000; 11.0 months of runway) are never put to the founder. Shown under each item and
+  collected in the memo, without duplicates.
+- **Memo** (`app/memo.py`): rebuilt as a VC investment memo: summary line, market, competition,
+  verified findings (confirmed by the team, by category), risks (regulatory checklist, alignment, risks
+  the deck states), portfolio signals, awaiting review, questions for the founder, dismissed, notes. It
+  only reorganizes results; the summary line is counts and the top item.
+- **Alignment check** (`app/alignment.py`, `skills/alignment-check/SKILL.md`): one model call returns
+  quotes for who pays, how the company charges and who benefits, and tension points of four fixed types
+  (share of amounts recovered, price per transaction, payer is not the beneficiary, revenue from a
+  party on the other side of the customer). Quotes must be verbatim. The neutral note and the question
+  for each type are code text: a common fee model is described as common, never as a problem. The
+  ClearClaim deck got a business model page: a monthly subscription per location plus 8% of amounts
+  recovered on denied claims.
+- **Regulatory checklist** (`app/regulatory.py`, `config/regulatory.toml`): industries and items live in
+  the config file, so adding one needs no code change. The industry is the one whose words appear most
+  in the company's files (at least 3 hits). An item is "Addressed in materials" with the sentence that
+  mentions it, or "Not addressed in materials", which is never called a violation. Not-addressed items
+  count in the Summary's Regulatory category and rank below contradictions in the top three. ClearClaim
+  mentions none of HIPAA, a BAA or a security assessment (tested).
+
+## 16. What the founder says is not evidence (2026-11-08)
+
+- Internal evidence that supports a claim but only reports what the founder or management said in a
+  meeting ("Maya said ...") is stored with scope "founder", shown, and not counted. A claim backed only
+  by it stays Unverified, headed "Only supported by the founder's own statement"; on a claim that has
+  other evidence it reads "Founder's own statement (not counted)".
+- The program decides, not the model: the evidence comes from a notes file and the sentence around the
+  quote has a speech verb (said, told, mentioned, claimed, stated, estimated, according to). The whole
+  sentence is read, because the model's quote can leave out "Maya said".
+- Company records count: the CRM row "85 paying practices" keeps E6 Consistent with company data.
+- Only support is affected. A founder statement that contradicts the deck (around 70% margin vs above
+  90%) is an inconsistency the team should see, so it still counts.
+- Limitation: a meeting note written as a plain statement ("Gross margin is around 70%") with no speech
+  verb is counted as company data. Notes that record what was said should say who said it.
+
+## 17. Demo database and browser walkthrough (2026-11-08)
+
+- `scripts/build_demo_v2.py --from ../backups/deal_room_v1.1.db` copies the v1.1 backup (SHA-256 as in
+  `docs/STATE_v1.1.md`), uploads the 7 ClearClaim files with metric extraction, and runs one claim check
+  and monitoring with the real model and Tavily. The 11/8 build: 22 claims (E1-E9 all as expected),
+  4 signals, 0 review records, about $0.93 and 8 search credits. The result, `data/demo_v2.db`, is not
+  in the repository (`data/` is ignored).
+- `scripts/demo_v2.sh` serves a fresh copy (`data/demo_v2_session.db`) on port 8002 at every start, so
+  a rehearsal never changes the prepared database.
+- The walkthrough clicked through claim check, evidence, one confirm and one dismiss, changes since the
+  last deck, regulatory and alignment, portfolio and the memo. Fixed from it (each with a test that
+  failed on the old code):
+  - the founder's statement on a Contradicted claim was headed "Only supported by the founder's own
+    statement";
+  - the memo asked the gross margin question twice, with the figures in opposite order;
+  - the review dialog's example reason ("Founder confirmed 70% margin in the meeting") contradicted the
+    founder rule; it now reads "Checked the calculation against the deck" (text only, no test).
+
+## 18. Risk signals considered and not built
+
+Monitoring has three signals, all computed by code from figures quoted in the company's own updates.
+Four more were considered. Each needs data the updates do not contain, or a judgment the program
+cannot check, so each would break the rule that a signal is a calculation anyone can redo from quotes.
+
+| Signal | What it would need | Why not now |
+|---|---|---|
+| Competitors moving faster | dated competitor events (launches, funding, customer wins) from the web, compared with the company's own milestones | Web pages rarely give reliable dates, marketing pages overstate, and "faster" is a judgment about different products. A wrong alert about a named real company is worse than none. Searches every quarter for every company also cost credits. |
+| Loss of a large customer | revenue per customer over time (CRM with account-level revenue, or the update naming lost accounts) | Updates report totals. Without each customer's share of revenue, a rule cannot tell a large loss from a small one; guessing from text would be the model's opinion. |
+| Regulatory issues | ongoing monitoring of enforcement actions and rule changes (for example payer or CMS rules), matched to the company's product | Matching a rule change to a product and judging its effect is legal judgment, and false alarms are costly. The diligence checklist (section 15) covers what the files address; ongoing monitoring needs a reliable source and an expert to judge relevance. |
+| A hard next round | a forecast from runway, growth, market conditions and investor appetite | It is a forecast, not a measurement. The measurable part, runway with weak growth, is already the high runway signal. Anything more would be a model's opinion presented as a signal. |
+
+What would make each possible: account-level revenue in the CRM (large customer), a curated feed of
+competitor events with dates (competitors), and a reviewed source list per industry with a person
+judging relevance (regulatory). The next round stays a conversation, using the runway signal.
+
+## 19. Known limitations and open points (2026-11-08)
+
+- **Search results vary between runs.** In the demo database build, the search did not return the ADA
+  page; E7 is Contradicted from three secondary pages (a vendor blog quoting 135,333 practice
+  establishments, a mailing-list site quoting 135,665, a dentist's blog quoting 202,485 dentists). The
+  status held; the source quality did not. The first question to the founder names the vendor page's
+  title ("Dental Industry Statistics reports 135,333...") rather than a publisher.
+- **The page and the memo count differently.** The page counts all 22 claims (20 awaiting review); the
+  memo leaves out claims keyed "other" (18 checked, 19 awaiting review including the 4 changes). Both
+  are correct by their own rule, but the numbers differ side by side.
+- **"Risks the deck states" is in the Regulatory category**, so a business risk ("payers may change claim
+  submission rules") shows as a Regulatory unverified item. It is plausible for this deck, not in general.
+- **One sentence can give two claims** ("0% customer churn and 98% first-pass claim acceptance"); the memo
+  shows them as two identical lines.
+- **The alignment reader lists a market-size sentence as pricing** ("At $3,600 per practice per year, our
+  total addressable market is $12B"). It does state a price, so it is kept.
+- **The page says where the checklist lives** ("kept in config/regulatory.toml"), which is for
+  developers, not investors.
+- **The desktop app's preview launcher could not read the new demo files** ("Operation not permitted"),
+  so the walkthrough server was started from a shell with `scripts/demo_v2.sh`. Started from Terminal,
+  the script works.
