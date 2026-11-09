@@ -32,7 +32,7 @@ from app.llm import LLMClient, LLMError
 from app.logs import log_event
 from app.numbers import parse_range, ranges_agree
 from app.rag import search
-from app.presentation import decorate
+from app.presentation import decorate, qualify_labels
 from app.questions import claim_question
 from app.skills import skill_prompt
 from app.usage import CountingLLM, CountingWeb
@@ -624,7 +624,7 @@ def run_claims(conn: sqlite3.Connection, company_id: int, run_id: int) -> list[d
     by_claim: dict[int, list[dict]] = {}
     for e in evidence:
         by_claim.setdefault(e["claim_id"], []).append({k: e[k] for k in e.keys() if k != "claim_id"})
-    out = [decorate(dict(c) | {"evidence": by_claim.get(c["id"], [])}) for c in claims]
+    out = qualify_labels([decorate(dict(c) | {"evidence": by_claim.get(c["id"], [])}) for c in claims])
     for c in out:
         c["question"] = claim_question(c, out)
     return out

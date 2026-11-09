@@ -1359,18 +1359,35 @@ function evidenceListHtml(c) {
   return shown.map(evidenceItemHtml).join("") + (open ? folded.map(evidenceItemHtml).join("") : "") + toggle;
 }
 
+// Reviewed items show only the decision and its reason; "Change" brings back the two buttons.
+const changingReview = new Set();  // `${type}:${fingerprint}` of reviewed items being changed
+
 function reviewCellHtml(c, type = "claim") {
+  const data = `data-type="${type}" data-fp="${esc(c.fingerprint)}"`;
   const button = (decision, text) => `<button type="button" class="secondary small-button" data-review="${decision}"
-    data-type="${type}" data-fp="${esc(c.fingerprint)}">${text}</button>`;
-  const actions = `<div class="review-actions">${button("confirmed", "Confirm")}${button("dismissed", "Dismiss")}</div>`;
+    ${data}>${text}</button>`;
+  const actions = (extra = "") => `<div class="review-actions">${button("confirmed", "Confirm")}${button("dismissed", "Dismiss")}${extra}</div>`;
   const reason = (r) => (r && r.reason ? `<div class="small">${esc(r.reason)}</div>` : "");
   if (c.review_state === "awaiting_review") {
     const changed = c.evidence_changed
       ? `<div class="muted small">Evidence changed since it was ${esc(c.review.decision)}.</div>${reason(c.review)}` : "";
-    return `<div class="muted small">Awaiting review</div>${changed}${actions}`;
+    return `<div class="muted small">Awaiting review</div>${changed}${actions()}`;
   }
   const label = c.review_state === "confirmed" ? "Confirmed" : "Dismissed";
-  return `<div class="review-done ${c.review_state}"><b>${label}</b></div>${reason(c.review)}${actions}`;
+  const changing = changingReview.has(`${type}:${c.fingerprint}`);
+  const change = changing
+    ? actions(`<button type="button" class="link small" data-change="cancel" ${data}>Cancel</button>`)
+    : `<div class="review-actions"><button type="button" class="secondary small-button" data-change="start" ${data}>Change</button></div>`;
+  return `<div class="review-done ${c.review_state}"><b>${label}</b></div>${reason(c.review)}${change}`;
+}
+
+// Handles a click on "Change" or "Cancel"; true if the click was one of them.
+function toggleChange(e) {
+  const b = e.target.closest("[data-change]");
+  if (!b) return false;
+  const key = `${b.dataset.type}:${b.dataset.fp}`;
+  if (b.dataset.change === "start") changingReview.add(key); else changingReview.delete(key);
+  return true;
 }
 
 // A question for the founder, written by the program from verified quotes (never a conclusion).
@@ -1400,7 +1417,7 @@ function regulatoryHtml(r) {
   }).join("");
   return `<div class="issue-card panel"><div class="issue-title">Regulatory checklist (${esc(r.industry.name)})</div>
     <div class="muted small">"Not addressed in materials" means the files do not mention it. It is not a finding of
-      non-compliance. The checklist is kept in config/regulatory.toml.</div>${items}</div>`;
+      non-compliance.</div>${items}</div>`;
 }
 
 function claimRowHtml(c) {
@@ -1499,7 +1516,7 @@ function renderClaims() {
   const other = visible.filter((c) => c.key === "other");
   const otherToggle = other.length ? `<button type="button" class="link small" id="claims-toggle-other">
     ${claims.showOther ? "Hide" : "Show"} ${other.length} other claim${other.length === 1 ? "" : "s"} (bios, descriptions)</button>` : "";
-  const byStatus = Object.keys(CLAIM_STATUS).map((s) => [s, visible.filter((c) => c.status === s).length])
+  const byStatus = Object.keys(CLAIM_STATUS).map((s) => [s, main.filter((c) => c.status === s).length])
     .filter(([, n]) => n).map(([s, n]) => `<span class="status ${CLAIM_STATUS[s][1]}">${esc(CLAIM_STATUS[s][0])}: ${n}</span>`);
   const dismissed = d.counts.dismissed
     ? `<button type="button" class="link small" id="claims-toggle-dismissed">${claims.showDismissed ? "Hide" : "Show"}
@@ -1513,7 +1530,7 @@ function renderClaims() {
   $("claims-body").innerHTML = `${summaryHtml(d.summary)}${head}${changesHtml(d.changes || [])}
     ${regulatoryHtml(d.regulatory)}${alignmentHtml(d.alignment)}
     <div class="claims-summary">${byStatus.join(" ")}
-      <span class="muted small">${d.counts.awaiting_review} awaiting review · ${d.counts.confirmed} confirmed</span> ${dismissed}</div>
+      <span class="muted small">${countsText(d.counts)}</span> ${dismissed}</div>
     <div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true. Nothing is a
       finding until you confirm it.</div>
     <table class="claims-table">
@@ -1522,6 +1539,13 @@ function renderClaims() {
     </table>
     <div class="claims-more">${otherToggle}</div>
     ${competitors}`;
+}
+
+// The same counts, worded the same way, on the page and above the memo (the server counts both).
+function countsText(n) {
+  const other = n.other ? ` (plus ${n.other} other: bios, descriptions)` : "";
+  return `${plural(n.claims, "claim")} checked${other} · ${n.awaiting_review} awaiting review (flagged claims and
+    changes since the last deck) · ${n.confirmed} confirmed · ${n.dismissed} dismissed`;
 }
 
 async function toggleMemo() {
@@ -1549,8 +1573,7 @@ function renderMemo() {
       <button type="button" class="secondary" id="memo-copy">Copy Markdown</button>
       <button type="button" class="secondary" id="memo-download">Download .md</button>
     </div>
-    <div class="muted small">${m.findings.length} confirmed finding${m.findings.length === 1 ? "" : "s"} ·
-      ${m.awaiting_review.length} awaiting review · ${m.dismissed.length} dismissed</div>
+    <div class="muted small">${countsText(m.counts)}</div>
     <pre class="memo">${esc(m.markdown)}</pre>`;
 }
 
@@ -1609,6 +1632,7 @@ $("claims-body").addEventListener("click", async (e) => {
     a.click();
     return URL.revokeObjectURL(a.href);
   }
+  if (toggleChange(e)) return renderClaims();
   const button = e.target.closest("[data-review]");
   if (button) openReview(button.dataset.fp, button.dataset.review, button.dataset.type || "claim");
 });
@@ -1748,6 +1772,7 @@ $("monitor-body").addEventListener("click", (e) => {
     mon.showDismissed = !mon.showDismissed;
     return renderMonitor();
   }
+  if (toggleChange(e)) return renderMonitor();
   const button = e.target.closest("[data-review]");
   if (button) openReview(button.dataset.fp, button.dataset.review, "signal");
 });
@@ -1810,6 +1835,7 @@ $("review-form").onsubmit = async (e) => {
     await postJson(`/api/companies/${r.companyId}/reviews`,
       { fingerprint: r.fingerprint, decision: r.decision, reason, item_type: r.itemType });
     $("review-dialog").close();
+    changingReview.delete(`${r.itemType}:${r.fingerprint}`);
     await (r.itemType === "signal" ? loadMonitor() : loadClaims());
   } catch (err) {
     $("review-error").textContent = err.message;

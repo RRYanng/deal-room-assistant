@@ -31,7 +31,7 @@ CATEGORIES = ("Market", "Financials", "Competition", "Team", "Regulatory")
 KEY_CATEGORY = {
     "market.": "Market", "product.": "Market", "traction.": "Financials", "unit.": "Financials",
     "finance.": "Financials", "projection.": "Financials", "business.": "Financials", "competition.": "Competition", "team.": "Team",
-    "risk.": "Regulatory",
+    "risk.": "Financials",  # a business risk the deck states; the regulatory checklist is separate
 }
 ISSUE_STATUSES = ("contradicted", "possibly_overstated")
 # Short names for sources that are well known; anything else is shown by its page title or site.
@@ -103,6 +103,34 @@ def _doc_name(e: dict, claim: dict) -> str:
     if "notes" in filename:
         return "Meeting notes"
     return filename or "Company file"
+
+
+# Where the phrase that names a figure ends: "0% customer churn and 98% ..." -> "0% customer churn".
+_PHRASE_END = re.compile(r"[,;:.()]|\s(?:and|or|but|through|until|by|in|for|per|to|with|from|over|at)\s", re.IGNORECASE)
+
+
+def figure_phrase(quote: str, value: str | None, max_words: int = 4) -> str | None:
+    """The figure with the words that follow it in the quote, e.g. "98% first-pass claim acceptance"."""
+    at = quote.find(value) if value else -1
+    if at < 0:
+        return None
+    rest = quote[at + len(value):] + " "
+    end = _PHRASE_END.search(rest)
+    return " ".join([value, *rest[:end.start() if end else len(rest)].split()[:max_words]])
+
+
+def qualify_labels(claims: list[dict]) -> list[dict]:
+    """Claims of one kind from one sentence (the model split it) get their figure in the label."""
+    groups: dict[tuple, list[dict]] = {}
+    for c in claims:
+        groups.setdefault((c["key"], c["quote"]), []).append(c)
+    for group in groups.values():
+        if len(group) > 1:
+            for c in group:
+                phrase = figure_phrase(c["quote"], c.get("value_raw"))
+                if phrase:
+                    c["label"] = f"{c['label']}: {phrase}"
+    return claims
 
 
 def decorate(claim: dict) -> dict:

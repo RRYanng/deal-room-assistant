@@ -126,3 +126,45 @@ def test_reviews_made_before_reasons_were_optional_are_kept(tmp_path):
     assert conn.execute("SELECT reason FROM reviews").fetchone()["reason"] == "old reason"
     conn.execute("INSERT INTO reviews(company_id, item_type, fingerprint, decision) VALUES (?, 'claim', 'fp2', 'confirmed')",
                  (cid,))
+
+
+# --- walkthrough fixes: counts, the stated risk's category, labels from one sentence -----------
+
+def test_page_and_memo_count_the_same_items(db, checked):
+    """Both count claims other than "other" (bios) plus changes since the last deck, with the same rules."""
+    from app.main import list_claims, memo
+    company_id, out = checked
+    record_review(db, company_id, by_quote(out["claims"], "400,000 independent")["fingerprint"], "confirmed", "")
+    record_review(db, company_id, by_quote(out["claims"], "team of 14")["fingerprint"], "dismissed", "Payroll checked.")
+    page, built = list_claims(company_id, conn=db), memo(company_id, conn=db)
+    assert page["counts"] == built["counts"]
+    counts, claims = page["counts"], page["claims"]
+    assert counts["claims"] == sum(c["key"] != "other" for c in claims)
+    assert counts["claims"] + counts["other"] == len(claims)
+    assert counts["confirmed"] == 1 and counts["dismissed"] == 1
+    text = built["markdown"]
+    assert f"## Awaiting review ({counts['awaiting_review']})" in text
+    assert f"{counts['claims']} claims checked:" in text and f"{counts['confirmed']} confirmed by the team" in text
+
+
+def test_a_risk_the_deck_states_is_a_financials_item_not_regulatory(checked):
+    risk = by_quote(checked[1]["claims"], "Payers may change claim submission rules")
+    assert risk["label"] == "Risk the deck states" and risk["category"] == "Financials"
+
+
+def test_two_claims_from_one_sentence_get_labels_that_tell_them_apart(db):
+    from tests.helpers_v2 import CLAIM_RULES, SEP_DECK_RULES, claim_extractor
+    quote = "Our model assumes 0% customer churn and 98% first-pass claim acceptance through 2029."
+    rules = [r for r in CLAIM_RULES if r["key"] != "projection.assumption"] + [
+        {"key": "projection.assumption", "value_raw": "0%", "quote": quote},
+        {"key": "projection.assumption", "value_raw": "98%", "quote": quote}]
+    company_id, docs = load_clearclaim(db)
+    llm = research_llm(extractor=claim_extractor(rules + SEP_DECK_RULES))
+    run_claim_check(db, create_run(db, company_id, docs[DECK]), llm, fake_web())
+    claims = latest_results(db, company_id)["claims"]
+    assert sorted(c["label"] for c in claims if c["key"] == "projection.assumption") == \
+        ["Projection assumption: 0% customer churn", "Projection assumption: 98% first-pass claim acceptance"]
+    # Claims from different sentences, or of different kinds from one sentence, keep the plain label.
+    assert [c["label"] for c in claims if c["key"] == "unit.gross_margin_pct"] == ["Gross margin", "Gross margin"]
+    assert {c["label"] for c in claims if c["key"] in ("market.price_usd", "market.size_usd")} == \
+        {"Price per customer", "Market size"}

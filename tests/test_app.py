@@ -69,3 +69,10 @@ def test_upload_input_allows_several_files_and_each_row_gets_a_status():
     script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
     for label in ("Uploading", "Analyzing", "Done", "Failed"):
         assert f'"{label}"' in script
+
+
+def test_the_page_never_shows_a_file_path_from_the_server():
+    """Investors see what the checklist says, not where it is kept."""
+    from app.config import PROJECT_ROOT
+    for name in ("app.js", "index.html"):
+        assert "config/" not in (PROJECT_ROOT / "static" / name).read_text(), name

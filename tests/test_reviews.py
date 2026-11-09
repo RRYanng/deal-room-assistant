@@ -152,7 +152,11 @@ def test_api_check_review_and_memo(client):
     statuses = {c["quote"]: c["status"] for c in claims["claims"]}
     assert statuses["Current gross margin: above 90%."] == "contradicted"
     assert statuses["There are 400,000 independent dental practices in the United States."] == "contradicted"
-    assert claims["counts"]["awaiting_review"] == len(CLAIM_RULES)
+    # Awaiting review: the flagged claims and the changes since the last deck, as the memo lists them.
+    flagged = [c for c in claims["claims"] if c["key"] != "other" and c["status"] != "consistent_with_company_data"
+               and c["status"] != "externally_supported"]
+    assert claims["counts"]["awaiting_review"] == len(flagged) + len(claims["changes"])
+    assert claims["counts"]["claims"] + claims["counts"]["other"] == len(CLAIM_RULES)
     assert [c["name"] for c in claims["competitors"]] == ["Molarflow", "Toothledger"]
 
     fp = next(c["fingerprint"] for c in claims["claims"] if c["status"] == "contradicted")

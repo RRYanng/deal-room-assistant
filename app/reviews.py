@@ -106,12 +106,17 @@ def apply_reviews(conn: sqlite3.Connection, company_id: int, items: list[dict], 
     return items
 
 
-def review_counts(claims: list[dict]) -> dict:
-    awaiting = [c for c in claims if c["review_state"] == "awaiting_review"]
-    return {"awaiting_review": len(awaiting),
-            "flags_awaiting_review": sum(c["status"] in FLAG_STATUSES for c in awaiting),
-            "confirmed": sum(c["review_state"] == "confirmed" for c in claims),
-            "dismissed": sum(c["review_state"] == "dismissed" for c in claims)}
+def review_counts(claims: list[dict], changes: list[dict] = ()) -> dict:
+    """The counts the page and the memo both show, over the same items: claims other than "other" (bios,
+    descriptions, counted apart) plus changes since the last deck. Awaiting review counts what the memo
+    lists under that heading: flagged claims (contradicted, possibly overstated, unverified) and changes."""
+    main = [c for c in claims if c["key"] != "other"]
+    items = main + list(changes)
+    return {"claims": len(main), "other": len(claims) - len(main),
+            "awaiting_review": sum(c["review_state"] == "awaiting_review" for c in changes)
+                               + sum(c["review_state"] == "awaiting_review" and c["status"] in FLAG_STATUSES for c in main),
+            "confirmed": sum(i["review_state"] == "confirmed" for i in items),
+            "dismissed": sum(i["review_state"] == "dismissed" for i in items)}
 
 
 def _latest_claim(conn: sqlite3.Connection, company_id: int, fingerprint: str) -> dict | None:

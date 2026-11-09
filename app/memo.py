@@ -13,7 +13,7 @@ from datetime import datetime
 from app.claims import latest_results
 from app.monitor import latest_results as latest_monitor_results
 from app.presentation import CATEGORIES, build_summary
-from app.reviews import apply_reviews
+from app.reviews import apply_reviews, review_counts
 
 STATUS_LABELS = {
     "contradicted": "Contradicted",
@@ -47,6 +47,7 @@ def build_memo(conn: sqlite3.Connection, company_id: int) -> dict:
         "alignment": results["alignment"],
         "regulatory": results["regulatory"],
         "summary": build_summary(claims, changes, results["regulatory"]),
+        "counts": review_counts(claims, changes),  # the same counts as the claim-check page
     }
 
 
@@ -130,7 +131,7 @@ def memo_to_markdown(memo: dict) -> str:
 
     waiting = [c for c in memo["awaiting_review"] if c["status"] in FLAGS and c["key"] != "other"]
     waiting_changes = [c for c in changes if c["review_state"] == "awaiting_review"]
-    lines += [f"## Awaiting review ({len(waiting) + len(waiting_changes)})", "",
+    lines += [f"## Awaiting review ({memo['counts']['awaiting_review']})", "",
               "Flagged by the system. Not conclusions until an investor confirms them.", ""]
     for category in CATEGORIES:
         items = [c for c in waiting if c["category"] == category]
@@ -149,7 +150,8 @@ def memo_to_markdown(memo: dict) -> str:
     lines += [f"{n}. {q}" for n, q in enumerate(questions, 1)] or ["No questions."]
     lines.append("")
 
-    gone = memo["dismissed"] + [c for c in memo["changes"] if c["review_state"] == "dismissed"]
+    gone = [c for c in memo["dismissed"] if c["key"] != "other"] + \
+        [c for c in memo["changes"] if c["review_state"] == "dismissed"]
     if gone:
         lines += [f"## Dismissed ({len(gone)})", ""]
         lines += [f"- {c['label']}: " + (f"\"{c['quote']}\"" if "quote" in c else c["note"])
@@ -175,7 +177,7 @@ def founder_questions(memo: dict) -> list[str]:
 
 
 def _summary_line(memo: dict) -> str:
-    claims = [c for c in memo["claims"] if c["key"] != "other"]
+    claims, counts = [c for c in memo["claims"] if c["key"] != "other"], memo["counts"]
 
     def count(status: str) -> int:
         return sum(c["status"] == status for c in claims)
@@ -183,9 +185,9 @@ def _summary_line(memo: dict) -> str:
     supported = count("externally_supported") + count("consistent_with_company_data")
     top = memo["summary"]["top"]
     lead = f" Most important: {top[0]['text']}" if top else ""
-    return (f"{len(claims)} claims checked: {count('contradicted')} contradicted, {count('possibly_overstated')} "
+    return (f"{counts['claims']} claims checked: {count('contradicted')} contradicted, {count('possibly_overstated')} "
             f"possibly overstated, {count('unverified')} unverified, {supported} supported; "
-            f"{len(memo['findings'])} confirmed by the team.{lead}")
+            f"{counts['confirmed']} confirmed by the team.{lead}")
 
 
 def _change_category(change: dict) -> str:
