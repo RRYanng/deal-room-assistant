@@ -1,0 +1,14 @@
+# Authoritative sources for market and industry figures, read by app/research.py. Edit this file to add or
+# remove domains; no code change is needed.
+#
+# Market research searches only these domains first (Tavily include_domains). It searches the whole web
+# when they return nothing, or when the model repeats a query it already searched here. Competitor
+# research is not limited to them. A page on one of these domains, or on any .gov site, is labelled
+# "government/association".
+
+authoritative_domains = [
+  # US government statistics and agencies
+  "census.gov", "bls.gov", "cms.gov", "cdc.gov", "hhs.gov", "hrsa.gov", "ahrq.gov", "nih.gov", "data.gov",
+  # Industry and professional associations
+  "ada.org", "adea.org", "aapd.org", "nadp.org", "ama-assn.org", "aha.org", "ncqa.org", "who.int",
+]

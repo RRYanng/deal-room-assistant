@@ -8,6 +8,9 @@ Rules enforced here, not left to the model:
   - the company's name is masked in everything the model reads, and a query containing it is refused
     before it reaches the search engine (the deal stays confidential, and a fictional company would
     find nothing anyway);
+  - market research searches government and industry-association sites first (config/sources.toml)
+    and the whole web only when they return nothing, or when the model repeats a query it already
+    searched there; competitor research searches the whole web;
   - every page a search returns is stored in web_sources; evidence must cite one of this run's pages
     and quote it verbatim, or it is dropped;
   - numbers are compared by the program (compare_external).
@@ -15,11 +18,15 @@ Rules enforced here, not left to the model:
 
 import re
 import sqlite3
+import tomllib
+from functools import lru_cache, partial
+from pathlib import Path
 from urllib.parse import urlparse
 
 from app.agent import run_agent
 from app.citations import normalize_ws, quote_in_text
 from app.claims import COMPANY_OWN_KEYS, OVERSTATED_RATIO, TOLERANCE, evidence_item, valid_index
+from app.config import PROJECT_ROOT
 from app.llm import LLMClient, ToolSpec
 from app.logs import log_event
 from app.numbers import parse_range, ranges_agree
@@ -46,7 +53,7 @@ COMPETITION_ASSERTION = re.compile(
     r"\b(no (other|one|company|companies|competitors?|direct)|nobody|none|only|first|unique(ly)?|unlike|"
     r"fast(er|est)|cheap(er|est)|best|better than|lead(ing|er)|#1|number one|competitors?|competition|rivals?)\b",
     re.IGNORECASE)
-ASSOCIATION_DOMAINS = {"ada.org", "adea.org", "aapd.org", "nadp.org", "ama-assn.org", "aha.org", "ncqa.org", "who.int"}
+SOURCES_PATH = PROJECT_ROOT / "config" / "sources.toml"
 NEWS_DOMAINS = {"reuters.com", "apnews.com", "bloomberg.com", "wsj.com", "nytimes.com", "cnbc.com", "forbes.com",
                 "fortune.com", "axios.com", "statnews.com", "fiercehealthcare.com", "healthcaredive.com",
                 "modernhealthcare.com", "beckersdental.com", "beckershospitalreview.com", "drbicuspid.com",
@@ -59,10 +66,28 @@ SEARCH_TOOL = ToolSpec(
     "company's name in a query.",
     {"type": "object", "properties": {"query": {"type": "string", "description": "What to look for."}},
      "required": ["query"]})
+MARKET_SEARCH_TOOL = ToolSpec(
+    "search_web",
+    "Search the public web. Searches government and industry-association sites first, and the whole web if "
+    "they return nothing. Returns pages with source_id, url, title, content and searched (which of the two "
+    "it was). Never include the company's name in a query.",
+    {"type": "object", "properties": {
+        "query": {"type": "string", "description": "What to look for."},
+        "whole_web": {"type": "boolean", "description": "Repeat a query you already searched, on the whole web, "
+                      "when the government and association pages did not have the figure."}},
+     "required": ["query"]})
+AUTHORITATIVE, WHOLE_WEB = "government and industry-association sites", "whole web"
 
 
 class QueryRejected(ValueError):
     """A query names the company under review."""
+
+
+@lru_cache
+def authoritative_domains(path: Path = SOURCES_PATH) -> tuple[str, ...]:
+    with open(path, "rb") as f:
+        domains = tomllib.load(f)["authoritative_domains"]
+    return tuple(dict.fromkeys(d.strip().lower() for d in domains if d.strip()))
 
 
 # --- the company's name ----------------------------------------------------------------------
@@ -97,7 +122,12 @@ def mask_company(text: str, company_name: str) -> str:
 # --- the search tool ----------------------------------------------------------------------
 
 class WebTool:
-    """search_web for one claim run: guards queries, stores every page, keeps a shared budget."""
+    """search_web for one claim run: guards queries, stores every page, keeps a shared budget.
+
+    Called with `first=` domains (market research), a query searches those domains first and the whole
+    web only if they return nothing; `whole_web` widens a query already searched on them. One model query
+    is one unit of the budget, even when it takes two searches.
+    """
 
     def __init__(self, conn: sqlite3.Connection, run_id: int, company_id: int, company_name: str,
                  web: WebSearchProvider):
@@ -105,8 +135,10 @@ class WebTool:
         self.searches = 0
         self.rejected: list[str] = []
         self.errors: list[str] = []
+        self.searched_first: set[str] = set()  # queries already searched on the `first` domains
+        self.scopes: list[str] = []            # where each search went, for the run log
 
-    def __call__(self, name: str, args: dict) -> list[dict]:
+    def __call__(self, name: str, args: dict, first: tuple[str, ...] = ()) -> list[dict]:
         if name != "search_web":
             raise ValueError(f"unknown tool {name!r}")
         raw = str(args.get("query", ""))
@@ -118,8 +150,16 @@ class WebTool:
         if self.searches >= MAX_SEARCHES:
             raise ValueError("Search budget for this run is used up. Answer with what you have found.")
         self.searches += 1
+        widen = args.get("whole_web") is True and query.lower() in self.searched_first
+        pages, searched = [], WHOLE_WEB
         try:
-            pages = self.web.search(query, RESULTS_PER_SEARCH)
+            if first and not widen:
+                pages, searched = self.web.search(query, RESULTS_PER_SEARCH, include_domains=list(first)), AUTHORITATIVE
+                self.searched_first.add(query.lower())
+                self.scopes.append(AUTHORITATIVE)
+            if not pages:
+                pages, searched = self.web.search(query, RESULTS_PER_SEARCH), WHOLE_WEB
+                self.scopes.append(WHOLE_WEB)
         except WebSearchError as e:
             self.errors.append(str(e))
             raise
@@ -129,7 +169,7 @@ class WebTool:
                 source_id = self.conn.execute(
                     "INSERT INTO web_sources(company_id, run_id, query, url, title, content) VALUES (?, ?, ?, ?, ?, ?)",
                     (self.company_id, self.run_id, query, p.url, p.title, p.content)).lastrowid
-                out.append({"source_id": source_id, "url": p.url, "title": p.title,
+                out.append({"source_id": source_id, "url": p.url, "title": p.title, "searched": searched,
                             "content": mask_company(p.content[:CONTENT_SHOWN_CHARS], self.company_name)})
         return out
 
@@ -181,7 +221,8 @@ def market_research(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row, cl
         for i in indexes)
     log_id = f"claims-run{run_id}-market"
     run = run_agent(conn, deck["company_id"], prompt, llm, system=skill_prompt("market-research", "Research"),
-                    max_steps=RESEARCH_STEPS, run_id=log_id, tools=[SEARCH_TOOL], tool_runner=tool)
+                    max_steps=RESEARCH_STEPS, run_id=log_id, tools=[MARKET_SEARCH_TOOL],
+                    tool_runner=partial(tool, first=authoritative_domains()))
     found = []
     for item in (run["final"] or {}).get("evidence") or []:
         evidence, reason = _external_evidence(item, claims, indexes, tool)
@@ -313,7 +354,7 @@ def site_owner(url: str, competitors: list[dict]) -> str | None:
 def source_type(url: str, competitors: list[dict]) -> str:
     host = host_of(url)
     domains = {host, ".".join(host.split(".")[-2:])}
-    if host.endswith(".gov") or ".gov." in host or host.endswith(".mil") or domains & ASSOCIATION_DOMAINS:
+    if host.endswith(".gov") or ".gov." in host or host.endswith(".mil") or domains & set(authoritative_domains()):
         return "government/association"
     if site_owner(url, competitors):
         return "competitor site"
@@ -371,7 +412,8 @@ def research_claims(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row, cl
     if tool.errors:
         notes.append(f"Web search failed {len(tool.errors)} time(s): {tool.errors[-1]}")
     log_event(conn, f"claims-run{run_id}", 0, "research_done",
-              output={"searches": tool.searches, "rejected": tool.rejected, "errors": tool.errors,
+              output={"searches": tool.searches, "authoritative_searches": tool.scopes.count(AUTHORITATIVE),
+                      "whole_web_searches": tool.scopes.count(WHOLE_WEB), "rejected": tool.rejected, "errors": tool.errors,
                       "evidence": len(evidence), "competitors": len(competitors)})
     return evidence, notes
 

@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.numbers import parse_range
 from app.research import QueryRejected, check_query, compare_external, mask_company
 from app.web import FakeWebSearch, WebResult, WebSearchError, get_web_search
+from app.llm import FakeLLM
 from app.web.tavily import TavilyProvider
 from tests.helpers_v2 import (ADA, CMS, INDUSTRY_HOURS, COMPETITOR_QUERIES, DECK, MARKET_QUERIES, by_quote,
                               competitor_answer, fake_web, load_clearclaim, market_answer, research_llm,
@@ -155,7 +156,7 @@ def test_mask_company():
 
 def test_failed_search_is_a_note_and_internal_results_stay(db):
     class Down(FakeWebSearch):
-        def search(self, query, max_results=5):
+        def search(self, query, max_results=5, include_domains=None):
             raise WebSearchError("Tavily rate limit or monthly quota reached.")
 
     out = check(db, web=Down())
@@ -346,3 +347,77 @@ def test_a_competitor_known_only_from_another_competitors_site_is_dropped(db):
     assert [c["name"] for c in out["competitors"]] == ["Molarflow"]
     dropped = db.execute("SELECT output_json FROM agent_logs WHERE kind = 'competitor_dropped'").fetchall()
     assert any("site of another competitor (Molarflow)" in r["output_json"] for r in dropped)
+
+
+# --- authoritative sources first (market research only) -------------------------------------
+
+BLOG = WebResult("https://dentalstats.example.com/blog", "Dental Industry Statistics",
+                 "There are about 135,000 dental practices in the US, according to industry counts.")
+
+
+def test_market_research_searches_authoritative_sources_first(db):
+    """Both market queries find pages on government and association sites, so the whole web is not searched."""
+    from app.research import authoritative_domains
+    web = fake_web()
+    check(db, web=web)
+    domains = list(authoritative_domains())
+    assert [(q, d) for q, d in web.calls if q in MARKET_QUERIES] == [(q, domains) for q in MARKET_QUERIES]
+
+
+def test_market_research_searches_the_whole_web_when_authoritative_sources_return_nothing(db):
+    from app.research import authoritative_domains
+    rules = [{"claim": "400,000 independent dental practices", "url": BLOG.url, "relation": "upper_bound",
+              "quote": BLOG.content, "value_raw": "135,000"}]
+    web = FakeWebSearch(lambda q: [BLOG])
+    out = check(db, research_llm(market=research_loop(MARKET_QUERIES[:1], market_answer(rules))), web)
+    assert [(q, d) for q, d in web.calls if q in MARKET_QUERIES] == \
+        [(MARKET_QUERIES[0], list(authoritative_domains())), (MARKET_QUERIES[0], None)]
+    claim = by_quote(out["claims"], "400,000 independent dental practices")
+    [e] = [e for e in claim["evidence"] if e["source"] == "external"]
+    assert claim["status"] == "contradicted" and e["url"] == BLOG.url and e["source_type"] == "other"
+
+
+def test_competitor_research_is_not_limited_to_authoritative_sources(db):
+    web = fake_web()
+    check(db, web=web)
+    assert [d for q, d in web.calls if q in COMPETITOR_QUERIES] == [None, None]
+
+
+def test_whole_web_is_searched_only_after_authoritative_sources_for_the_same_query(db):
+    """A first whole_web request still goes to authoritative sources; repeating the query widens it."""
+    from app.research import authoritative_domains
+    query = MARKET_QUERIES[0]
+    turns = iter([FakeLLM.tool_call("search_web", {"query": query, "whole_web": True}),
+                  FakeLLM.tool_call("search_web", {"query": query, "whole_web": True})])
+
+    def market(call):
+        return next(turns, None) or FakeLLM.text(json.dumps({"evidence": [], "open_items": []}))
+
+    web = FakeWebSearch(lambda q: [ADA, BLOG])
+    check(db, research_llm(market=market), web)
+    assert [d for q, d in web.calls if q == query] == [list(authoritative_domains()), None]
+
+
+def test_authoritative_domains_come_from_the_config_file():
+    from app.research import SOURCES_PATH, authoritative_domains
+    assert SOURCES_PATH.name == "sources.toml" and SOURCES_PATH.parent.name == "config"
+    assert {"ada.org", "cms.gov", "census.gov", "bls.gov"} <= set(authoritative_domains())
+
+
+def test_fake_search_keeps_only_pages_on_the_listed_domains():
+    web = FakeWebSearch(lambda q: [ADA, BLOG])
+    assert web.search("q", include_domains=["ada.org"]) == [ADA]
+    assert web.search("q") == [ADA, BLOG]
+
+
+def test_tavily_sends_include_domains_only_when_given():
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"results": []})
+
+    provider = tavily(handler)
+    provider.search("dentists", include_domains=["ada.org", "bls.gov"])
+    provider.search("dentists")
+    assert bodies[0]["include_domains"] == ["ada.org", "bls.gov"] and "include_domains" not in bodies[1]

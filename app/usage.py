@@ -52,9 +52,9 @@ class CountingWeb(WebSearchProvider):
         self.searches = 0
         self._credits_before = getattr(inner, "credits_used", None)
 
-    def search(self, query: str, max_results: int = 5) -> list[WebResult]:
+    def search(self, query: str, max_results: int = 5, include_domains: list[str] | None = None) -> list[WebResult]:
         self.searches += 1
-        return self.inner.search(query, max_results)
+        return self.inner.search(query, max_results, include_domains)
 
     @property
     def credits(self) -> float | None:

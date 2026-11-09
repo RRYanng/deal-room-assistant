@@ -19,5 +19,5 @@ class WebSearchProvider(ABC):
     name: str
 
     @abstractmethod
-    def search(self, query: str, max_results: int = 5) -> list[WebResult]:
-        """Pages for `query`, best first. Raises WebSearchError on failure."""
+    def search(self, query: str, max_results: int = 5, include_domains: list[str] | None = None) -> list[WebResult]:
+        """Pages for `query`, best first, only from `include_domains` when given. Raises WebSearchError."""
