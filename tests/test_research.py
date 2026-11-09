@@ -77,6 +77,11 @@ def test_a_matching_public_figure_externally_supports_a_claim(db):
     ("21%", "19.3%", "same_quantity", "supports"),
     ("25%", "19.3%", "same_quantity", "contradicts"),
     ("10%", "19.3%", "same_quantity", "contradicts"),   # understated is not overstated
+    # "over 200,000" has no upper end: it can never show that a claim is too high (demo build, 2026-11-09).
+    ("400,000", "over 200,000", "upper_bound", None),
+    ("400,000", "more than 200,000", "same_quantity", None),
+    ("150,000", "over 200,000", "upper_bound", None),
+    ("150,000", "over 200,000", "same_quantity", "contradicts"),  # below the stated minimum
 ])
 def test_compare_external(claim, public, relation, stance):
     assert compare_external(parse_range(claim), parse_range(public), relation) == stance

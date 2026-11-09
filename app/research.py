@@ -196,7 +196,11 @@ def _site(source: sqlite3.Row) -> str:
 def compare_external(claim_range: tuple[float, float], public: tuple[float, float], relation: str) -> str | None:
     """Stance of a public figure toward a claimed one, decided by rule. None means no conclusion."""
     claim_low = claim_range[0] if claim_range[0] != float("-inf") else claim_range[1]
-    public_high = public[1] if public[1] != float("inf") else public[0]
+    if public[1] == float("inf"):
+        # "Over 200,000" has no upper end, so it can never show that a claim is too high (or cap anything);
+        # it only contradicts a claim of the same quantity below its stated minimum.
+        return "contradicts" if relation == "same_quantity" and claim_range[1] < public[0] else None
+    public_high = public[1]
     if relation == "upper_bound":
         # A ceiling cannot be exceeded at all: above it is contradicted, by any margin. Under it says
         # nothing for or against the claim. The 1.5x rule is only for figures of the same quantity.
