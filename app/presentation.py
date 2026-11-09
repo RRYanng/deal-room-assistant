@@ -67,9 +67,9 @@ def evidence_headline(e: dict, claim: dict) -> str:
     deck = claim.get("value_raw")
     if e.get("scope") == "industry":
         return "Company cites an industry survey (not independently verified)"
-    if e.get("scope") == "founder":
-        counted = any(x.get("scope", "company") == "company" and x["stance"] == "supports" for x in claim["evidence"])
-        return "Founder's own statement (not counted)" if counted else "Only supported by the founder's own statement"
+    if e.get("scope") == "founder":  # the claim is Unverified only if nothing else counted
+        return ("Only supported by the founder's own statement" if claim.get("status") == "unverified"
+                else "Founder's own statement (not counted)")
     if e["source"] == "calculation":
         return e["note"].replace(" (calculated)", "").split(": the ")[0].rstrip(".")
     if e["source"] == "external":

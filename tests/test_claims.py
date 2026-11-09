@@ -158,6 +158,15 @@ def test_e15_founder_statement_is_found_from_the_sentence_not_only_the_quote(res
     assert notes["headline"] == "Founder's own statement (not counted)"
 
 
+def test_founder_statement_on_a_contradicted_claim_is_not_called_the_only_support(results):
+    """Found in the browser walkthrough: "Gross margin is 67-82%" is Contradicted (the deck also says above
+    90%), and the founder's "around 70%" was headed "Only supported by the founder's own statement"."""
+    claim = by_quote(results["claims"], "Gross margin is 67-82%")
+    assert claim["status"] == "contradicted"
+    said = next(e for e in claim["evidence"] if e["scope"] == "founder")
+    assert said["headline"] == "Founder's own statement (not counted)"
+
+
 def test_e6_crm_record_still_makes_paying_practices_consistent(results):
     claim = by_quote(results["claims"], "85 dental practices pay")
     assert claim["status"] == "consistent_with_company_data"
