@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS evidence (
     quote         TEXT,                      -- verbatim from the chunk or the web source
     value_raw     TEXT,
     note          TEXT NOT NULL,             -- written by the program
-    scope         TEXT NOT NULL DEFAULT 'company'  -- 'industry': industry data the company cites; never counted
+    scope         TEXT NOT NULL DEFAULT 'company'  -- 'industry': industry data the company cites; 'founder': what the founder said in a meeting; neither is counted
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_claim ON evidence(claim_id);
 

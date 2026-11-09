@@ -1334,9 +1334,11 @@ function evidenceItemHtml(e) {
   const where = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>`
     : e.filename ? esc(`${e.filename} · ${locationOf(e)}`) : "";
   const kind = e.scope === "industry" ? "Company materials · cites industry data (not counted)"
+    : e.scope === "founder" ? "Company materials · founder's own statement (not counted)"
     : `${EVIDENCE_SOURCE[e.source] || e.source}${e.source_type ? ` (${e.source_type})` : ""} · `
       + (EVIDENCE_STANCE[e.stance] || e.stance);
-  return `<div class="ev ev-${esc(e.scope === "industry" ? "context" : e.stance)}">
+  const counted = !e.scope || e.scope === "company";
+  return `<div class="ev ev-${esc(counted ? e.stance : "context")}">
     <div class="ev-kind">${esc(kind)}</div>
     <div class="ev-head">${esc(e.headline)}</div>
     <div class="small muted">${esc(e.note)}</div>

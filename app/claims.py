@@ -8,7 +8,8 @@ One run checks one deck (instructions: skills/claim-check/SKILL.md):
      size arithmetic, operating cost per employee below a floor
   3. internal evidence: hybrid search finds passages in the company's other materials dated near the
      deck; the model says which passages support or contradict a claim; the program checks each
-     quote and, for a claim with a number, compares the numbers itself
+     quote and, for a claim with a number, compares the numbers itself. Support that is only what a
+     founder or manager said in a meeting is shown but not counted (is_spoken)
   4. web research adds external evidence (app.research), when a web search provider is configured
   5. derive_status() sets each claim's status from its evidence
 The model never writes a status. Statuses describe evidence, not truth.
@@ -18,6 +19,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -74,6 +76,11 @@ OVERSTATED_RATIO = 1.5    # a claim at least 1.5x its benchmark is possibly over
 CONTEXT_WINDOW_DAYS = 60  # other materials count as evidence only if dated this close to the deck
 CANDIDATES_PER_CLAIM = 6
 INDUSTRY_CITED_NOTE = "Company cites an industry survey (not independently verified):"
+FOUNDER_STATEMENT_NOTE = "What the founder or management said in a meeting, not a company record:"
+# A sentence in meeting notes that reports what someone said ("Maya said ...", "According to the CEO, ...").
+SPOKEN = re.compile(r"\b(said|says|told|tells|mentioned|claimed|claims|stated|states|estimated|estimates"
+                    r"|according to)\b", re.IGNORECASE)
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 
 # Floor for operating cost per full-time employee: the yearly employer cost of one worker in the
 # lowest-cost occupation group. BLS Employer Costs for Employee Compensation, December 2025 (released
@@ -369,28 +376,45 @@ def _validate_internal(conn, company_id, item, claims, candidates) -> tuple[dict
         stance = item.get("stance")
         if stance not in ("supports", "contradicts"):
             return None, "unknown stance"
-        return evidence_item(i, "internal", stance, chunk_id=row["id"], quote=quote,
-                         note=f"{'Consistent with' if stance == 'supports' else 'Contradicted by'} {where}."), ""
-    # A claim with a number: the program compares the numbers and decides the stance itself.
-    value_raw = normalize_ws(str(item.get("value_raw") or ""))
-    if not value_raw or value_raw.lower() not in quote.lower():
-        return None, "a claim with a number needs a number in the quote"
-    value_range = parse_range(value_raw)
-    if value_range is None:
-        return None, "value_raw is not a number"
-    if ranges_agree(claim["range"], value_range, TOLERANCE):
-        return evidence_item(i, "internal", "supports", chunk_id=row["id"], quote=quote, value_raw=value_raw,
-                         note=f"Same figure in {where}: {value_raw}."), ""
-    return evidence_item(i, "internal", "contradicts", chunk_id=row["id"], quote=quote, value_raw=value_raw,
-                     note=f"Different figure in {where}: {value_raw}."), ""
+        evidence = evidence_item(i, "internal", stance, chunk_id=row["id"], quote=quote,
+                                 note=f"{'Consistent with' if stance == 'supports' else 'Contradicted by'} {where}.")
+    else:  # a claim with a number: the program compares the numbers and decides the stance itself
+        value_raw = normalize_ws(str(item.get("value_raw") or ""))
+        if not value_raw or value_raw.lower() not in quote.lower():
+            return None, "a claim with a number needs a number in the quote"
+        value_range = parse_range(value_raw)
+        if value_range is None:
+            return None, "value_raw is not a number"
+        if ranges_agree(claim["range"], value_range, TOLERANCE):
+            evidence = evidence_item(i, "internal", "supports", chunk_id=row["id"], quote=quote, value_raw=value_raw,
+                                     note=f"Same figure in {where}: {value_raw}.")
+        else:
+            evidence = evidence_item(i, "internal", "contradicts", chunk_id=row["id"], quote=quote,
+                                     value_raw=value_raw, note=f"Different figure in {where}: {value_raw}.")
+    # The founder saying it in a meeting does not support it; a CRM row, financials or a contract can.
+    # A founder statement that disagrees with the deck is still an inconsistency and stays counted.
+    if evidence["stance"] == "supports" and row["doc_type"] == "notes" and is_spoken(quote, row["text"]):
+        evidence |= {"scope": "founder", "note": f"{FOUNDER_STATEMENT_NOTE} {where}."}
+    return evidence, ""
+
+
+def is_spoken(quote: str, text: str) -> bool:
+    """True if the sentence of `text` that holds `quote` reports what someone said."""
+    flat, q = normalize_ws(text), normalize_ws(quote)
+    at = flat.lower().find(q.lower())
+    if at < 0:
+        return False
+    starts = [m.end() for m in SENTENCE_END.finditer(flat, 0, at)]
+    end = SENTENCE_END.search(flat, at + len(q))
+    return bool(SPOKEN.search(flat[starts[-1] if starts else 0:end.end() if end else len(flat)]))
 
 
 # --- 5. status ----------------------------------------------------------------------------
 
 def derive_status(evidence: list[dict]) -> str:
     """The claim's evidence status, decided by these rules only (highest first). Industry data the
-    company cites (scope "industry") is shown but never counted, so it cannot make a claim
-    "Consistent with company data"."""
+    company cites (scope "industry") and what the founder said in a meeting (scope "founder") are shown
+    but never counted, so neither can make a claim "Consistent with company data"."""
     stances = {(e["source"], e["stance"]) for e in evidence if e.get("scope", "company") == "company"}
     if any(stance == "contradicts" for _, stance in stances):
         return "contradicted"

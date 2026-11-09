@@ -19,6 +19,10 @@ What the program does with the answers:
   is "Unverified".
 - Industry-level data (scope "industry", and every web source) is not counted for or against a claim
   about the company's own results, such as traction, product outcomes, margins, team or costs.
+- Support from meeting notes that only reports what the founder or management said ("Maya said ...")
+  is shown but not counted: the claim stays Unverified, marked "Only supported by the founder's own
+  statement". Company records (CRM, financial data, contracts) count. The program decides this from
+  the sentence around the quote; a founder statement that contradicts the deck still counts.
 - The model never writes a status, a verdict, or whether a claim is true.
 
 ## Extract claims

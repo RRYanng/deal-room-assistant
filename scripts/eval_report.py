@@ -22,7 +22,7 @@ CASES = {
     "E3": "Operating cost per employee below the BLS-based floor is Possibly overstated",
     "E4": "A projection that assumes away a risk the deck states is Possibly overstated",
     "E5": "A product claim with no company evidence (15 hours saved per week) stays Unverified, even next to an industry figure",
-    "E6": "A claim backed by notes and CRM is Consistent with company data",
+    "E6": "85 paying practices, backed by the CRM, is Consistent with company data",
     "E7": "400,000 practices vs public data (205,088 dentists, a ceiling) is Contradicted, with a real link",
     "E8": "$400B US dental spending vs CMS ($189.2B) is Possibly overstated, with a real link",
     "E9": "Competitor research lists competitors with links and contradicts 'no other company'",
@@ -31,6 +31,7 @@ CASES = {
     "E12": "Memory never crosses companies (ClearClaim, Tidewell, Kitebridge)",
     "E13": "Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; reason required",
     "E14": "Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1",
+    "E15": "A claim only the founder's own statement backs (meeting notes) stays Unverified",
     "FP": "The same file checked twice gives identical fingerprints",
 }
 FINGERPRINT_TEST = "test_same_file_checked_twice_gives_identical_fingerprints"

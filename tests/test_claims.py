@@ -5,12 +5,12 @@ import math
 import pytest
 
 from app.claims import (COST_PER_EMPLOYEE_FLOOR_USD, context_documents, create_run, derive_status, fingerprint,
-                        latest_deck, latest_results, run_claim_check)
+                        is_spoken, latest_deck, latest_results, run_claim_check)
 from app.llm import FakeLLM, LLMError
 from app.numbers import parse_range, ranges_agree
 from tests.helpers import load_samples
-from tests.helpers_v2 import (CLAIM_RULES, DECK, by_quote, claim_extractor, claim_llm, evidence_reviewer,
-                              load_clearclaim)
+from tests.helpers_v2 import (CLAIM_RULES, DECK, EVIDENCE_RULES, SEP_DECK_RULES, by_quote, claim_extractor, claim_llm,
+                              evidence_reviewer, load_clearclaim)
 
 
 def check(db, company_id, document_id, llm=None, web=None):
@@ -119,10 +119,70 @@ def test_industry_data_the_company_cites_is_not_company_data(results):
     assert e["note"].startswith("Company cites an industry survey (not independently verified)")
 
 
-def test_e6_claim_backed_by_notes_and_crm_is_consistent_with_company_data(results):
+def test_e6_paying_practices_show_both_the_notes_and_the_crm(results):
     claim = by_quote(results["claims"], "85 dental practices pay")
     assert claim["status"] == "consistent_with_company_data"
     assert {e["filename"] for e in claim["evidence"]} == {"clearclaim_meeting_notes.md", "clearclaim_crm.csv"}
+
+
+# --- what the founder says is not evidence -------------------------------------------------------
+
+OUTCOME = "Practices get paid faster and spend less staff time on insurance"
+OUTCOME_CLAIM = {"key": "product.outcome", "value_raw": None,
+                 "quote": "Practices get paid faster and spend less staff time on insurance; patients get clearer "
+                          "cost estimates before treatment."}
+SAID_SAVES_TIME = {"claim": OUTCOME, "value_raw": None, "stance": "supports",
+                   "quote": "Maya said practices tell them the product saves a lot of front-desk time."}
+
+
+def test_e15_claim_only_the_founder_backs_is_unverified(db, clearclaim):
+    """The live run marked the outcome claim "Consistent with company data" because the meeting notes say
+    "Maya said practices tell them the product saves a lot of front-desk time". What the founder says in a
+    meeting is not evidence: the item is shown, not counted, and the claim stays Unverified."""
+    company_id, docs = clearclaim
+    llm = claim_llm(extractor=claim_extractor(CLAIM_RULES + SEP_DECK_RULES + [OUTCOME_CLAIM]),
+                    reviewer=evidence_reviewer(EVIDENCE_RULES + [SAID_SAVES_TIME]))
+    claim = by_quote(check(db, company_id, docs[DECK], llm)["claims"], OUTCOME)
+    assert claim["status"] == "unverified"
+    [e] = claim["evidence"]
+    assert e["scope"] == "founder" and e["stance"] == "supports"
+    assert e["headline"] == "Only supported by the founder's own statement"
+
+
+def test_e15_founder_statement_is_found_from_the_sentence_not_only_the_quote(results):
+    """The quote can leave out "Maya said"; the program reads the whole sentence around it."""
+    claim = by_quote(results["claims"], "85 dental practices pay")
+    notes = next(e for e in claim["evidence"] if e["filename"] == "clearclaim_meeting_notes.md")
+    assert notes["quote"] == "85 dental practices were paying for ClearClaim"
+    assert notes["scope"] == "founder"
+    assert notes["headline"] == "Founder's own statement (not counted)"
+
+
+def test_e6_crm_record_still_makes_paying_practices_consistent(results):
+    claim = by_quote(results["claims"], "85 dental practices pay")
+    assert claim["status"] == "consistent_with_company_data"
+    crm = next(e for e in claim["evidence"] if e["filename"] == "clearclaim_crm.csv")
+    assert crm["scope"] == "company" and crm["stance"] == "supports"
+
+
+def test_a_founder_statement_that_contradicts_the_deck_still_counts(results):
+    """The rule is about support. The founder saying around 70% while the deck says above 90% is a real
+    inconsistency and stays counted."""
+    claim = by_quote(results["claims"], "Current gross margin: above 90%")
+    said = next(e for e in claim["evidence"] if e["filename"] == "clearclaim_meeting_notes.md")
+    assert said["stance"] == "contradicts" and said["scope"] == "company"
+    assert claim["status"] == "contradicted"
+
+
+@pytest.mark.parametrize("quote, text, spoken", [
+    ("85 dental practices were paying", "Maya said that as of November 30, 2025, 85 dental practices were paying.", True),
+    ("saves time", "Customers told us it saves time.", True),
+    ("revenue was $1.2M", "According to the CEO, revenue was $1.2M in 2025.", True),
+    ("85 paying practices", "Reviewed traction: 85 paying practices as of November 30, 2025.", False),
+    ("cash is $2.1M", "We checked the bank statement. Cash is $2.1M. Maya said burn is flat.", False),
+])
+def test_founder_statement_detection(quote, text, spoken):
+    assert is_spoken(quote, text) is spoken
 
 
 def test_without_web_research_external_claims_stay_unverified_and_the_run_says_why(results):
