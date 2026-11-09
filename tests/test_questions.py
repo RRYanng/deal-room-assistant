@@ -39,6 +39,15 @@ def test_no_question_contains_a_number_its_quotes_do_not(checked):
         assert q["sources"], q["text"]
 
 
+def test_both_sides_of_a_contradiction_in_the_deck_ask_one_question(checked):
+    """Found in the browser walkthrough: the memo asked the gross margin question twice, once as
+    "67-82% (p.5) and above 90% (p.9)" and once with the figures the other way round."""
+    claims, _ = checked
+    low = by_quote(claims["claims"], "Gross margin is 67-82%")["question"]["text"]
+    high = by_quote(claims["claims"], "Current gross margin: above 90%")["question"]["text"]
+    assert low == high
+
+
 def test_questions_read_as_questions_and_quote_the_figures(checked):
     claims, monitor = checked
     margin = by_quote(claims["claims"], "Gross margin is 67-82%")["question"]["text"]

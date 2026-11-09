@@ -34,6 +34,11 @@ def _page(item: dict) -> str:
     return (item.get("loc_label") or "").replace(item.get("filename") or "", "").strip() or item.get("filename", "")
 
 
+def _position(where: str) -> tuple[int, ...]:
+    """(page, paragraph) from a location such as "p.5 ¶2"."""
+    return tuple(int(n) for n in re.findall(r"\d+", where))
+
+
 # --- claims -----------------------------------------------------------------------------------
 
 def claim_question(claim: dict, claims: list[dict]) -> dict | None:
@@ -60,7 +65,9 @@ def claim_question(claim: dict, claims: list[dict]) -> dict | None:
                         f"How do the projections change if that risk happens?", [e["quote"], claim["quote"]])
     if e["source"] == "internal" and e.get("value_raw"):
         if e.get("filename") == claim.get("filename"):
-            return verified_question(f"{claim['label']} is stated as {deck} ({where}) and {e['value_raw']} ({_page(e)}). "
+            # In page order, so both claims of the pair ask the same question.
+            (a, at), (b, bt) = sorted([(deck, where), (e["value_raw"], _page(e))], key=lambda v: _position(v[1]))
+            return verified_question(f"{claim['label']} is stated as {a} ({at}) and {b} ({bt}). "
                             f"Which figure is current, and how is each defined?", [claim["quote"], e["quote"]])
         doc = "the CRM" if (e.get("filename") or "").endswith(".csv") else "the meeting notes"
         return verified_question(f"The deck says {deck} ({where}), but {doc} say {e['value_raw']} ({e.get('filename')}). "
