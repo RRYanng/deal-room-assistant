@@ -56,11 +56,13 @@ all-worker average.)
 
 ## 3. Web research
 
-- `app/web/`: a `WebSearchProvider` interface (`search(query) -> [url, title, content]`) with
+- `app/web/`: a `WebSearchProvider` interface (`search(query, include_domains=None) -> [url, title, content]`) with
   `TavilyProvider` and `FakeWebSearch`. `WEB_SEARCH_PROVIDER` in `.env` selects one; offline tests
   use the fake. Another provider (e.g. Exa) is one more class.
 - Queries are about the industry and the claim itself ("number of dental practices US"), never the
   company: code rejects a query containing the company name. This also keeps the deal confidential.
+- Market queries search government and industry-association sites first (`config/sources.toml`) and
+  the whole web only when those return nothing (section 20, added 2026-11-09).
 - Every result's text is stored in `web_sources`. A URL from the model must be one this run's
   search returned, and its quote must be verbatim in the stored text; otherwise the evidence is
   dropped. This is the v1 citation rule applied to web pages.
@@ -311,24 +313,62 @@ What would make each possible: account-level revenue in the CRM (large customer)
 competitor events with dates (competitors), and a reviewed source list per industry with a person
 judging relevance (regulatory). The next round stays a conversation, using the runway signal.
 
-## 19. Known limitations and open points (2026-11-08)
+## 19. Known limitations and open points (updated 2026-11-09)
 
-- **Search results vary between runs.** In the demo database build, the search did not return the ADA
-  page; E7 is Contradicted from three secondary pages (a vendor blog quoting 135,333 practice
-  establishments, a mailing-list site quoting 135,665, a dentist's blog quoting 202,485 dentists). The
-  status held; the source quality did not. The first question to the founder names the vendor page's
-  title ("Dental Industry Statistics reports 135,333...") rather than a publisher.
-- **The page and the memo count differently.** The page counts all 22 claims (20 awaiting review); the
-  memo leaves out claims keyed "other" (18 checked, 19 awaiting review including the 4 changes). Both
-  are correct by their own rule, but the numbers differ side by side.
-- **"Risks the deck states" is in the Regulatory category**, so a business risk ("payers may change claim
-  submission rules") shows as a Regulatory unverified item. It is plausible for this deck, not in general.
-- **One sentence can give two claims** ("0% customer churn and 98% first-pass claim acceptance"); the memo
-  shows them as two identical lines.
+- **The 11/9 demo database holds an E7 result the fixed rule would not give.** The model quoted the ADA's
+  "There are over 200,000 dentists in the U.S." as an upper bound on practices, and the program read
+  "over 200,000" as a ceiling of 200,000. Fixed in code (section 20), but the stored result and its founder
+  question ("ADA reports over 200,000, which sets an upper limit for this figure...") are from the old
+  rule. Rebuilding once more would apply the fix; what the model cites then is not predictable.
+- **The model does not always cite the best figure a search returned.** The same searches returned the
+  Census count of offices of dentists (135,665) and the ADA series ending at 202,485 dentists; neither was
+  cited. Prompts were not changed to steer it.
 - **The alignment reader lists a market-size sentence as pricing** ("At $3,600 per practice per year, our
   total addressable market is $12B"). It does state a price, so it is kept.
-- **The page says where the checklist lives** ("kept in config/regulatory.toml"), which is for
-  developers, not investors.
+- **The summary's top three does not show what was confirmed** (a confirmed item reads the same).
 - **The desktop app's preview launcher could not read the new demo files** ("Operation not permitted"),
   so the walkthrough server was started from a shell with `scripts/demo_v2.sh`. Started from Terminal,
   the script works.
+
+Fixed on 2026-11-09 (section 20): page and memo counts, the stated risk's category, labels of two claims
+from one sentence, the config path on the page, and Confirm/Dismiss on reviewed items.
+
+## 20. Authoritative sources first, walkthrough fixes, and the rebuild (2026-11-09)
+
+Bug fixes only (feature freeze since 11/8). Each change has a test that failed on the old code, except
+the Change button, which is page script only and was checked by clicking in the browser.
+
+- **Authoritative sources first** (fixes the source quality of the demo's main example). Market research
+  searches the domains in `config/sources.toml` first, with Tavily `include_domains` (government
+  statistics: Census, BLS, CMS, CDC, HHS, HRSA, AHRQ, NIH, data.gov; associations: ADA, ADEA, AAPD, NADP,
+  AMA, AHA, NCQA, WHO). If they return nothing, the same query searches the whole web. The model may repeat
+  a query with `whole_web: true` to widen it, but only after that query was searched on the listed sites;
+  a first `whole_web` request still goes to them. One model query is one unit of the 12-search budget,
+  even when it takes two searches. Competitor research is unchanged. The same list labels pages
+  "government/association". Each result tells the model which was searched.
+- **Open-ended figures are not ceilings.** "Over 200,000" has no upper end, so it gives no conclusion
+  as an upper bound, and supports no "too high" finding for the same quantity; a same-quantity claim
+  below its stated minimum is still contradicted. Found in the rebuild below.
+- **Page and memo counts.** One server function (`reviews.review_counts`) gives both the same numbers:
+  claims other than "other" (bios, counted apart), and awaiting review = flagged claims (contradicted,
+  possibly overstated, unverified) plus changes since the last deck, which is what the memo lists under
+  that heading. Both show "18 claims checked (plus 4 other: bios, descriptions) · 21 awaiting review
+  (flagged claims and changes since the last deck) · 0 confirmed · 0 dismissed".
+- **"Risk the deck states" is Financials**, not Regulatory; the regulatory checklist stays separate.
+- **Two claims of one kind from one sentence** get their figure in the label: "Projection assumption: 0%
+  customer churn" and "Projection assumption: 98% first-pass claim acceptance". The phrase is the figure
+  and the words after it in the quote, up to a conjunction, preposition or punctuation (at most four).
+- **The page no longer names the checklist's config file.**
+- **Reviewed items** show the decision and reason with a **Change** button; Change brings back Confirm,
+  Dismiss and Cancel.
+
+**Rebuild of `data/demo_v2.db` (once, as agreed).** $0.87 in all: metric extraction $0.14 (7 calls);
+claim check 10 calls, 7 search credits, $0.65, 107 s; monitoring 4 calls, $0.08, 23 s; 0 review records.
+22 claims (5 contradicted, 5 possibly overstated, 1 consistent, 11 unverified), as on 11/8.
+- Searches: 3 market queries, all answered by the listed sites (no whole-web fallback); 4 competitor
+  queries on the whole web.
+- E7: Contradicted, citing the ADA's 2025 dentist workforce PDF, "There are over 200,000 dentists in the
+  U.S.", as an upper bound. Authoritative source, wrong reading (see above).
+- E8: Possibly overstated, citing CMS ($189.2 billion in 2024) and the ADA ($189 billion in 2024).
+- E9: 8 competitors (Toothy AI, Ventus AI, DentOS, Zentist, Overjet, Needletail AI, Pearl, Stratus).
+- E1-E6, E11, E14, E15 as expected. The 9 v1 live tests passed the same day (67 s).
