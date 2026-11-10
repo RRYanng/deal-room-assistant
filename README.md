@@ -57,8 +57,9 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    with source links (Tavily, behind a replaceable interface). Market searches go to government and
    industry-association sites first (`config/sources.toml`: ADA, CMS, Census, BLS and others) and to
    the whole web only when those return nothing; competitor research searches the whole web. The
-   company's name is never sent to the search engine, and every quote must appear in a page the search
-   returned.
+   company's name is never sent to the search engine, every quote must appear in a page the search
+   returned, and only exact figures are compared: "over 200,000" or "about 135,000" gives no conclusion,
+   and the researcher is told to cite the exact figure when a page has both.
 9. **Review**: an investor confirms (reason optional) or dismisses (reason required) each flag,
    change or portfolio signal. The memo lists only confirmed items as findings. A dismissed item stays
    quiet unless its evidence changes.
@@ -113,7 +114,7 @@ Cases planted in the synthetic company ClearClaim AI (`samples/company_c/`; publ
 FakeLLM scripted to behave like a careful model, and FakeWebSearch: it tests the program's checks and
 rules, not the real model's judgment. The live column is the real Claude Opus 5.5 with Tavily.
 
-| Case | What is checked | Offline | Live (demo database, rebuilt 2026-11-09) |
+| Case | What is checked | Offline | Live (final demo database, 2026-11-09) |
 |---|---|---|---|
 | E1 | Gross margin stated two ways in one deck (67-82% vs above 90%) is Contradicted | pass | match (both claims) |
 | E2 | Market size arithmetic that does not add up ($12B vs 400,000 x $3,600) is Contradicted | pass | match |
@@ -121,18 +122,18 @@ rules, not the real model's judgment. The live column is the real Claude Opus 5.
 | E4 | A projection that assumes away a risk the deck states is Possibly overstated | pass | match |
 | E5 | A product claim with no company evidence (15 hours saved per week) stays Unverified, even next to an industry figure | pass | match |
 | E6 | 85 paying practices, backed by the CRM, is Consistent with company data | pass | match |
-| E7 | 400,000 practices vs public data (a count of dentists or practice establishments, a ceiling) is Contradicted, with a real link | pass | Contradicted, from the ADA, but for a wrong reason: see below |
-| E8 | $400B US dental spending vs CMS is Possibly overstated, with a real link | pass | match (CMS: $189.2B for 2024; ADA: $189B) |
-| E9 | Competitor research lists competitors with links and contradicts "no other company" | pass | match (8 competitors) |
+| E7 | 400,000 practices vs public data (a count of dentists or practice establishments, a ceiling) is Contradicted, with a real link | pass | match (ADA: 202,401 practicing dentists, an exact figure) |
+| E8 | $400B US dental spending vs CMS is Possibly overstated, with a real link | pass | match (ADA: $189B for 2024) |
+| E9 | Competitor research lists competitors with links and contradicts "no other company" | pass | match (9 competitors) |
 | E10 | Invented sources and altered quotes are dropped; queries naming the company are refused | pass | offline only |
 | E11 | Memory: 250,000 practices in the September deck -> 400,000 in December is flagged as changed | pass | match |
 | E12 | Memory never crosses companies (ClearClaim, Tidewell, Kitebridge) | pass | offline only |
 | E13 | Flags are not findings until confirmed; dismissed stays quiet unless evidence changes; dismissing needs a reason | pass | checked in the browser walkthrough |
 | E14 | Portfolio signals in the right quarter: Q2 runway warning; Q3 runway high, CTO departure, milestone slip; none in Q1 | pass | match (all 4 signals, every figure) |
-| E15 | A claim only the founder's own statement backs (meeting notes) stays Unverified | pass | match |
+| E15 | A claim only the founder's own statement backs (meeting notes) stays Unverified | pass | not in this build (the model did not list the claim); matched in the 11/8 and first 11/9 builds |
 | FP | The same file checked twice gives identical fingerprints | pass | 20 of 20 claims identical in two earlier live runs |
 
-Whole offline suite at the last run: 477 passed (the 274 v1.1 tests included); the 9 v1 live tests
+Whole offline suite at the last run: 491 passed (the 274 v1.1 tests included); the 9 v1 live tests
 (`pytest -m live`) also passed on 2026-11-09. The v1.1 behaviour is
 checked by that suite, not by a separate case.
 
@@ -148,11 +149,13 @@ estimates from the token counts and list prices in `app/llm/pricing.py`.
 | Claim check 4 | prompt caching in the research loops | match; 20 of 20 as in run 3 | not recorded | | about $0.65 | |
 | Claim check 6 | business model page added | match | 8 | 7 | about $0.61 | 81 s |
 | Demo database (11/8) | founder-statement rule; fresh database | match | 10 | 8 | about $0.70 | 89 s |
-| Demo database (11/9) | authoritative sources first; walkthrough fixes | E7 see below; others match | 10 | 7 | about $0.65 | 107 s |
-| Monitoring (11/9) | quarterly updates Q1-Q3 | E14 match | 4 | 0 | about $0.08 | 23 s |
+| Demo database (11/9, first) | authoritative sources first; walkthrough fixes | E7 wrong reading (see below); others match | 10 | 7 | about $0.65 | 107 s |
+| Demo database (11/9, final) | exact figures only | match | 10 | 7 | about $0.62 | 188 s |
+| Monitoring (11/9, final) | quarterly updates Q1-Q3 | E14 match | 4 | 0 | about $0.08 | 22 s |
 
 Building the whole demo database (metric extraction of the 7 files, one claim check, monitoring) cost
-about $0.93 on 11/8 and $0.87 on 11/9. The first claim check in a fresh database also reads the September deck once for memory,
+about $0.93 on 11/8, $0.87 for the first build on 11/9 and $0.85 for the final one. The final database
+is frozen and will not be rebuilt. The first claim check in a fresh database also reads the September deck once for memory,
 hence 10 calls instead of 8.
 
 What the live runs showed beyond the table:
@@ -161,11 +164,15 @@ What the live runs showed beyond the table:
   sites searched first, all three market searches found pages there (ADA, CMS, Census, CDC, AHRQ), so
   none fell back to the whole web. E8 now cites CMS and the ADA. For E7 the model quoted the ADA's
   "There are over 200,000 dentists in the U.S." as an upper bound, and the program accepted it: it read
-  "over 200,000" as a ceiling of 200,000. That is wrong, since "over" has no upper end; it is now fixed
-  (such a figure gives no conclusion), but the 11/9 demo database still holds the result of the old rule,
-  including the founder question built from it. The same searches returned better figures the model did
-  not cite: Census County Business Patterns, 135,665 offices of dentists, and the ADA's series ending at
-  202,485 dentists.
+  "over 200,000" as a ceiling of 200,000. That is wrong, since "over" has no upper end. The fix became a
+  general rule: a hedged figure ("over", "about", "more than", "nearly", "up to") never decides a status,
+  and the researcher is told to cite the exact figure when a page gives both. In the final build E7
+  cites the ADA Health Policy Institute: "This includes 191,654 dentists out of 202,401 practicing
+  dentists in the US." 202,401 is an exact figure, used as a ceiling on practices.
+- **Live runs do not always list the same claims.** The final build has 21 claims, not 22: the model did
+  not list "Practices get paid faster and spend less staff time on insurance...", so E15 has no live
+  example in it. The founder rule still shows on Paying customers: the founder's statement is shown as
+  not counted, and the CRM record makes it Consistent.
 - **The founder rule changed one live result.** "Practices get paid faster and spend less staff time on
   insurance..." was Consistent with company data in run 6, backed only by "Maya said practices tell
   them the product saves a lot of front-desk time." It is now Unverified, marked "Only supported by the

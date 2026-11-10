@@ -8,7 +8,7 @@ Steps, the same work the app does when a user uploads the files and presses the 
   3. run one claim check on the newest deck (real model, web research with the configured provider)
   4. run portfolio monitoring on the quarterly updates
 The result has no confirm/dismiss records. Calls the real model and the web search provider, so it
-costs money (about $1; the build on 2026-11-08 cost $0.93 and 8 search credits) and needs ANTHROPIC_API_KEY and TAVILY_API_KEY in .env. It never writes to
+costs money (about $1; the final build on 2026-11-09 cost $0.85 and 7 search credits) and needs ANTHROPIC_API_KEY and TAVILY_API_KEY in .env. It never writes to
 data/deal_room.db and refuses to overwrite an existing file unless --force is given.
 """
 

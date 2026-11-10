@@ -315,14 +315,12 @@ judging relevance (regulatory). The next round stays a conversation, using the r
 
 ## 19. Known limitations and open points (updated 2026-11-09)
 
-- **The 11/9 demo database holds an E7 result the fixed rule would not give.** The model quoted the ADA's
-  "There are over 200,000 dentists in the U.S." as an upper bound on practices, and the program read
-  "over 200,000" as a ceiling of 200,000. Fixed in code (section 20), but the stored result and its founder
-  question ("ADA reports over 200,000, which sets an upper limit for this figure...") are from the old
-  rule. Rebuilding once more would apply the fix; what the model cites then is not predictable.
-- **The model does not always cite the best figure a search returned.** The same searches returned the
-  Census count of offices of dentists (135,665) and the ADA series ending at 202,485 dentists; neither was
-  cited. Prompts were not changed to steer it.
+- **The model does not always cite the best figure a search returned.** In the first 11/9 build the
+  searches returned the Census count of offices of dentists (135,665) and the ADA series ending at 202,485
+  dentists, and the model quoted "over 200,000" instead. The exact-figure rule (section 21) now tells it
+  to prefer exact figures, and the program refuses hedged ones; which sentence it quotes still varies.
+- **Live runs do not always list the same claims.** The final build has 21 claims; "Practices get paid
+  faster..." (the live E15 example) was not listed.
 - **The alignment reader lists a market-size sentence as pricing** ("At $3,600 per practice per year, our
   total addressable market is $12B"). It does state a price, so it is kept.
 - **The summary's top three does not show what was confirmed** (a confirmed item reads the same).
@@ -372,3 +370,29 @@ claim check 10 calls, 7 search credits, $0.65, 107 s; monitoring 4 calls, $0.08,
 - E8: Possibly overstated, citing CMS ($189.2 billion in 2024) and the ADA ($189 billion in 2024).
 - E9: 8 competitors (Toothy AI, Ventus AI, DentOS, Zentist, Overjet, Needletail AI, Pearl, Stratus).
 - E1-E6, E11, E14, E15 as expected. The 9 v1 live tests passed the same day (67 s).
+
+## 21. Exact figures only, and the final demo database (2026-11-09)
+
+- **Rule (general, not for E7):** when a page gives both an exact figure and a hedged one ("over",
+  "about", "more than", "nearly", "up to", "200,000+"), the researcher cites the exact figure. A hedged
+  figure alone gives no conclusion. The rule is in the market-research skill (both the description of what
+  the program does and the prompt section) and at the top of the research prompt. The program enforces
+  it: `research.is_hedged` checks value_raw and the words just before the figure in the quote (so a hedge
+  the model leaves out of value_raw still counts), and such evidence is dropped. Tests cover hedged and
+  exact figures, a hedge on another number in the same sentence, the exact figure on a page that also has
+  a hedged one, and the prompt text.
+- **Final rebuild of `data/demo_v2.db`** (the last one; the database is now frozen). $0.85 in all: metric
+  extraction $0.15 (7 calls); claim check 10 calls, 7 search credits, $0.62, 188 s; monitoring 4 calls,
+  $0.08, 22 s; 0 review records. 21 claims: 5 contradicted, 5 possibly overstated, 1 consistent, 10
+  unverified. 3 market searches, all answered by the listed sites; no hedged evidence was dropped.
+  - E1 both gross margin claims Contradicted; E2 $1.44B, not $12B; E3 cost and headcount Possibly
+    overstated; E4 both projection assumptions Possibly overstated; E5 15 hours Unverified; E6 85 paying
+    practices Consistent (CRM; the founder's statement shown, not counted).
+  - E7 Contradicted: ADA Health Policy Institute, *The evolving dental practice model* (2022), "This
+    includes 191,654 dentists out of 202,401 practicing dentists in the US." Relation: upper bound.
+  - E8 Possibly overstated: ADA, "National dental expenditure was $189 billion in 2024, representing 3.6%
+    of total health expenditure."
+  - E9 Contradicted; 9 competitors (Ventus AI, Lassie, Zentist, Zuub, Needletail AI, Vyne Dental, Stratus,
+    Curve Dental Eligibility+, DentalXChange).
+  - E11 both market changes (250,000 -> 400,000; $900M -> $12B); E14 all 4 signals. E15 not listed.
+  - Page and memo: 17 claims checked (plus 4 other), 20 awaiting review, 17 founder questions.
