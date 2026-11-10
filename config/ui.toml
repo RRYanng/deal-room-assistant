@@ -1,0 +1,10 @@
+# Parts of the claim check page and the memo that are shown. Read by app/presentation.py and served to the
+# page by GET /api/ui. A hidden part is still computed and stored, and the API still returns it unless the
+# page asks to leave it out (?hide=...); no code or data is removed. true shows a part, false hides it.
+#
+# changes_since_last_deck: memory, figures that differ from the company's previous deck
+# regulatory_checklist: the per-industry checklist in config/regulatory.toml, and its Regulatory count
+
+[show]
+changes_since_last_deck = false
+regulatory_checklist = false

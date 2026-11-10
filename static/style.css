@@ -279,6 +279,11 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ev-overstates { border-left-color: var(--warn); }
 .ev-context { border-left-style: dashed; }
 .claims-more { margin-top: 8px; }
+.claim-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 10px 0 12px; overflow-x: auto; }
+.claim-tab { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted);
+  padding: 8px 12px; margin-bottom: -1px; font: inherit; cursor: pointer; white-space: nowrap; }
+.claim-tab:hover { color: var(--text); }
+.claim-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 /* The quarter table scrolls inside its own box on narrow windows; the page itself never scrolls sideways. */
 .table-scroll { overflow-x: auto; margin: 10px 0 6px; max-width: 100%; }
 .monitor-table { min-width: 640px; }

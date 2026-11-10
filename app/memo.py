@@ -12,7 +12,7 @@ from datetime import datetime
 
 from app.claims import latest_results
 from app.monitor import latest_results as latest_monitor_results
-from app.presentation import CATEGORIES, build_summary
+from app.presentation import CATEGORIES, build_summary, hide_parts, visible_summary
 from app.reviews import apply_reviews, review_counts
 
 STATUS_LABELS = {
@@ -25,9 +25,10 @@ STATUS_LABELS = {
 FLAGS = ("contradicted", "possibly_overstated", "unverified")
 
 
-def build_memo(conn: sqlite3.Connection, company_id: int) -> dict:
+def build_memo(conn: sqlite3.Connection, company_id: int, hidden: frozenset[str] = frozenset()) -> dict:
+    """`hidden` parts ("changes", "regulatory") are left out, with their sections and questions."""
     company = conn.execute("SELECT name FROM companies WHERE id = ?", (company_id,)).fetchone()["name"]
-    results = latest_results(conn, company_id)
+    results = hide_parts(latest_results(conn, company_id), hidden)
     order = list(STATUS_LABELS)  # flags first, as on the page
     claims = sorted(apply_reviews(conn, company_id, results["claims"]), key=lambda c: order.index(c["status"]))
     changes = apply_reviews(conn, company_id, results["changes"], "drift")
@@ -46,7 +47,7 @@ def build_memo(conn: sqlite3.Connection, company_id: int) -> dict:
         "competitors": results["competitors"],
         "alignment": results["alignment"],
         "regulatory": results["regulatory"],
-        "summary": build_summary(claims, changes, results["regulatory"]),
+        "summary": visible_summary(build_summary(claims, changes, results["regulatory"]), hidden),
         "counts": review_counts(claims, changes),  # the same counts as the claim-check page
     }
 

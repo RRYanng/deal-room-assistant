@@ -1235,13 +1235,24 @@ const EVIDENCE_SOURCE = { internal: "Company materials", external: "Web source",
 const EVIDENCE_STANCE = { supports: "supports", contradicts: "contradicts", overstates: "suggests overstated" };
 const CLAIM_POLL_MS = 1000;
 
-const claims = { companyId: null, data: null, view: "claims", showDismissed: false, showOther: false, timer: null, memo: null,
-  reviewing: null, openSources: new Set() };
+const claims = { companyId: null, data: null, view: "claims", tab: "issues", showDismissed: false, showOther: false,
+  timer: null, memo: null, reviewing: null, openSources: new Set() };
+const CLAIM_TABS = [["issues", "Issues"], ["all", "All claims"], ["alignment", "Alignment"]];
+const ISSUE_STATUSES = ["contradicted", "possibly_overstated"];
+// Parts switched off in the UI config file ("changes", "regulatory"). The server still computes them; the page
+// asks for results without them, so the counts, the summary and the memo leave them out too.
+const ui = { hidden: [], loaded: null };
+function loadUi() {
+  ui.loaded ||= api("/api/ui").then((u) => { ui.hidden = u.hidden; }).catch(() => {});
+  return ui.loaded;
+}
+const hideQuery = () => (ui.hidden.length ? `?hide=${encodeURIComponent(ui.hidden.join(","))}` : "");
+const shows = (part) => !ui.hidden.includes(part);
 // Flags first: contradicted, then possibly overstated, then the rest in the order of CLAIM_STATUS.
 const STATUS_ORDER = Object.keys(CLAIM_STATUS);
 
 async function openClaims() {
-  await loadCompanies().catch(() => {});
+  await Promise.all([loadCompanies().catch(() => {}), loadUi()]);
   const ids = state.companies.map((c) => c.id);
   if (!ids.includes(claims.companyId)) claims.companyId = state.current ? state.current.id : ids[0] ?? null;
   $("claims-company").innerHTML = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
@@ -1266,7 +1277,7 @@ async function loadClaims() {
   }
   const companyId = claims.companyId;
   try {
-    const data = await api(`/api/companies/${companyId}/claims`);
+    const data = await api(`/api/companies/${companyId}/claims${hideQuery()}`);
     if (companyId !== claims.companyId) return; // the user picked another company meanwhile
     claims.data = data;
     renderClaims();
@@ -1473,8 +1484,9 @@ function summaryHtml(s) {
     return `<li><span class="status ${cls}">${esc(name)}</span> ${text}</li>`;
   }).join("");
   return `<section class="summary-box" aria-label="Summary">
-    <div class="summary-title">Summary <span class="muted small">issues by category (contradicted, possibly overstated, or
-      changed since the last deck; dismissed items are not counted)</span></div>
+    <div class="summary-title">Summary <span class="muted small">issues by category (contradicted${shows("changes")
+      ? ", possibly overstated, or changed since the last deck" : " or possibly overstated"}; dismissed items are not
+      counted)</span></div>
     <div class="summary-cats">${cats}</div>
     ${top ? `<div class="summary-sub">Most important</div><ol class="summary-top">${top}</ol>`
       : '<div class="muted small">No issues found.</div>'}
@@ -1527,25 +1539,40 @@ function renderClaims() {
       ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>` : ""}
       ${c.source_type ? `<span class="muted small">(${esc(c.source_type)})</span>` : ""}</li>`;
   }).join("")}</ul>` : "";
-  $("claims-body").innerHTML = `${summaryHtml(d.summary)}${head}${changesHtml(d.changes || [])}
-    ${regulatoryHtml(d.regulatory)}${alignmentHtml(d.alignment)}
-    <div class="claims-summary">${byStatus.join(" ")}
-      <span class="muted small">${countsText(d.counts)}</span> ${dismissed}</div>
-    <div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true. Nothing is a
-      finding until you confirm it.</div>
-    <table class="claims-table">
+  const table = (rows) => `<table class="claims-table">
       <thead><tr><th>Evidence status</th><th>Claim</th><th>Evidence</th><th>Review</th></tr></thead>
-      <tbody>${main.map(claimRowHtml).join("")}${claims.showOther ? other.map(claimRowHtml).join("") : ""}</tbody>
-    </table>
-    <div class="claims-more">${otherToggle}</div>
-    ${competitors}`;
+      <tbody>${rows.map(claimRowHtml).join("")}</tbody>
+    </table>`;
+  const note = `<div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true.
+    Nothing is a finding until you confirm it.</div>`;
+  let body;
+  if (claims.tab === "alignment") {
+    body = alignmentHtml(d.alignment) || '<div class="muted">The deck does not say who pays, how it charges or who benefits.</div>';
+  } else if (claims.tab === "all") {
+    body = `<div class="claims-summary">${byStatus.join(" ")}
+        <span class="muted small">${countsText(d.counts)}</span> ${dismissed}</div>
+      ${note}${table(claims.showOther ? main.concat(other) : main)}
+      <div class="claims-more">${otherToggle}</div>
+      ${competitors}`;
+  } else {
+    const issues = main.filter((c) => ISSUE_STATUSES.includes(c.status));
+    body = `${summaryHtml(d.summary)}${changesHtml(d.changes || [])}${regulatoryHtml(d.regulatory)}
+      <h3>Claims with issues <span class="muted small">contradicted or possibly overstated · ${issues.length} of
+        ${plural(d.counts.claims, "claim")}; the rest are under All claims</span></h3>
+      ${issues.length ? note + table(issues) : '<div class="muted">No contradicted or possibly overstated claims.</div>'}`;
+  }
+  const tabs = CLAIM_TABS.map(([id, name]) => `<button type="button" role="tab" data-tab="${id}"
+    class="claim-tab${claims.tab === id ? " active" : ""}" aria-selected="${claims.tab === id}">${name}</button>`).join("");
+  $("claims-body").innerHTML = `${head}<div class="claim-tabs" role="tablist" aria-label="Claim check views">${tabs}</div>
+    ${body}`;
 }
 
 // The same counts, worded the same way, on the page and above the memo (the server counts both).
 function countsText(n) {
   const other = n.other ? ` (plus ${n.other} other: bios, descriptions)` : "";
-  return `${plural(n.claims, "claim")} checked${other} · ${n.awaiting_review} awaiting review (flagged claims and
-    changes since the last deck) · ${n.confirmed} confirmed · ${n.dismissed} dismissed`;
+  const scope = shows("changes") ? "flagged claims and changes since the last deck" : "flagged claims";
+  return `${plural(n.claims, "claim")} checked${other} · ${n.awaiting_review} awaiting review (${scope}) ·
+    ${n.confirmed} confirmed · ${n.dismissed} dismissed`;
 }
 
 async function toggleMemo() {
@@ -1557,7 +1584,7 @@ async function toggleMemo() {
   claims.memo = null;
   renderClaims();
   try {
-    claims.memo = await api(`/api/companies/${claims.companyId}/memo`);
+    claims.memo = await api(`/api/companies/${claims.companyId}/memo${hideQuery()}`);
   } catch (err) {
     claims.memo = { error: err.message };
   }
@@ -1606,6 +1633,11 @@ $("claims-run").onclick = async () => {
 $("claims-body").addEventListener("click", async (e) => {
   if (e.target.closest("#claims-toggle-dismissed")) {
     claims.showDismissed = !claims.showDismissed;
+    return renderClaims();
+  }
+  const tab = e.target.closest("[data-tab]");
+  if (tab) {
+    claims.tab = tab.dataset.tab;
     return renderClaims();
   }
   if (e.target.closest("#claims-toggle-other")) {

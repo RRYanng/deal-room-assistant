@@ -5,7 +5,11 @@ adds a fact the evidence does not hold.
 """
 
 import re
+import tomllib
+from pathlib import Path
 from urllib.parse import urlparse
+
+from app.config import PROJECT_ROOT
 
 # Fixed keys -> plain English labels shown instead of the key.
 KEY_LABELS = {
@@ -41,6 +45,45 @@ SOURCE_NAMES = {"cms.gov": "CMS", "ada.org": "ADA", "bls.gov": "BLS", "census.go
 SOURCE_ORDER = {("calculation", None): 0, ("internal", None): 1, ("external", "government/association"): 2,
                 ("external", "news"): 3, ("external", "competitor site"): 4, ("external", "other"): 5,
                 ("external", None): 5}
+
+
+# Parts the page can hide (config/ui.toml): name used in ?hide= -> its switch in the file.
+HIDEABLE = {"changes": "changes_since_last_deck", "regulatory": "regulatory_checklist"}
+UI_PATH = PROJECT_ROOT / "config" / "ui.toml"
+# The run note memory writes; it goes with the changes when they are hidden.
+MEMORY_NOTE = "Read the earlier deck {filename} once, to compare figures (claims only, no web search)."
+
+
+def hidden_by_config(path: Path = UI_PATH) -> list[str]:
+    """The parts config/ui.toml switches off. Read on every call, so an edit shows on the next page load."""
+    with open(path, "rb") as f:
+        show = tomllib.load(f).get("show", {})
+    return [name for name, switch in HIDEABLE.items() if show.get(switch, True) is False]
+
+
+def parse_hide(text: str) -> frozenset[str]:
+    """?hide=changes,regulatory -> the known part names; anything else is ignored."""
+    return frozenset(p.strip() for p in (text or "").split(",")) & HIDEABLE.keys()
+
+
+def hide_parts(result: dict, hidden: frozenset[str]) -> dict:
+    """Leave hidden parts out of a claim-check result (in place), before counts and the summary are built."""
+    if "changes" in hidden:
+        result["changes"] = []
+        start = MEMORY_NOTE.split("{")[0]
+        for run in (result.get("run"), result.get("failed_run")):
+            if run:
+                run["notes"] = [n for n in run["notes"] if not n.startswith(start)]
+    if "regulatory" in hidden:
+        result["regulatory"] = None
+    return result
+
+
+def visible_summary(summary: dict, hidden: frozenset[str]) -> dict:
+    """Without the checklist the Regulatory category is empty, so it is not shown at all."""
+    if "regulatory" in hidden:
+        summary["categories"] = [c for c in summary["categories"] if c["category"] != "Regulatory"]
+    return summary
 
 
 def label(key: str) -> str:

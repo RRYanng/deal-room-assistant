@@ -22,7 +22,7 @@ from app.intake import analyze_upload, consistency_warnings
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
 from app.memo import build_memo, memo_to_markdown
-from app.presentation import build_summary
+from app.presentation import build_summary, hidden_by_config, hide_parts, parse_hide, visible_summary
 from app import monitor
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
 from app.resolve import resolve_question_company
@@ -101,6 +101,12 @@ def health():
     settings = get_settings()
     return {"status": "ok", "llm_provider": settings.llm_provider,
             "llm_extract_model": settings.llm_extract_model, "llm_chat_model": settings.llm_chat_model}
+
+
+@app.get("/api/ui")
+def ui_config():
+    """Parts of the page switched off in config/ui.toml; the page passes them back as ?hide=."""
+    return {"hidden": hidden_by_config()}
 
 
 # --- companies ----------------------------------------------------------------
@@ -435,14 +441,17 @@ def claim_run(company_id: int, run_id: int, conn=Depends(get_db)):
 
 
 @app.get("/api/companies/{company_id}/claims")
-def list_claims(company_id: int, conn=Depends(get_db)):
-    """The latest finished claim check with evidence and review state, plus a run still in progress."""
+def list_claims(company_id: int, hide: str = "", conn=Depends(get_db)):
+    """The latest finished claim check with evidence and review state, plus a run still in progress.
+    `hide` (e.g. "changes,regulatory") leaves those parts out of the result, its counts and its summary."""
     require_company(conn, company_id)
-    result = latest_results(conn, company_id)
+    hidden = parse_hide(hide)
+    result = hide_parts(latest_results(conn, company_id), hidden)
     apply_reviews(conn, company_id, result["claims"])
     apply_reviews(conn, company_id, result["changes"], "drift")
     return result | {"counts": review_counts(result["claims"], result["changes"]),
-                     "summary": build_summary(result["claims"], result["changes"], result["regulatory"])}
+                     "summary": visible_summary(build_summary(result["claims"], result["changes"], result["regulatory"]),
+                                                hidden)}
 
 
 class ReviewIn(BaseModel):
@@ -462,9 +471,9 @@ def review(company_id: int, body: ReviewIn, conn=Depends(get_db)):
 
 
 @app.get("/api/companies/{company_id}/memo")
-def memo(company_id: int, conn=Depends(get_db)):
+def memo(company_id: int, hide: str = "", conn=Depends(get_db)):
     require_company(conn, company_id)
-    result = build_memo(conn, company_id)
+    result = build_memo(conn, company_id, parse_hide(hide))
     return result | {"markdown": memo_to_markdown(result)}
 
 

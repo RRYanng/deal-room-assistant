@@ -32,7 +32,7 @@ from app.llm import LLMClient, LLMError
 from app.logs import log_event
 from app.numbers import parse_range, ranges_agree
 from app.rag import search
-from app.presentation import decorate, qualify_labels
+from app.presentation import MEMORY_NOTE, decorate, qualify_labels
 from app.questions import claim_question
 from app.skills import skill_prompt
 from app.usage import CountingLLM, CountingWeb
@@ -465,7 +465,7 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
 
         _stage(conn, run_id, "Reading earlier decks for comparison")
         for filename in memory.fill_earlier_decks(conn, company_id, deck, llm, log_id):
-            notes.append(f"Read the earlier deck {filename} once, to compare figures (claims only, no web search).")
+            notes.append(MEMORY_NOTE.format(filename=filename))
 
         _stage(conn, run_id, "Checking claims against the company's other materials")
         docs = context_documents(conn, company_id, deck)
