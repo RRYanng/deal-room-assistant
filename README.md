@@ -65,7 +65,7 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    quiet unless its evidence changes.
 10. **Memory**: every checked deck's claims are kept per company. A figure that differs from the
    previous deck is shown as "Changed since the last deck" (market figures) or "Updated" (traction,
-   team, costs).
+   team, costs). Hidden on the page by default (see "Page switches" below).
 11. **Portfolio monitoring**: reads a company's quarterly updates and computes three signals by
    rule: cash runway (under 12 months is a warning; high when revenue also grew under 10%), key
    person departure, and a milestone that keeps slipping. The model only quotes the figures. Four
@@ -78,10 +78,21 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    points to discuss (for example a fee tied to amounts recovered), written neutrally as questions.
 14. **Regulatory checklist**: per industry, in `config/regulatory.toml` (healthcare: HIPAA, a Business
    Associate Agreement, an independent security assessment). An item the files do not mention is "Not
-   addressed in materials", never a breach; these count in the summary's Regulatory category.
+   addressed in materials", never a breach; these count in the summary's Regulatory category. Hidden on
+   the page by default (see "Page switches" below).
 15. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
    alignment, risks the deck states), portfolio signals, awaiting review, questions for the founder.
    Built by the program from the results; no model writes it.
+
+The claim check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
+claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**.
+
+**Page switches** (`config/ui.toml`): `changes_since_last_deck` and `regulatory_checklist` are set to
+`false`, so the page and the memo leave out those panels, the Regulatory summary category, their founder
+questions and their memo sections. The back end still computes and stores both; the page reads the
+switches from `GET /api/ui` and asks for results without them (`?hide=changes,regulatory`). Without
+`hide`, the API answers in full, which is what the tests check. Set a switch to `true` to show the part
+again; no code change is needed.
 
 ### Architecture
 
@@ -133,7 +144,7 @@ rules, not the real model's judgment. The live column is the real Claude Opus 5.
 | E15 | A claim only the founder's own statement backs (meeting notes) stays Unverified | pass | not in this build (the model did not list the claim); matched in the 11/8 and first 11/9 builds |
 | FP | The same file checked twice gives identical fingerprints | pass | 20 of 20 claims identical in two earlier live runs |
 
-Whole offline suite at the last run: 491 passed (the 274 v1.1 tests included); the 9 v1 live tests
+Whole offline suite at the last run: 496 passed (the 274 v1.1 tests included); the 9 v1 live tests
 (`pytest -m live`) also passed on 2026-11-09. The v1.1 behaviour is
 checked by that suite, not by a separate case.
 

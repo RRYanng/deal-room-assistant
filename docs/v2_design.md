@@ -396,3 +396,27 @@ claim check 10 calls, 7 search credits, $0.65, 107 s; monitoring 4 calls, $0.08,
     Curve Dental Eligibility+, DentalXChange).
   - E11 both market changes (250,000 -> 400,000; $900M -> $12B); E14 all 4 signals. E15 not listed.
   - Page and memo: 17 claims checked (plus 4 other), 20 awaiting review, 17 founder questions.
+
+## 22. Two parts hidden on the page, and tabs (2026-11-10)
+
+- **Switches, not deletions.** `config/ui.toml` has `[show] changes_since_last_deck = false` and
+  `regulatory_checklist = false`. The back end is unchanged: memory and the checklist are still computed
+  and stored on every run, and `GET /api/companies/{id}/claims` and `/memo` answer in full by default, so
+  every existing test runs as before. The page reads the switches from `GET /api/ui` and passes
+  `?hide=changes,regulatory`; `presentation.hide_parts` then leaves out the changes (and memory's run note,
+  "Read the earlier deck ...") and the checklist before the counts, the summary and the memo are built.
+- **What disappears:** the "Changed since the last deck" and "Regulatory checklist" panels; the Regulatory
+  category of the summary box (it only held checklist items, since "Risk the deck states" is Financials);
+  changes and unaddressed checklist items in the top three; the questions on changes and checklist items
+  (no claim-card question comes from either); in the memo, the market changes, confirmed and awaiting
+  changes, the Regulatory risks subsection, their questions and the run note. Awaiting review then counts
+  flagged claims only.
+- **Final demo database with the switches:** Summary 3 Market, 5 Financials, 1 Competition, 1 Team; 17
+  claims checked (plus 4 other), 16 awaiting review; memo with 12 founder questions (17 less 2 change and 3
+  checklist questions). Checked by clicking through the page and the memo.
+- **Tabs:** Issues (summary, the hidden panels when switched on, and the 10 contradicted or possibly
+  overstated claims), All claims (all 17, status counts, the 4 other claims behind a toggle, competitors),
+  Alignment. The line with the last check and its cost sits above the tabs.
+- Tests: `tests/test_ui_switches.py` (5 tests, failing on the old code): the config file, the full answer
+  without `hide`, hidden parts leaving the page data and the memo, the memory note, and unknown names
+  ignored. The tabs are page script only and were checked in the browser.
