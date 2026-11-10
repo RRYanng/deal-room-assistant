@@ -13,7 +13,8 @@ Rules enforced here, not left to the model:
     searched there; competitor research searches the whole web;
   - every page a search returns is stored in web_sources; evidence must cite one of this run's pages
     and quote it verbatim, or it is dropped;
-  - numbers are compared by the program (compare_external).
+  - numbers are compared by the program (compare_external), and only exact ones: a hedged public
+    figure ("over 200,000", "about 135,000", "nearly $190 billion") gives no conclusion.
 """
 
 import re
@@ -54,6 +55,13 @@ COMPETITION_ASSERTION = re.compile(
     r"fast(er|est)|cheap(er|est)|best|better than|lead(ing|er)|#1|number one|competitors?|competition|rivals?)\b",
     re.IGNORECASE)
 SOURCES_PATH = PROJECT_ROOT / "config" / "sources.toml"
+# Words that make a figure approximate or open-ended. A figure with one of them is not compared.
+_HEDGES = (r"over|more than|above|at least|upwards of|in excess of|about|around|approximately|approx\.?|roughly|"
+           r"nearly|almost|close to|some|under|less than|fewer than|below|up to|at most")
+HEDGE_BEFORE = re.compile(rf"(?:\b(?:{_HEDGES})|~)\s*$", re.IGNORECASE)
+HEDGE_IN_VALUE = re.compile(rf"^(?:(?:{_HEDGES})\b|~)|(?:\+|\bplus)$", re.IGNORECASE)
+EXACT_FIGURES = ("When a page gives both an exact figure and a hedged one (\"over\", \"about\", \"more than\", "
+                 "\"nearly\"), cite the exact figure; a hedged figure alone gives no conclusion.")
 NEWS_DOMAINS = {"reuters.com", "apnews.com", "bloomberg.com", "wsj.com", "nytimes.com", "cnbc.com", "forbes.com",
                 "fortune.com", "axios.com", "statnews.com", "fiercehealthcare.com", "healthcaredive.com",
                 "modernhealthcare.com", "beckersdental.com", "beckershospitalreview.com", "drbicuspid.com",
@@ -181,6 +189,15 @@ class WebTool:
                                  " AND company_id = ?", (source_id, self.run_id, self.company_id)).fetchone()
 
 
+def is_hedged(quote: str, value_raw: str) -> bool:
+    """True if the figure is approximate or open-ended, in value_raw or in the words just before it."""
+    value, text = normalize_ws(value_raw), normalize_ws(quote)
+    if HEDGE_IN_VALUE.search(value):
+        return True
+    at = text.lower().find(value.lower())
+    return at >= 0 and (bool(HEDGE_BEFORE.search(text[:at])) or text[at + len(value):].startswith("+"))
+
+
 def verified_quote(source: sqlite3.Row, quote: str) -> str | None:
     """The quote, if it is verbatim in the stored page (the masked name counts as the real one)."""
     quote = normalize_ws(str(quote or ""))
@@ -220,7 +237,7 @@ def market_research(conn: sqlite3.Connection, run_id: int, deck: sqlite3.Row, cl
     indexes = [i for i, c in enumerate(claims) if c["key"] in MARKET_KEYS and c["range"] is not None]
     if not indexes:
         return []
-    prompt = "Claims to check (the company's name is withheld):\n" + "\n".join(
+    prompt = f"{EXACT_FIGURES}\n\nClaims to check (the company's name is withheld):\n" + "\n".join(
         f"{i}. ({claims[i]['key']}) [number: {claims[i]['value_raw']}] \"{mask_company(claims[i]['quote'], company_name)}\""
         for i in indexes)
     log_id = f"claims-run{run_id}-market"
@@ -252,6 +269,8 @@ def _external_evidence(item, claims, indexes, tool: WebTool) -> tuple[dict | Non
     public = parse_range(value_raw) if value_raw and value_raw.lower() in quote.lower() else None
     if public is None:
         return None, "value_raw is not a number in the quote"
+    if is_hedged(quote, value_raw):
+        return None, "the public figure is hedged (over, about, nearly...): no conclusion; cite an exact figure"
     relation = item.get("relation") if item.get("relation") in ("same_quantity", "upper_bound") else "same_quantity"
     claim = claims[item["claim"]]
     stance = compare_external(claim["range"], public, relation)

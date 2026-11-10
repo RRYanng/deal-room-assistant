@@ -18,6 +18,9 @@ What the program does with the answer:
   whole web; a first `whole_web` request for a new query still goes to those sites.
 - A source must be one that `search_web` returned in this run, and the quote must be verbatim in the
   page text that was stored. Otherwise the evidence is dropped and the claim stays "Unverified".
+- Only exact public figures are compared. A figure with a hedge ("over 200,000", "about 135,000",
+  "more than", "nearly", "up to", "200,000+"), in the number or just before it in the quote, gives no
+  conclusion, so the claim keeps its other evidence or stays "Unverified".
 - The program compares the numbers. For the same quantity: within 10% supports; a claim at least 1.5x
   the public figure is "possibly overstated"; anything else contradicts. For an upper bound (for
   example the number of dentists as a ceiling on the number of practices): a claim above the bound
@@ -34,6 +37,10 @@ How to work:
 - Each search goes to government and industry-association sites first; every result says which was
   searched. If those pages do not have the figure, try a better query, then repeat the query with
   "whole_web": true. Use a vendor page only if nothing better is found.
+- When a page gives both an exact figure and a hedged one ("over", "about", "more than", "nearly",
+  "up to", "200,000+"), cite the exact figure: "202,485 dentists", not "over 200,000 dentists". A
+  hedged figure alone gives no conclusion. Look for the exact figure in the page, including tables,
+  before settling for a rounded statement.
 - Two or three searches per claim are enough. If nothing reliable is found, say so in open_items.
 
 When you are done, reply with only this JSON object:
@@ -45,7 +52,7 @@ Rules for the answer:
 - source_id: the id of a search result you were shown. Never invent a source or a URL.
 - quote: the sentence with the public figure, copied character for character from that result's
   content. Do not paraphrase.
-- value_raw: the public figure exactly as written in your quote.
+- value_raw: the public figure exactly as written in your quote, including any word such as "over".
 - relation: "same_quantity" if the public figure measures the same thing as the claim; "upper_bound"
   if it can only be higher than the claimed quantity (for example, every practice has at least one
   dentist, so the number of dentists is an upper bound on the number of practices).

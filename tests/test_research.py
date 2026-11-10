@@ -357,7 +357,7 @@ def test_a_competitor_known_only_from_another_competitors_site_is_dropped(db):
 # --- authoritative sources first (market research only) -------------------------------------
 
 BLOG = WebResult("https://dentalstats.example.com/blog", "Dental Industry Statistics",
-                 "There are about 135,000 dental practices in the US, according to industry counts.")
+                 "There are 135,333 dental practices in the US, according to industry counts.")
 
 
 def test_market_research_searches_authoritative_sources_first(db):
@@ -372,7 +372,7 @@ def test_market_research_searches_authoritative_sources_first(db):
 def test_market_research_searches_the_whole_web_when_authoritative_sources_return_nothing(db):
     from app.research import authoritative_domains
     rules = [{"claim": "400,000 independent dental practices", "url": BLOG.url, "relation": "upper_bound",
-              "quote": BLOG.content, "value_raw": "135,000"}]
+              "quote": BLOG.content, "value_raw": "135,333"}]
     web = FakeWebSearch(lambda q: [BLOG])
     out = check(db, research_llm(market=research_loop(MARKET_QUERIES[:1], market_answer(rules))), web)
     assert [(q, d) for q, d in web.calls if q in MARKET_QUERIES] == \
@@ -426,3 +426,64 @@ def test_tavily_sends_include_domains_only_when_given():
     provider.search("dentists", include_domains=["ada.org", "bls.gov"])
     provider.search("dentists")
     assert bodies[0]["include_domains"] == ["ada.org", "bls.gov"] and "include_domains" not in bodies[1]
+
+
+
+# --- exact figures over hedged ones ("over", "about", "nearly") -------------------------------
+
+WORKFORCE = WebResult("https://www.ada.org/workforce-2025.pdf", "The dentist workforce",
+                      "There are over 200,000 dentists in the U.S. The count rose to 202,485 dentists in 2024.")
+
+
+@pytest.mark.parametrize("quote, value, hedged", [
+    ("There are over 200,000 dentists in the U.S.", "over 200,000", True),
+    ("There are over 200,000 dentists in the U.S.", "200,000", True),   # the hedge left out of value_raw
+    ("about 135,000 practice establishments", "135,000", True),
+    ("Spending reached nearly $190 billion.", "$190 billion", True),
+    ("roughly 190,000 dentists", "roughly 190,000", True),
+    ("More than 200,000 dentists practice in the U.S.", "200,000", True),
+    ("200,000+ dentists", "200,000", True),
+    ("up to 150,000 offices", "150,000", True),
+    ("The count rose to 202,485 dentists in 2024.", "202,485", False),
+    ("Spending for dental services increased 6.6 percent in 2024 to $189.2 billion", "$189.2 billion", False),
+    ("Some 3,000 practices closed in 2024; 135,665 remain.", "135,665", False),  # the hedge is on another number
+])
+def test_is_hedged(quote, value, hedged):
+    from app.research import is_hedged
+    assert is_hedged(quote, value) is hedged
+
+
+def test_a_hedged_public_figure_gives_no_conclusion():
+    """Only a hedged figure on the page: no conclusion, whatever the model put in value_raw."""
+    from app.research import _external_evidence
+
+    class Tool:
+        def source(self, source_id):
+            return {"id": 1, "url": WORKFORCE.url, "title": WORKFORCE.title, "content": WORKFORCE.content}
+
+    claims = [{"key": "market.customer_count", "range": (400000.0, 400000.0), "value_raw": "400,000"}]
+    for value in ("over 200,000", "200,000"):
+        item = {"claim": 0, "source_id": 1, "quote": "There are over 200,000 dentists in the U.S.",
+                "value_raw": value, "relation": "upper_bound"}
+        evidence, reason = _external_evidence(item, claims, [0], Tool())
+        assert evidence is None and "hedged" in reason
+
+
+def test_the_exact_figure_on_a_page_with_a_hedged_one_is_used(db):
+    rules = [{"claim": "400,000 independent dental practices", "url": WORKFORCE.url, "relation": "upper_bound",
+              "quote": "The count rose to 202,485 dentists in 2024.", "value_raw": "202,485"}]
+    out = check(db, research_llm(market=research_loop(MARKET_QUERIES[:1], market_answer(rules))),
+                FakeWebSearch(lambda q: [WORKFORCE]))
+    claim = by_quote(out["claims"], "400,000 independent dental practices")
+    [e] = [e for e in claim["evidence"] if e["source"] == "external"]
+    assert claim["status"] == "contradicted" and e["value_raw"] == "202,485"
+
+
+def test_the_market_researcher_is_told_to_cite_exact_figures(db):
+    from app.skills import skill_prompt
+    system = skill_prompt("market-research", "Research")
+    assert "cite the exact figure" in system and "over" in system and "about" in system
+    llm = research_llm()
+    check(db, llm)
+    [first] = [c for c in llm.calls if c["method"] == "chat" and "market and industry figures" in c["system"]][:1]
+    assert "cite the exact figure" in first["messages"][0]["content"]
