@@ -36,8 +36,7 @@ themselves), an optional **Company** selector and
 
 ## v2: diligence co-pilot
 
-Branch `feature/v2` (features frozen on 2026-11-08; bug fixes only). Design and decisions:
-[docs/v2_design.md](docs/v2_design.md).
+Released as tag `v2.0` on `main`. Design and decisions: [docs/v2_design.md](docs/v2_design.md).
 
 v2 checks a pitch deck the way an associate would before a partner meeting: what does the deck
 claim, what do the company's other files and public sources say, what changed since the last deck,
