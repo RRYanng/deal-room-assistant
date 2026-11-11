@@ -420,3 +420,11 @@ claim check 10 calls, 7 search credits, $0.65, 107 s; monitoring 4 calls, $0.08,
 - Tests: `tests/test_ui_switches.py` (5 tests, failing on the old code): the config file, the full answer
   without `hide`, hidden parts leaving the page data and the memo, the memory note, and unknown names
   ignored. The tabs are page script only and were checked in the browser.
+
+## 23. Founder questions folded on cards (2026-11-10)
+
+On claim cards and portfolio signal cards the question starts folded as a clickable "Ask the founder ▸";
+clicking it shows the question ("▾") and it stays open when the page re-renders (switching tabs, after a
+review). The question on the Alignment tab stays open, and so would those on changes and checklist items
+if switched on. The memo's "Questions for the founder" section is unchanged. Page script only, so it was
+checked by clicking in the browser; there is no automated test.

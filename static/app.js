@@ -1406,6 +1406,26 @@ function questionHtml(q) {
   return q ? `<div class="founder-q"><span class="q-label">Ask the founder</span> ${esc(q.text)}</div>` : "";
 }
 
+// On claim and signal cards the question starts folded: "Ask the founder ▸" opens it. `key` is
+// `${type}:${fingerprint}`, so a question stays open when the page re-renders.
+const openQuestions = new Set();
+
+function foldedQuestionHtml(q, key) {
+  if (!q) return "";
+  const open = openQuestions.has(key);
+  return `<div class="founder-q folded"><button type="button" class="q-toggle" data-question="${esc(key)}"
+    aria-expanded="${open}">Ask the founder ${open ? "▾" : "▸"}</button>${open ? `<div>${esc(q.text)}</div>` : ""}</div>`;
+}
+
+// Handles a click on "Ask the founder"; true if the click was one.
+function toggleQuestion(e) {
+  const b = e.target.closest("[data-question]");
+  if (!b) return false;
+  const key = b.dataset.question;
+  if (openQuestions.has(key)) openQuestions.delete(key); else openQuestions.add(key);
+  return true;
+}
+
 function alignmentHtml(a) {
   if (!a || (!a.points.length && !a.pricing.length && !a.payer.length && !a.beneficiary.length)) return "";
   const roles = [["payer", "Who pays"], ["pricing", "How it charges"], ["beneficiary", "Who benefits"]]
@@ -1437,7 +1457,7 @@ function claimRowHtml(c) {
     <td><span class="status ${cls}">${esc(label)}</span></td>
     <td><div class="claim-label">${esc(c.label)}${c.category ? ` <span class="muted small">· ${esc(c.category)}</span>` : ""}</div>
       <div class="claim-quote">“${boldValue(c.quote, c.value_raw)}”</div>
-      <div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div>${questionHtml(c.question)}</td>
+      <div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div>${foldedQuestionHtml(c.question, `claim:${c.fingerprint}`)}</td>
     <td>${evidenceListHtml(c)}</td>
     <td>${reviewCellHtml(c)}</td>
   </tr>`;
@@ -1664,7 +1684,7 @@ $("claims-body").addEventListener("click", async (e) => {
     a.click();
     return URL.revokeObjectURL(a.href);
   }
-  if (toggleChange(e)) return renderClaims();
+  if (toggleChange(e) || toggleQuestion(e)) return renderClaims();
   const button = e.target.closest("[data-review]");
   if (button) openReview(button.dataset.fp, button.dataset.review, button.dataset.type || "claim");
 });
@@ -1744,7 +1764,7 @@ function signalHtml(s) {
     <div class="issue-title">${esc(s.title)}</div>
     <div class="small">${esc(s.detail)}</div>
     ${evidence}
-    ${questionHtml(s.question)}
+    ${foldedQuestionHtml(s.question, `signal:${s.fingerprint}`)}
     <div class="signal-review">${reviewCellHtml(s, "signal")}</div>
   </div>`;
 }
@@ -1804,7 +1824,7 @@ $("monitor-body").addEventListener("click", (e) => {
     mon.showDismissed = !mon.showDismissed;
     return renderMonitor();
   }
-  if (toggleChange(e)) return renderMonitor();
+  if (toggleChange(e) || toggleQuestion(e)) return renderMonitor();
   const button = e.target.closest("[data-review]");
   if (button) openReview(button.dataset.fp, button.dataset.review, "signal");
 });

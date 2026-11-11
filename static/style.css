@@ -304,6 +304,11 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .change { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
 .change .review-actions { margin-top: 2px; }
 .founder-q { margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--accent-soft); font-size: 12.5px; }
+.founder-q.folded { padding: 0; background: none; }
+.founder-q.folded > div { margin-top: 4px; padding: 6px 8px; border-radius: 6px; background: var(--accent-soft); }
+.q-toggle { background: none; border: 0; padding: 2px 0; font: inherit; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--accent); cursor: pointer; }
+.q-toggle:hover { text-decoration: underline; }
 .q-label { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   color: var(--accent); margin-bottom: 2px; }
 .issue-card.panel { margin: 10px 0; display: grid; gap: 8px; }
