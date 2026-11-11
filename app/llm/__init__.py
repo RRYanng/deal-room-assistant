@@ -17,7 +17,7 @@ def get_llm(purpose: str = "chat", settings: Settings | None = None) -> LLMClien
     if settings.llm_provider == "anthropic":
         from .anthropic_client import AnthropicLLM
         model = settings.llm_extract_model if purpose == "extract" else settings.llm_chat_model
-        return AnthropicLLM(model, settings.llm_effort, settings.llm_fallbacks)
+        return AnthropicLLM(model, settings.llm_effort, settings.llm_fallbacks, cache_chat=settings.llm_prompt_cache)
     if settings.llm_provider == "fake":
         return FakeLLM()
     raise ValueError(f"Unknown LLM_PROVIDER: {settings.llm_provider!r}")

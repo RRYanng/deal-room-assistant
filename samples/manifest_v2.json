@@ -1,0 +1,51 @@
+[
+  {
+    "company": "ClearClaim AI",
+    "path": "company_c/clearclaim_deck_2025-09.pdf",
+    "doc_type": "deck",
+    "doc_date": "2025-09-15",
+    "stage": "diligence"
+  },
+  {
+    "company": "ClearClaim AI",
+    "path": "company_c/clearclaim_deck_2025-12.pdf",
+    "doc_type": "deck",
+    "doc_date": "2025-12-01",
+    "stage": "diligence"
+  },
+  {
+    "company": "ClearClaim AI",
+    "path": "company_c/clearclaim_meeting_notes.md",
+    "doc_type": "notes",
+    "doc_date": "2025-12-08",
+    "stage": "diligence"
+  },
+  {
+    "company": "ClearClaim AI",
+    "path": "company_c/clearclaim_crm.csv",
+    "doc_type": "crm",
+    "doc_date": "2025-12-08",
+    "stage": "diligence"
+  },
+  {
+    "company": "ClearClaim AI",
+    "path": "company_c/clearclaim_update_2026-Q1.txt",
+    "doc_type": "notes",
+    "doc_date": "2026-04-10",
+    "stage": "portfolio"
+  },
+  {
+    "company": "ClearClaim AI",
+    "path": "company_c/clearclaim_update_2026-Q2.txt",
+    "doc_type": "notes",
+    "doc_date": "2026-07-10",
+    "stage": "portfolio"
+  },
+  {
+    "company": "ClearClaim AI",
+    "path": "company_c/clearclaim_update_2026-Q3.txt",
+    "doc_type": "notes",
+    "doc_date": "2026-10-10",
+    "stage": "portfolio"
+  }
+]

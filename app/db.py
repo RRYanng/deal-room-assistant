@@ -84,6 +84,163 @@ CREATE TABLE IF NOT EXISTS agent_logs (
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_agent_logs_run ON agent_logs(run_id);
+
+-- v2: claim checks, web research and reviews. New tables only; the v1 tables above are unchanged.
+-- Every table carries company_id, and every query filters on it.
+
+CREATE TABLE IF NOT EXISTS claim_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,  -- the deck checked
+    status       TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
+    stage        TEXT,                       -- what the run is doing now, shown as progress
+    error        TEXT,
+    notes_json   TEXT,                       -- steps skipped or failed, e.g. no web search configured
+    started_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_claim_runs_company ON claim_runs(company_id);
+
+CREATE TABLE IF NOT EXISTS claims (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id     INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    key          TEXT NOT NULL,              -- fixed vocabulary, e.g. 'unit.gross_margin_pct'
+    statement    TEXT NOT NULL,              -- short restatement by the model, for display only
+    quote        TEXT NOT NULL,              -- verbatim from the chunk, verified
+    value_raw    TEXT,                       -- the number as written, part of the quote
+    value_lo     REAL,                       -- range read by app.numbers (equal for a single value)
+    value_hi     REAL,
+    fingerprint  TEXT NOT NULL,              -- company + type + key + numbers; never model wording
+    status       TEXT NOT NULL CHECK (status IN ('contradicted', 'possibly_overstated',
+                   'externally_supported', 'consistent_with_company_data', 'unverified'))
+);
+CREATE INDEX IF NOT EXISTS idx_claims_run ON claims(run_id);
+
+CREATE TABLE IF NOT EXISTS web_sources (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    run_id       INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    query        TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    title        TEXT,
+    content      TEXT NOT NULL,              -- the text the search returned; quotes are checked against it
+    fetched_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source_type  TEXT                        -- government/association, news, competitor site, other
+);
+CREATE INDEX IF NOT EXISTS idx_web_sources_run ON web_sources(run_id);
+
+CREATE TABLE IF NOT EXISTS evidence (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id      INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+    company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    source        TEXT NOT NULL CHECK (source IN ('internal', 'external', 'calculation')),
+    stance        TEXT NOT NULL CHECK (stance IN ('supports', 'contradicts', 'overstates')),
+    chunk_id      INTEGER REFERENCES chunks(id) ON DELETE CASCADE,          -- internal evidence
+    web_source_id INTEGER REFERENCES web_sources(id) ON DELETE CASCADE,     -- external evidence
+    quote         TEXT,                      -- verbatim from the chunk or the web source
+    value_raw     TEXT,
+    note          TEXT NOT NULL,             -- written by the program
+    scope         TEXT NOT NULL DEFAULT 'company'  -- 'industry': industry data the company cites; 'founder': what the founder said in a meeting; neither is counted
+);
+CREATE INDEX IF NOT EXISTS idx_evidence_claim ON evidence(claim_id);
+
+CREATE TABLE IF NOT EXISTS competitors (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    web_source_id INTEGER NOT NULL REFERENCES web_sources(id) ON DELETE CASCADE,
+    quote         TEXT NOT NULL              -- verbatim from the source, contains the name
+);
+CREATE INDEX IF NOT EXISTS idx_competitors_run ON competitors(run_id);
+
+-- v2 alignment check: who pays, how the company charges, who benefits, and tension points (fixed types).
+CREATE TABLE IF NOT EXISTS alignment_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES claim_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL CHECK (kind IN ('role', 'tension')),
+    label        TEXT NOT NULL,              -- payer / pricing / beneficiary, or the tension type
+    chunk_id     INTEGER REFERENCES chunks(id) ON DELETE CASCADE,
+    quote        TEXT NOT NULL,              -- verbatim from the deck
+    loc_label    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_alignment_run ON alignment_items(run_id);
+
+-- v2 memory: every claim of every checked deck, kept per company, to see what changed between decks.
+-- Entries survive deleting the deck (document_id becomes NULL); file name and date are copied.
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    filename     TEXT NOT NULL,
+    doc_date     TEXT,
+    key          TEXT NOT NULL,
+    value_raw    TEXT,
+    value_lo     REAL,
+    value_hi     REAL,
+    quote        TEXT NOT NULL,
+    loc_label    TEXT,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_memory_company ON memory_entries(company_id, key);
+
+-- v2 portfolio monitoring: KPIs per update and the signals computed from them.
+CREATE TABLE IF NOT EXISTS monitor_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    status       TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
+    stage        TEXT,
+    error        TEXT,
+    notes_json   TEXT,
+    started_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_monitor_runs_company ON monitor_runs(company_id);
+
+CREATE TABLE IF NOT EXISTS monitor_periods (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES monitor_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    document_id  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    period_end   TEXT NOT NULL,              -- stated in the update, else the material date
+    data_json    TEXT NOT NULL               -- figures, people, milestones; each with chunk_id and verified quote
+);
+CREATE INDEX IF NOT EXISTS idx_monitor_periods_run ON monitor_periods(run_id);
+
+CREATE TABLE IF NOT EXISTS signals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES monitor_runs(id) ON DELETE CASCADE,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    period_end   TEXT NOT NULL,
+    kind         TEXT NOT NULL CHECK (kind IN ('cash_runway', 'key_person_departure', 'milestone_slip')),
+    level        TEXT NOT NULL CHECK (level IN ('warning', 'high')),
+    title        TEXT NOT NULL,              -- written by the program
+    detail       TEXT NOT NULL,              -- written by the program, with the calculation
+    fingerprint  TEXT NOT NULL,
+    evidence_json TEXT NOT NULL              -- the quotes the signal rests on, with their locations
+);
+CREATE INDEX IF NOT EXISTS idx_signals_run ON signals(run_id);
+
+-- Investor decisions. Append-only: the latest row for a fingerprint wins, so a decision can be undone.
+-- Keyed by fingerprint, not by claim id, so a decision carries over to later runs of the same claim.
+-- Dismissing needs a reason; confirming may have one.
+CREATE TABLE IF NOT EXISTS reviews (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    item_type    TEXT NOT NULL CHECK (item_type IN ('claim', 'signal', 'drift')),
+    fingerprint  TEXT NOT NULL,
+    decision     TEXT NOT NULL CHECK (decision IN ('confirmed', 'dismissed')),
+    reason       TEXT,
+    item_json    TEXT,                       -- what the investor saw when deciding
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (decision = 'confirmed' OR length(trim(coalesce(reason, ''))) > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_company ON reviews(company_id, fingerprint);
 """
 
 
@@ -97,6 +254,33 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after a table first shipped: (table, column, definition). CREATE TABLE IF NOT EXISTS
+# leaves an existing table alone, so a database made earlier gets these with ALTER TABLE.
+ADDED_COLUMNS = [
+    ("web_sources", "source_type", "TEXT"),
+    ("evidence", "scope", "TEXT NOT NULL DEFAULT 'company'"),
+]
+
+
+def _relax_review_reason(conn: sqlite3.Connection) -> None:
+    """Databases made before 2026-11-08 required a reason for every review; now only dismissing does.
+    SQLite cannot change a CHECK in place, so the table is copied into the new definition."""
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reviews'").fetchone()
+    if row and "reason       TEXT NOT NULL" in row[0]:
+        conn.executescript("""
+            ALTER TABLE reviews RENAME TO reviews_before_2026_11_08;
+            DROP INDEX IF EXISTS idx_reviews_company;
+        """)
+        conn.executescript(SCHEMA)
+        conn.execute("INSERT INTO reviews SELECT * FROM reviews_before_2026_11_08")
+        conn.execute("DROP TABLE reviews_before_2026_11_08")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
+    _relax_review_reason(conn)
     conn.executescript(SCHEMA)
+    for table, column, definition in ADDED_COLUMNS:
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     conn.commit()

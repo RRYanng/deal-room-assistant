@@ -1,0 +1,18 @@
+SYNTHETIC SAMPLE - fictional company and data, created for a demo.
+
+Subject: ClearClaim AI investor update - Q3 2026
+
+Hi all,
+
+As of September 30, 2026, we had $2.1M in cash. Net burn averaged $300,000 per month in Q3.
+
+Revenue for Q3 2026 was $364,000, up 2% from Q2 2026. We ended the quarter with 141 paying practices.
+
+Daniel Okafor, our CTO, left the company in August. Maya is covering engineering while we hire.
+
+Team: Maya Chen (CEO) and Priya Raman (Head of Sales) lead the company.
+
+Milestone: the Bluecrest Dental Plan integration is now expected on November 30, 2026 (previously August 31, 2026).
+
+Best,
+Maya Chen, CEO, ClearClaim AI

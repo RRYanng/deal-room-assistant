@@ -128,9 +128,15 @@ def run_tool(conn: sqlite3.Connection, company_id: int, name: str, args: dict[st
 # --- the loop ---------------------------------------------------------------------
 
 def run_agent(conn: sqlite3.Connection, company_id: int, user_prompt: str, llm: LLMClient,
-              system: str = SYSTEM_PROMPT, max_steps: int | None = None, run_id: str | None = None) -> dict:
-    """Run the tool loop and return {"final": parsed JSON or None, ...}. Raises LLMError on API failure."""
+              system: str = SYSTEM_PROMPT, max_steps: int | None = None, run_id: str | None = None,
+              tools: list[ToolSpec] | None = None, tool_runner=None) -> dict:
+    """Run the tool loop and return {"final": parsed JSON or None, ...}. Raises LLMError on API failure.
+
+    The v2 research steps reuse this loop with their own tools: `tool_runner(name, args)` runs a call.
+    """
     max_steps = max_steps or get_settings().agent_max_steps
+    tools = tools or TOOLS
+    tool_runner = tool_runner or (lambda name, args: run_tool(conn, company_id, name, args))
     run_id = run_id or uuid.uuid4().hex[:12]
     messages = [llm.user_message(user_prompt)]
     tool_calls: list[dict] = []
@@ -138,7 +144,7 @@ def run_agent(conn: sqlite3.Connection, company_id: int, user_prompt: str, llm: 
 
     final, retried, status = None, False, "step_limit"
     for step in range(1, max_steps + 1):
-        response = llm.chat(system, messages, TOOLS)
+        response = llm.chat(system, messages, tools)
         messages.append(response.assistant_message)
 
         if response.stop_reason == "refusal":
@@ -152,7 +158,7 @@ def run_agent(conn: sqlite3.Connection, company_id: int, user_prompt: str, llm: 
                     log_event(conn, run_id, step, "company_id_ignored", tool=call.name, input=args)
                     args.pop("company_id")
                 try:
-                    output = run_tool(conn, company_id, call.name, args)
+                    output = tool_runner(call.name, args)
                     results.append(ToolResult(call.id, json.dumps(output, default=str)))
                 except Exception as e:  # a tool error goes back to the model, it can recover
                     output = {"error": str(e)}

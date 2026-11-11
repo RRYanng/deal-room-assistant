@@ -1,0 +1,72 @@
+# Regulatory checklist per industry, read by app/regulatory.py. Edit this file to add industries or items;
+# no code change is needed.
+#
+# industry.match: words that identify the industry in a company's files (the industry with the most hits
+#   wins; at least `min_hits` are needed).
+# item.terms: words that count as the item being mentioned. Matching ignores case.
+# A missing item is shown as "Not addressed in materials". That says the files do not mention it; it is
+# never a finding that the company breaks a rule.
+# Questions here are written by people, not generated, so they may name standards such as SOC 2.
+
+min_hits = 3
+
+[industries.healthcare]
+name = "Healthcare / dental"
+match = ["dental", "dentist", "patient", "clinic", "hospital", "healthcare", "medical"]
+
+  [[industries.healthcare.items]]
+  id = "hipaa"
+  name = "HIPAA (patient health information)"
+  why = "The product handles protected health information, such as patients' insurance and treatment details."
+  terms = ["HIPAA", "Health Insurance Portability and Accountability Act", "protected health information", "PHI"]
+  question = "How does the company protect patient health information under HIPAA, and who is responsible for compliance?"
+
+  [[industries.healthcare.items]]
+  id = "baa"
+  name = "Business Associate Agreement (BAA)"
+  why = "A vendor that handles patient data for a practice normally signs a Business Associate Agreement with it."
+  terms = ["BAA", "Business Associate Agreement", "business associate"]
+  question = "Does the company sign a Business Associate Agreement with each practice, and with its own subcontractors?"
+
+  [[industries.healthcare.items]]
+  id = "security_audit"
+  name = "Independent security assessment"
+  why = "Practices and payers usually ask for an independent security assessment of vendors that hold patient data."
+  terms = ["SOC 2", "SOC2", "HITRUST", "ISO 27001", "penetration test"]
+  question = "Has the company completed an independent security assessment, such as a SOC 2 or HITRUST audit?"
+
+[industries.insurance]
+name = "Insurance"
+match = ["insurance", "policy", "policies", "premium", "underwriting", "carrier", "broker"]
+
+  [[industries.insurance.items]]
+  id = "license"
+  name = "Insurance licensing"
+  why = "Selling or placing insurance needs licenses in each state where the company operates."
+  terms = ["licensed", "license", "producer license", "MGA", "admitted carrier"]
+  question = "Which insurance licenses does the company hold, and in which states?"
+
+  [[industries.insurance.items]]
+  id = "carrier"
+  name = "Carrier relationship"
+  why = "A distributor depends on the carriers that issue the policies."
+  terms = ["carrier partner", "issued by", "underwritten by"]
+  question = "Which carriers issue the policies, and on what terms?"
+
+[industries.lending]
+name = "Lending"
+match = ["credit", "loan", "lending", "lender", "borrower", "working capital", "underwrite"]
+
+  [[industries.lending.items]]
+  id = "lending_license"
+  name = "Lending licenses"
+  why = "Commercial lending can need state licenses, or a partner bank."
+  terms = ["lending license", "licensed lender", "partner bank", "bank partner"]
+  question = "Does the company lend under its own licenses or through a partner bank?"
+
+  [[industries.lending.items]]
+  id = "fair_lending"
+  name = "Fair lending and credit reporting"
+  why = "Credit decisions fall under fair lending and credit reporting rules."
+  terms = ["fair lending", "ECOA", "FCRA", "adverse action"]
+  question = "How does the company make sure its credit decisions meet fair lending and credit reporting rules?"

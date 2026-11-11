@@ -21,6 +21,9 @@ class Settings:
     llm_fallbacks: str  # "default" enables server-side refusal fallback; "" disables it
     embedding_model: str
     agent_max_steps: int
+    llm_prompt_cache: bool = True  # automatic prompt caching for multi-turn tool loops
+    web_search_provider: str = "tavily"  # "tavily", "fake" or "" (no web research)
+    tavily_api_key: str = ""
 
 
 def get_settings() -> Settings:
@@ -37,4 +40,7 @@ def get_settings() -> Settings:
         llm_fallbacks=os.getenv("LLM_FALLBACKS", "default"),
         embedding_model=os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
         agent_max_steps=int(os.getenv("AGENT_MAX_STEPS", "6")),
+        llm_prompt_cache=os.getenv("LLM_PROMPT_CACHE", "on").strip().lower() not in ("off", "0", "false", "no"),
+        web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "tavily").strip().lower(),
+        tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip(),
     )

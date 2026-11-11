@@ -13,6 +13,8 @@
   --warn-soft: #fff5e0;
   --ok: #1f7a4d;
   --ok-soft: #e7f5ee;
+  --teal: #0b6e75;
+  --teal-soft: #e2f3f4;
   --mark: #fff1a8;
   --radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
@@ -36,6 +38,8 @@
     --warn-soft: #33290f;
     --ok: #6fcf9c;
     --ok-soft: #173025;
+    --teal: #63d0d6;
+    --teal-soft: #123033;
     --mark: #5a4d12;
   }
 }
@@ -49,7 +53,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
-.brand { font-weight: 650; letter-spacing: -.01em; }
+.brand { font-weight: 650; letter-spacing: -.01em; white-space: nowrap; }
 .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 
 /* App frame: a top bar, then the conversation. */
@@ -61,7 +65,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .nav { display: flex; gap: 2px; }
 .nav-item {
   display: flex; align-items: center; gap: 6px;
-  background: none; border: 0; color: var(--text); padding: 6px 10px; font-weight: 500;
+  background: none; border: 0; color: var(--text); padding: 6px 10px; font-weight: 500; white-space: nowrap;
 }
 .nav-item:hover { background: var(--bg); }
 .nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
@@ -84,7 +88,7 @@ button {
   background: var(--accent); color: var(--accent-text); cursor: pointer; font-weight: 550;
 }
 button:disabled { opacity: .5; cursor: not-allowed; }
-button.secondary { background: transparent; color: var(--accent); }
+button.secondary { background: var(--panel); color: var(--accent); }
 button.link { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 500; }
 button.danger-link { color: var(--danger); }
 button.danger-button { background: var(--danger); border-color: var(--danger); color: var(--panel); }
@@ -256,6 +260,132 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .brief-body li { margin: 4px 0; }
 .cite { font-size: 12px; color: var(--muted); }
 
+/* Claim check and portfolio: one reading column of about 800px */
+.claims-card { width: min(880px, 100%); }
+.claims-body { padding: 18px 40px 28px; line-height: 1.6; }
+.claims-body h3 { font-size: 15px; margin: 24px 0 8px; }
+.claims-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 4px; }
+.claim-quote { overflow-wrap: anywhere; }
+.run-line { display: inline-block; font-size: 13px; color: var(--muted); cursor: help;
+  border-bottom: 1px dotted var(--muted); }
+.cards-count { font-weight: 500; color: var(--muted); margin-left: 4px; }
+.claims-note { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+/* Folded claim cards: one line each (status, label, conclusion); the body opens on click */
+.claims-body .claim-cards { list-style: none; margin: 0; padding: 0; --pill: 132px; }
+.claims-body .claim-cards.wide { --pill: 184px; }
+.claim-card + .claim-card { border-top: 1px solid var(--border); }
+.claim-card.dismissed .card-head { opacity: .6; }
+.card-head { display: grid; grid-template-columns: var(--pill) 1fr auto auto; align-items: baseline; gap: 12px; width: 100%;
+  text-align: left; background: none; border: 0; border-radius: 6px; color: var(--text); padding: 11px 6px;
+  font-weight: 400; line-height: 1.5; }
+.card-head:hover { background: var(--bg); }
+.card-head .status { justify-self: start; }
+.card-line { min-width: 0; overflow-wrap: anywhere; }
+.card-label { margin-right: 4px; }
+.card-arrow { color: var(--muted); width: 12px; }
+.card-decision { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.card-decision.confirmed { color: var(--ok); }
+.card-decision.dismissed { color: var(--muted); }
+.card-body { display: grid; gap: 10px; padding: 2px 6px 16px calc(var(--pill) + 18px); }
+.card-evidence { margin-top: 2px; }
+.status { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 10px;
+  border: 1px solid transparent; white-space: nowrap; }
+.st-bad { background: var(--danger-soft); color: var(--danger); }
+.st-warn { background: var(--warn-soft); color: var(--warn); }
+.st-ok { background: var(--ok-soft); color: var(--ok); }
+.st-info { background: var(--accent-soft); color: var(--accent); }
+.st-consistent { background: var(--teal-soft); color: var(--teal); }
+.st-none { background: var(--bg); color: var(--muted); border-color: var(--border); }
+.ev { border-left: 3px solid var(--border); padding: 2px 0 2px 8px; margin-bottom: 8px; overflow-wrap: anywhere; }
+.ev-supports { border-left-color: var(--ok); }
+.ev-contradicts { border-left-color: var(--danger); }
+.ev-overstates { border-left-color: var(--warn); }
+.ev-context { border-left-style: dashed; }
+.claims-more { margin-top: 8px; }
+.claim-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin: 10px 0 12px; overflow-x: auto; }
+.claim-tab { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted);
+  padding: 8px 12px; margin-bottom: -1px; font: inherit; cursor: pointer; white-space: nowrap; }
+.claim-tab:hover { color: var(--text); }
+.claim-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+/* The quarter table scrolls inside its own box on narrow windows; the page itself never scrolls sideways. */
+.table-scroll { overflow-x: auto; margin: 10px 0 6px; max-width: 100%; }
+.monitor-table { min-width: 640px; }
+.monitor-table td:last-child { width: auto; }
+.monitor-table td.num { white-space: normal; }
+.issue-card.dismissed, .change.dismissed { opacity: .6; }
+/* Summary at the top of the claim check */
+.summary-box { border-radius: var(--radius); background: var(--bg); padding: 16px 18px; margin: 4px 0 8px;
+  display: grid; gap: 10px; }
+.summary-title { font-weight: 650; font-size: 15px; }
+.summary-cats { display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.summary-cat b { font-size: 18px; margin-right: 3px; color: var(--muted); }
+.summary-cat.has-issues b { color: var(--danger); }
+.summary-sub { font-size: 12px; font-weight: 650; }
+.summary-top { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.ev-head { font-weight: 650; }
+.change { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
+.change .review-actions { margin-top: 2px; }
+.founder-q { margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--accent-soft); font-size: 12.5px; }
+.founder-q.folded { padding: 0; background: none; }
+.founder-q.folded > div { margin-top: 4px; padding: 6px 8px; border-radius: 6px; background: var(--accent-soft); }
+.q-toggle { background: none; border: 0; padding: 2px 0; font: inherit; font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--accent); cursor: pointer; }
+.q-toggle:hover { text-decoration: underline; }
+.q-label { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--accent); margin-bottom: 2px; }
+.issue-card.panel { margin: 10px 0; display: grid; gap: 8px; }
+.reg-item, .align-point { border-top: 1px solid var(--border); padding-top: 6px; }
+.issue-card.signal { margin-top: 8px; }
+.signal-review { margin-top: 6px; }
+.issue-card.changes { margin: 10px 0; border-left: 3px solid var(--warn); display: grid; gap: 6px; }
+.ev-kind { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.ev a, .claims-body li a { color: var(--accent); }
+.review-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+button.small-button { padding: 3px 9px; font-size: 12px; }
+.review-done.confirmed b { color: var(--ok); }
+.review-done.dismissed b { color: var(--muted); }
+.run-notes { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+/* Portfolio: cash runway chart above the table */
+.runway-chart { margin: 14px 0 6px; }
+.runway-chart figcaption { font-weight: 650; font-size: 15px; }
+.runway-chart figcaption span { font-weight: 400; font-size: 13px; color: var(--muted); margin-left: 6px; }
+.chart-scroll { overflow-x: auto; }
+.runway-chart svg { display: block; width: 100%; min-width: 460px; height: auto; font-size: 12px; }
+.rc-grid { stroke: var(--border); stroke-width: 1; }
+.rc-axis { fill: var(--muted); }
+.rc-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.rc-warn { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.rc-warn-label { fill: var(--text); font-size: 12px; }
+.rc-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.rc-warning .rc-dot { fill: var(--warn); }
+.rc-high .rc-dot { fill: var(--danger); }
+.rc-hit { fill: transparent; }
+.rc-label { fill: var(--text); font-weight: 600; }
+.rc-point:hover .rc-dot { r: 7; }
+/* Memo: a document, and the only thing printed while it is open */
+.memo-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 8px; }
+.memo-counts { font-size: 13px; color: var(--muted); }
+.memo-doc { max-width: 720px; margin: 18px auto 0; font-size: 14.5px; line-height: 1.65; overflow-wrap: anywhere; }
+.memo-doc h1 { font-size: 24px; letter-spacing: -.01em; margin: 0 0 6px; }
+.memo-doc h1 + p { font-size: 13px; color: var(--muted); }
+.memo-doc h2 { font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); margin: 30px 0 8px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+.memo-doc h3 { font-size: 15px; margin: 20px 0 6px; }
+.memo-doc p { margin: 8px 0; }
+.brief-body .memo-doc ul, .brief-body .memo-doc ol { margin: 6px 0 12px; padding-left: 22px; }
+.memo-doc li { margin: 7px 0; }
+.brief-body .memo-doc li ul { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+.memo-doc li li { margin: 3px 0; }
+.memo-doc li li b { color: var(--text); }
+.memo-doc a { color: var(--accent); }
+.tone-bad { color: var(--danger); }
+.tone-warn { color: var(--warn); }
+.tone-ok { color: var(--ok); }
+.tone-consistent { color: var(--teal); }
+.tone-none { color: var(--muted); }
+#review-reason { width: 100%; resize: vertical; }
+
 @media (max-width: 760px) {
   .topbar { flex-wrap: wrap; gap: 8px 12px; padding: 10px 16px; }
   .brand { order: 1; }
@@ -268,4 +398,25 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .overlay { padding: 8px; }
   .overlay-head { flex-direction: column; align-items: stretch; }
   .brief-body { padding: 12px 16px 20px; }
+  .claims-body { padding: 14px 16px 22px; }
+  .card-head { grid-template-columns: 1fr auto auto; }
+  .card-head .card-line { grid-column: 1 / -1; grid-row: 2; }
+  .card-body { padding-left: 6px; }
+
+}
+
+/* Printing (or saving as PDF) while the memo is open prints the memo alone, in black on white. */
+@media print {
+  :root { --bg: #fff; --panel: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #1d4bb8;
+    --danger: #a51c12; --warn: #7a4f00; --ok: #1b6b43; --teal: #0b6e75; }
+  @page { margin: 18mm 16mm; }
+  body.memo-open { background: #fff; }
+  body.memo-open .app, body.memo-open .overlay:not(#claims-overlay), body.memo-open #startup-error,
+  body.memo-open .overlay-head, body.memo-open .memo-bar { display: none !important; }
+  body.memo-open #claims-overlay { position: static; display: block; padding: 0; background: none; }
+  body.memo-open .claims-card { width: auto; max-height: none; border: 0; border-radius: 0; display: block; }
+  body.memo-open .claims-body { overflow: visible; padding: 0; }
+  body.memo-open .memo-doc { max-width: none; margin: 0; font-size: 11pt; line-height: 1.5; }
+  body.memo-open .memo-doc h2, body.memo-open .memo-doc h3 { break-after: avoid; }
+  body.memo-open .memo-doc li { break-inside: avoid; }
 }
