@@ -455,3 +455,28 @@ Front end only: no back-end change, no new feature, and the demo database was no
 
 Checked by clicking in the browser at desktop and phone widths; Cancel in both confirmations sends no
 request. All offline tests pass; there is no automated test of the page script.
+
+## 25. Runway chart and the memo as a document (2026-11-10)
+
+Front end only, like section 24; the demo database was not rebuilt. After this the UI is frozen: bug fixes
+only.
+
+- **Portfolio runway chart**: above the quarter table, a small SVG drawn by the page (no new library): runway
+  per update (Q1–Q3 2026: 22, 11, 7 months) and a dashed line at the 12-month warning. Each point is labelled
+  with its value and, when the runway rule fired, its level ("11 months · Warning", "7 months · High"), and
+  hovering a point shows the quarter, the value and the file it was calculated from. The chart only draws
+  what the server calculated; the 12 in the page is the same threshold the server's rule uses. On a narrow
+  screen the chart scrolls sideways inside its box, like the table.
+- **Memo as a document**: the page renders the memo's Markdown as headings, paragraphs and lists instead of a
+  monospaced block. Status words keep their status colour; links show the site name and keep the full
+  address.
+- **Same wording as the page**: the memo text goes through the same display rewriting as the claim check
+  ("here" → the claim's page, $1,440,000,000 → $1.44B, "x" → "×", en dash in ranges). Quoted text, bracketed
+  citations such as "(clearclaim_deck_2025-12.pdf p.5 ¶2)" and links are left exactly as written. Copy
+  Markdown and Download .md use the rewritten text, so what is shared matches what is shown. The back end's
+  memo Markdown (`GET /api/companies/{id}/memo`) is unchanged.
+- **Print / Save as PDF**: while the memo is open, printing hides everything else (top bar, buttons, other
+  panels) and uses black on white even in dark mode, with headings kept with their text. Checked by printing
+  to PDF with headless Chrome after clicking Claim check and Memo, in light and dark mode: the first page is
+  the memo title, summary and market section, 6 pages in all. In the browser the button was clicked with
+  `window.print` replaced by a stub, so no print dialog opened.

@@ -345,9 +345,45 @@ button.small-button { padding: 3px 9px; font-size: 12px; }
 .review-done.confirmed b { color: var(--ok); }
 .review-done.dismissed b { color: var(--muted); }
 .run-notes { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
-.memo-actions { justify-content: flex-start; margin-bottom: 8px; }
-pre.memo { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 12px 14px; font-size: 12.5px; line-height: 1.5; }
+/* Portfolio: cash runway chart above the table */
+.runway-chart { margin: 14px 0 6px; }
+.runway-chart figcaption { font-weight: 650; font-size: 15px; }
+.runway-chart figcaption span { font-weight: 400; font-size: 13px; color: var(--muted); margin-left: 6px; }
+.chart-scroll { overflow-x: auto; }
+.runway-chart svg { display: block; width: 100%; min-width: 460px; height: auto; font-size: 12px; }
+.rc-grid { stroke: var(--border); stroke-width: 1; }
+.rc-axis { fill: var(--muted); }
+.rc-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.rc-warn { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.rc-warn-label { fill: var(--text); font-size: 12px; }
+.rc-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.rc-warning .rc-dot { fill: var(--warn); }
+.rc-high .rc-dot { fill: var(--danger); }
+.rc-hit { fill: transparent; }
+.rc-label { fill: var(--text); font-weight: 600; }
+.rc-point:hover .rc-dot { r: 7; }
+/* Memo: a document, and the only thing printed while it is open */
+.memo-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 8px; }
+.memo-counts { font-size: 13px; color: var(--muted); }
+.memo-doc { max-width: 720px; margin: 18px auto 0; font-size: 14.5px; line-height: 1.65; overflow-wrap: anywhere; }
+.memo-doc h1 { font-size: 24px; letter-spacing: -.01em; margin: 0 0 6px; }
+.memo-doc h1 + p { font-size: 13px; color: var(--muted); }
+.memo-doc h2 { font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); margin: 30px 0 8px;
+  padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+.memo-doc h3 { font-size: 15px; margin: 20px 0 6px; }
+.memo-doc p { margin: 8px 0; }
+.brief-body .memo-doc ul, .brief-body .memo-doc ol { margin: 6px 0 12px; padding-left: 22px; }
+.memo-doc li { margin: 7px 0; }
+.brief-body .memo-doc li ul { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+.memo-doc li li { margin: 3px 0; }
+.memo-doc li li b { color: var(--text); }
+.memo-doc a { color: var(--accent); }
+.tone-bad { color: var(--danger); }
+.tone-warn { color: var(--warn); }
+.tone-ok { color: var(--ok); }
+.tone-consistent { color: var(--teal); }
+.tone-none { color: var(--muted); }
 #review-reason { width: 100%; resize: vertical; }
 
 @media (max-width: 760px) {
@@ -367,4 +403,20 @@ pre.memo { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg)
   .card-head .card-line { grid-column: 1 / -1; grid-row: 2; }
   .card-body { padding-left: 6px; }
 
+}
+
+/* Printing (or saving as PDF) while the memo is open prints the memo alone, in black on white. */
+@media print {
+  :root { --bg: #fff; --panel: #fff; --text: #111; --muted: #555; --border: #ccc; --accent: #1d4bb8;
+    --danger: #a51c12; --warn: #7a4f00; --ok: #1b6b43; --teal: #0b6e75; }
+  @page { margin: 18mm 16mm; }
+  body.memo-open { background: #fff; }
+  body.memo-open .app, body.memo-open .overlay:not(#claims-overlay), body.memo-open #startup-error,
+  body.memo-open .overlay-head, body.memo-open .memo-bar { display: none !important; }
+  body.memo-open #claims-overlay { position: static; display: block; padding: 0; background: none; }
+  body.memo-open .claims-card { width: auto; max-height: none; border: 0; border-radius: 0; display: block; }
+  body.memo-open .claims-body { overflow: visible; padding: 0; }
+  body.memo-open .memo-doc { max-width: none; margin: 0; font-size: 11pt; line-height: 1.5; }
+  body.memo-open .memo-doc h2, body.memo-open .memo-doc h3 { break-after: avoid; }
+  body.memo-open .memo-doc li { break-inside: avoid; }
 }

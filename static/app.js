@@ -1264,6 +1264,7 @@ async function openClaims() {
 
 function closeClaims() {
   $("claims-overlay").hidden = true;
+  document.body.classList.remove("memo-open");
   stopClaimPoll();
 }
 
@@ -1314,6 +1315,8 @@ function syncClaimButtons() {
   $("claims-run").textContent = running ? "Checking…" : "Run claim check";
   $("claims-memo").textContent = claims.view === "memo" ? "Back to claims" : "Memo";
   $("claims-memo").disabled = !claims.data || !claims.data.run;
+  // Printing prints the memo alone, and only while it is open.
+  document.body.classList.toggle("memo-open", claims.view === "memo" && !$("claims-overlay").hidden);
 }
 
 function safeUrl(url) {
@@ -1351,8 +1354,8 @@ function evidenceItemHtml(e, c) {
   const counted = !e.scope || e.scope === "company";
   return `<div class="ev ev-${esc(counted ? e.stance : "context")}">
     <div class="ev-kind">${esc(kind)}</div>
-    <div class="ev-head">${esc(displayText(e.headline, c))}</div>
-    <div class="small muted">${esc(displayText(e.note, c))}</div>
+    <div class="ev-head">${esc(displayText(e.headline, pageOf(c)))}</div>
+    <div class="small muted">${esc(displayText(e.note, pageOf(c)))}</div>
     ${e.quote ? `<div class="quote">“${esc(e.quote)}”</div>` : ""}
     ${where ? `<div class="source-loc">${where}</div>` : ""}
   </div>`;
@@ -1457,10 +1460,12 @@ function shortMoney(digits) {
   return unit ? `$${Number((n / size).toFixed(2))}${unit}` : null;
 }
 
-function displayText(text, claim) {
+// The page of a claim ("p.5"), which "here" stands for in its evidence.
+const pageOf = (c) => (c && (/p\.\d+/.exec(locationOf(c)) || [])[0]) || null;
+
+function displayText(text, page) {
   let t = String(text);
-  const page = claim && /p\.\d+/.exec(locationOf(claim));
-  if (page) t = t.replace(/ here and /, ` on ${page[0]}, `).replace(/\bhere\b/, `on ${page[0]}`);
+  if (page) t = t.replace(/ here and /, ` on ${page}, `).replace(/\bhere\b/, `on ${page}`);
   return t.replace(/(p\.\d+) ¶\d+/g, "$1")
     .replace(/\$(\d{1,3}(?:,\d{3})+)(?!,?\d)/g, (m, digits) => shortMoney(digits) || m)
     .replace(/(\d) x (\$?\d)/g, "$1 × $2")
@@ -1472,7 +1477,7 @@ function conclusionOf(c) {
   const counted = c.evidence.filter((e) => !e.scope || e.scope === "company");
   const stance = { contradicted: "contradicts", possibly_overstated: "overstates" }[c.status];
   const e = counted.find((x) => x.stance === stance) || counted[0] || c.evidence[0];
-  return e ? displayText(e.headline, c) : "No evidence found";
+  return e ? displayText(e.headline, pageOf(c)) : "No evidence found";
 }
 
 // Claim cards start folded to one line; clicking the line opens the quote, evidence, question and buttons.
@@ -1541,7 +1546,7 @@ function summaryHtml(s, d) {
     : t.status === "not_addressed" ? ["Not addressed", "st-warn"] : CLAIM_STATUS[t.status] || [t.status, "st-none"]);
   const top = s.top.map((t) => {
     const [name, cls] = label(t);
-    const text = displayText(t.text, d.claims.find((c) => c.fingerprint === t.fingerprint));
+    const text = displayText(t.text, pageOf(d.claims.find((c) => c.fingerprint === t.fingerprint)));
     const cut = text.indexOf(": ");
     const shown = cut > 0 ? `<b>${esc(text.slice(0, cut))}</b>${esc(text.slice(cut))}` : esc(text);
     return `<li><span class="status ${cls}">${esc(name)}</span> <span>${shown}</span></li>`;
@@ -1642,7 +1647,8 @@ async function toggleMemo() {
   claims.memo = null;
   renderClaims();
   try {
-    claims.memo = await api(`/api/companies/${claims.companyId}/memo${hideQuery()}`);
+    const memo = await api(`/api/companies/${claims.companyId}/memo${hideQuery()}`);
+    claims.memo = { ...memo, text: memoText(memo.markdown) };
   } catch (err) {
     claims.memo = { error: err.message };
   }
@@ -1654,12 +1660,65 @@ function renderMemo() {
   const m = claims.memo;
   if (!m) { $("claims-body").innerHTML = '<div class="answer pending">Building the memo…</div>'; return; }
   if (m.error) { $("claims-body").innerHTML = `<div class="answer error">${esc(m.error)}</div>`; return; }
-  $("claims-body").innerHTML = `<div class="overlay-actions memo-actions">
-      <button type="button" class="secondary" id="memo-copy">Copy Markdown</button>
-      <button type="button" class="secondary" id="memo-download">Download .md</button>
+  $("claims-body").innerHTML = `<div class="memo-bar">
+      <span class="memo-counts">${countsText(m.counts)}</span>
+      <span class="overlay-actions">
+        <button type="button" class="secondary" id="memo-print">Print / Save as PDF</button>
+        <button type="button" class="secondary" id="memo-copy">Copy Markdown</button>
+        <button type="button" class="secondary" id="memo-download">Download .md</button>
+      </span>
     </div>
-    <div class="muted small">${countsText(m.counts)}</div>
-    <pre class="memo">${esc(m.markdown)}</pre>`;
+    <article class="memo-doc">${memoHtml(m.text)}</article>`;
+}
+
+// The memo uses the page's display wording (see displayText). Quotes, bracketed citations and links stay as
+// written, and "here" is the page of the claim the line belongs to. Copy and Download use the same text.
+function memoText(markdown) {
+  let page = null;
+  return markdown.split("\n").map((line) => {
+    if (line.startsWith("- ")) page = (/\(\S+ (p\.\d+) ¶\d+\)/.exec(line) || [])[1] || null;
+    return line.split(/("[^"]*"|“[^”]*”|\([^()]*¶[^()]*\)|https?:\/\/\S+)/)
+      .map((part, i) => (i % 2 ? part : displayText(part, page))).join("");
+  }).join("\n");
+}
+
+// Bold status words keep their status colour; links show their site and keep the full address.
+const MEMO_TONES = Object.fromEntries([...Object.values(CLAIM_STATUS), ["High", "st-bad"], ["Warning", "st-warn"]]
+  .map(([label, cls]) => [label, cls.replace("st-", "tone-")]));
+
+function memoInline(text) {
+  return text.split(/(https?:\/\/\S+)/).map((part, i) => {
+    if (!(i % 2)) return esc(part).replace(/\*\*(.+?)\*\*/g, (m, b) => `<b class="${MEMO_TONES[b] || ""}">${b}</b>`);
+    const url = part.replace(/[.,;)]+$/, "");
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(url)}">${esc(siteOf(url))}</a>`
+      + esc(part.slice(url.length));
+  }).join("");
+}
+
+// The memo's Markdown as a document: headings, paragraphs, lists with one level of sub-items.
+function memoHtml(markdown) {
+  const blocks = [];
+  for (const line of markdown.split("\n")) {
+    const last = blocks[blocks.length - 1];
+    let m;
+    if ((m = /^(#{1,3}) (.*)$/.exec(line))) blocks.push({ tag: `h${m[1].length}`, text: m[2] });
+    else if ((m = /^\s+- (.*)$/.exec(line)) && last && last.items) last.items[last.items.length - 1].sub.push(m[1]);
+    else if ((m = /^(- |\d+\. )(.*)$/.exec(line))) {
+      const tag = m[1] === "- " ? "ul" : "ol";
+      if (!last || last.tag !== tag) blocks.push({ tag, items: [] });
+      blocks[blocks.length - 1].items.push({ text: m[2], sub: [] });
+    } else if (!line.trim()) blocks.push({ tag: "gap" });
+    else if (last && last.lines) last.lines.push(line);
+    else blocks.push({ tag: "p", lines: [line] });
+  }
+  return blocks.map((b) => {
+    if (b.items) {
+      return `<${b.tag}>${b.items.map((it) => `<li>${memoInline(it.text)}${it.sub.length
+        ? `<ul>${it.sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : ""}</li>`).join("")}</${b.tag}>`;
+    }
+    if (b.lines) return `<p>${b.lines.map(memoInline).join("<br>")}</p>`;
+    return b.text != null ? `<${b.tag}>${memoInline(b.text)}</${b.tag}>` : "";
+  }).join("");
 }
 
 $("nav-claims").onclick = openClaims;
@@ -1714,14 +1773,15 @@ $("claims-body").addEventListener("click", async (e) => {
     if (claims.openSources.has(fp)) claims.openSources.delete(fp); else claims.openSources.add(fp);
     return renderClaims();
   }
+  if (e.target.closest("#memo-print")) return window.print();
   if (e.target.closest("#memo-copy")) {
     const button = $("memo-copy");
-    try { await navigator.clipboard.writeText(claims.memo.markdown); button.textContent = "Copied"; }
+    try { await navigator.clipboard.writeText(claims.memo.text); button.textContent = "Copied"; }
     catch { button.textContent = "Copy failed"; }
     return setTimeout(() => { if ($("memo-copy")) $("memo-copy").textContent = "Copy Markdown"; }, 1500);
   }
   if (e.target.closest("#memo-download")) {
-    const blob = new Blob([claims.memo.markdown], { type: "text/markdown" });
+    const blob = new Blob([claims.memo.text], { type: "text/markdown" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `memo-${claims.memo.company.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md`;
@@ -1843,6 +1903,53 @@ function signalHtml(s) {
   </div>`;
 }
 
+// "2026-03-31" → "Q1 2026"
+const quarterOf = (date) => `Q${Math.ceil(Number(date.slice(5, 7)) / 3)} ${date.slice(0, 4)}`;
+const RUNWAY_WARNING_MONTHS = 12;  // the server's runway rule; the chart only draws the line
+
+// Cash runway per update as a small SVG line chart, with the 12-month warning line. Each point is labelled with
+// its value and, if the runway rule fired, its level. The table below has the same figures.
+function runwayChartHtml(periods, byPeriod) {
+  const pts = periods.filter((p) => p.runway_months != null);
+  if (pts.length < 2) return "";
+  const [W, H, L, R, T, B] = [720, 230, 40, 28, 30, 36];
+  const top = Math.max(24, Math.ceil(Math.max(...pts.map((p) => p.runway_months)) / 6) * 6);
+  const x = (i) => L + 20 + i * (W - L - R - 20) / (pts.length - 1);
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  const grid = [];
+  for (let v = 0; v <= top; v += 6) {
+    grid.push(`<line class="rc-grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>
+      <text class="rc-axis" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`);
+  }
+  const level = (p) => ((byPeriod[p.period_end] || []).find((s) => s.kind === "cash_runway") || {}).level;
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.runway_months)}`).join(" ");
+  const points = pts.map((p, i) => {
+    const lv = level(p);
+    const name = lv ? SIGNAL_LEVEL[lv][0] : "";
+    const label = `${p.runway_months} months${name ? ` · ${name}` : ""}`;
+    const anchor = i === 0 ? "start" : i === pts.length - 1 ? "end" : "middle";
+    const below = p.runway_months < RUNWAY_WARNING_MONTHS;  // labels stay clear of the warning line
+    return `<g class="rc-point${lv ? ` rc-${lv}` : ""}"><title>${esc(`${quarterOf(p.period_end)}: ${p.runway_months} months of runway`
+      + ` (calculated from ${p.filename})${name ? `. Runway signal: ${name}.` : ""}`)}</title>
+      <circle class="rc-hit" cx="${x(i)}" cy="${y(p.runway_months)}" r="16"/>
+      <circle class="rc-dot" cx="${x(i)}" cy="${y(p.runway_months)}" r="5"/>
+      <text class="rc-label" x="${x(i)}" y="${y(p.runway_months) + (below ? 22 : -12)}" text-anchor="${anchor}">${esc(label)}</text>
+      <text class="rc-axis" x="${x(i)}" y="${H - 12}" text-anchor="${anchor}">${esc(quarterOf(p.period_end))}</text></g>`;
+  }).join("");
+  const warn = y(RUNWAY_WARNING_MONTHS);
+  return `<figure class="runway-chart">
+    <figcaption>Cash runway <span>months, calculated from each update</span></figcaption>
+    <div class="chart-scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cash runway by quarter: ${esc(pts.map((p) =>
+      `${quarterOf(p.period_end)} ${p.runway_months} months`).join(", "))}; warning line at ${RUNWAY_WARNING_MONTHS} months">
+      ${grid.join("")}
+      <line class="rc-warn" x1="${L}" x2="${W - R}" y1="${warn}" y2="${warn}"/>
+      <text class="rc-warn-label" x="${W - R}" y="${warn - 6}" text-anchor="end">${RUNWAY_WARNING_MONTHS}-month warning</text>
+      <path class="rc-line" d="${line}"/>
+      ${points}
+    </svg></div>
+  </figure>`;
+}
+
 function renderMonitor() {
   const d = mon.data;
   const running = !!d.running;
@@ -1882,6 +1989,7 @@ function renderMonitor() {
   const signals = d.periods.filter((p) => byPeriod[p.period_end]).map((p) =>
     `<h3>${esc(p.period_end)}</h3>${byPeriod[p.period_end].map(signalHtml).join("")}`).join("");
   $("monitor-body").innerHTML = `${head.join("")}
+    ${runwayChartHtml(d.periods, byPeriod)}
     <div class="muted small">Figures are quoted from each update; runway and growth are calculated by the program. Signals
       are rules, not conclusions.</div>
     <div class="table-scroll"><table class="monitor-table">

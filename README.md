@@ -83,7 +83,9 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    the page by default (see "Page switches" below).
 15. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
    alignment, risks the deck states), portfolio signals, awaiting review, questions for the founder.
-   Built by the program from the results; no model writes it.
+   Built by the program from the results; no model writes it. The page shows it as a document with the
+   same display wording as the claim check (page numbers instead of "here", amounts such as $1.44B); quotes
+   are never rewritten. **Print / Save as PDF** prints the memo alone, black on white.
 
 The claim check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
 claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**. Each claim
