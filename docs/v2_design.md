@@ -425,6 +425,33 @@ claim check 10 calls, 7 search credits, $0.65, 107 s; monitoring 4 calls, $0.08,
 
 On claim cards and portfolio signal cards the question starts folded as a clickable "Ask the founder ▸";
 clicking it shows the question ("▾") and it stays open when the page re-renders (switching tabs, after a
-review). The question on the Alignment tab stays open, and so would those on changes and checklist items
-if switched on. The memo's "Questions for the founder" section is unchanged. Page script only, so it was
+review). (Since section 24 the Alignment question and those on changes and checklist items fold too.) The memo's "Questions for the founder" section is unchanged. Page script only, so it was
 checked by clicking in the browser; there is no automated test.
+
+## 24. Layout pass (2026-11-10)
+
+Front end only: no back-end change, no new feature, and the demo database was not rebuilt.
+
+- **Claim cards fold to one line**: status, label and a one-sentence conclusion in bold (the counted
+  evidence behind the status). Clicking the line opens the quote, the evidence and links, "Ask the founder ▸"
+  and the review buttons. Every founder question on the page now starts folded, the Alignment one included.
+- **Summary box**: only the issue count per category and the three most important items. The explanation
+  text and the "(n unverified)" counts next to the issue counts are gone; unverified claims are counted on
+  the All claims tab.
+- **Display wording**: evidence headlines are stored as the run wrote them, so the page rewrites them for
+  display only. "here" becomes the claim's own page ("67–82% on p.5, above 90% on p.9"), paragraph marks are
+  dropped in headlines, amounts of a million or more are shortened ($1,440,000,000 → $1.44B), "x" becomes
+  "×" and ranges get an en dash. Quotes are never rewritten. The memo is unchanged (it is the next step).
+- **Layout**: the claim check and portfolio content is one column of about 800px with more line height,
+  fewer borders and less small grey text. Each status has one colour: contradicted red, possibly overstated
+  amber, externally supported green, consistent with company data teal, unverified grey; "To discuss" is blue.
+- **Names**: the top-bar "Issues" is now "Data checks" (conflicts and gaps in the files themselves), so it is
+  not confused with the Issues tab of the claim check. Only the label changed.
+- **Run buttons**: "Run claim check" and "Run monitoring" are secondary buttons (white with a blue border).
+  Each opens a confirmation in the page with what the run does and its time and cost, taken from the last
+  run (or a typical figure when there is none). Nothing is sent until Run is clicked.
+- **Run line**: "Checked Nov 9, 2026 · about $0.62 · 3 min". The file, model calls, tokens, web searches and
+  seconds are in the hover text.
+
+Checked by clicking in the browser at desktop and phone widths; Cancel in both confirmations sends no
+request. All offline tests pass; there is no automated test of the page script.

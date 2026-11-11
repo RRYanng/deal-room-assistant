@@ -161,7 +161,7 @@ function entryHtml(e) {
   if (e.kind === "note") {
     const lines = e.lines.map((l) => `<div class="note-line">${esc(l.text)}</div>`).join("");
     const link = e.issuesCompany ? `<div class="answer-foot"><button type="button" class="link small"
-      data-open-issues="${e.issuesCompany}">View issues</button></div>` : "";
+      data-open-issues="${e.issuesCompany}">View data checks</button></div>` : "";
     return `<div class="answer">${lines}${link}</div>`;
   }
   if (e.kind === "brief") {
@@ -947,7 +947,7 @@ async function renderDrawer() {
     const html = drawer.view === "library" ? await libraryHtml()
       : drawer.companyId ? await issueDetailHtml(drawer.companyId) : await issueListHtml();
     if (request !== drawerRequest) return; // the user moved on, or something newer is rendering
-    $("drawer-title").textContent = drawer.view === "library" ? "Library" : "Issues";
+    $("drawer-title").textContent = drawer.view === "library" ? "Library" : "Data checks";
     $("drawer-body").innerHTML = html;
   } catch (err) {
     if (request === drawerRequest) $("drawer-body").innerHTML = `<div class="answer error">${esc(err.message)}</div>`;
@@ -1228,7 +1228,7 @@ const CLAIM_STATUS = {
   contradicted: ["Contradicted", "st-bad"],
   possibly_overstated: ["Possibly overstated", "st-warn"],
   externally_supported: ["Externally supported", "st-ok"],
-  consistent_with_company_data: ["Consistent with company data", "st-info"],
+  consistent_with_company_data: ["Consistent with company data", "st-consistent"],
   unverified: ["Unverified", "st-none"],
 };
 const EVIDENCE_SOURCE = { internal: "Company materials", external: "Web source", calculation: "Calculation" };
@@ -1236,7 +1236,7 @@ const EVIDENCE_STANCE = { supports: "supports", contradicts: "contradicts", over
 const CLAIM_POLL_MS = 1000;
 
 const claims = { companyId: null, data: null, view: "claims", tab: "issues", showDismissed: false, showOther: false,
-  timer: null, memo: null, reviewing: null, openSources: new Set() };
+  timer: null, memo: null, reviewing: null, openSources: new Set(), openCards: new Set() };
 const CLAIM_TABS = [["issues", "Issues"], ["all", "All claims"], ["alignment", "Alignment"]];
 const ISSUE_STATUSES = ["contradicted", "possibly_overstated"];
 // Parts switched off in the UI config file ("changes", "regulatory"). The server still computes them; the page
@@ -1325,10 +1325,10 @@ function siteOf(url) {
 }
 
 // Times from the server are UTC ("2026-11-08 17:25:14"); show them in the viewer's own time zone.
-function localTime(s) {
+function localTime(s, style = { dateStyle: "medium", timeStyle: "short" }) {
   if (!s) return "";
   const d = new Date(String(s).replace(" ", "T") + "Z");
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleString([], style);
 }
 
 // The claim's own figure, in bold inside its quote.
@@ -1340,7 +1340,7 @@ function boldValue(quote, value) {
   return at < 0 ? text : `${text.slice(0, at)}<b>${v}</b>${text.slice(at + v.length)}`;
 }
 
-function evidenceItemHtml(e) {
+function evidenceItemHtml(e, c) {
   const url = safeUrl(e.url);
   const where = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>`
     : e.filename ? esc(`${e.filename} · ${locationOf(e)}`) : "";
@@ -1351,8 +1351,8 @@ function evidenceItemHtml(e) {
   const counted = !e.scope || e.scope === "company";
   return `<div class="ev ev-${esc(counted ? e.stance : "context")}">
     <div class="ev-kind">${esc(kind)}</div>
-    <div class="ev-head">${esc(e.headline)}</div>
-    <div class="small muted">${esc(e.note)}</div>
+    <div class="ev-head">${esc(displayText(e.headline, c))}</div>
+    <div class="small muted">${esc(displayText(e.note, c))}</div>
     ${e.quote ? `<div class="quote">“${esc(e.quote)}”</div>` : ""}
     ${where ? `<div class="source-loc">${where}</div>` : ""}
   </div>`;
@@ -1367,7 +1367,8 @@ function evidenceListHtml(c) {
   const open = claims.openSources.has(c.fingerprint);
   const toggle = folded.length ? `<button type="button" class="link small" data-sources="${esc(c.fingerprint)}">
     ${open ? "Hide" : "Show"} ${folded.length} other source${folded.length === 1 ? "" : "s"}</button>` : "";
-  return shown.map(evidenceItemHtml).join("") + (open ? folded.map(evidenceItemHtml).join("") : "") + toggle;
+  const item = (e) => evidenceItemHtml(e, c);
+  return shown.map(item).join("") + (open ? folded.map(item).join("") : "") + toggle;
 }
 
 // Reviewed items show only the decision and its reason; "Change" brings back the two buttons.
@@ -1401,13 +1402,9 @@ function toggleChange(e) {
   return true;
 }
 
-// A question for the founder, written by the program from verified quotes (never a conclusion).
-function questionHtml(q) {
-  return q ? `<div class="founder-q"><span class="q-label">Ask the founder</span> ${esc(q.text)}</div>` : "";
-}
-
-// On claim and signal cards the question starts folded: "Ask the founder ▸" opens it. `key` is
-// `${type}:${fingerprint}`, so a question stays open when the page re-renders.
+// A question for the founder, written by the program from verified quotes (never a conclusion). It starts
+// folded: "Ask the founder ▸" opens it. `key` names the item (`claim:${fingerprint}`, `align:${title}`...),
+// so a question stays open when the page re-renders.
 const openQuestions = new Set();
 
 function foldedQuestionHtml(q, key) {
@@ -1432,7 +1429,7 @@ function alignmentHtml(a) {
     .flatMap(([role, title]) => a[role].map((r) => `<div class="small"><b>${title}:</b> “${esc(r.quote)}”
       <span class="muted">(${esc(locationOf({ loc_label: r.loc_label, filename: claims.data.run.filename }))})</span></div>`)).join("");
   const points = a.points.map((p) => `<div class="align-point"><div><span class="status st-info">To discuss</span>
-      <b>${esc(p.title)}</b></div><div class="small muted">${esc(p.note)}</div>${questionHtml(p.question)}</div>`).join("");
+      <b>${esc(p.title)}</b></div><div class="small muted">${esc(p.note)}</div>${foldedQuestionHtml(p.question, `align:${p.title}`)}</div>`).join("");
   return `<div class="issue-card panel"><div class="issue-title">Alignment: does the company earn more when its customers are
     better off?</div>${roles}${points}</div>`;
 }
@@ -1444,23 +1441,60 @@ function regulatoryHtml(r) {
     return `<div class="reg-item"><div><span class="status ${addressed ? "st-ok" : "st-warn"}">${esc(i.status)}</span>
         <b>${esc(i.name)}</b></div>
       <div class="small muted">${esc(i.why)}</div>
-      ${addressed ? `<div class="quote">“${esc(i.quote)}” (${esc(i.filename)})</div>` : questionHtml(i.question)}</div>`;
+      ${addressed ? `<div class="quote">“${esc(i.quote)}” (${esc(i.filename)})</div>` : foldedQuestionHtml(i.question, `reg:${i.name}`)}</div>`;
   }).join("");
   return `<div class="issue-card panel"><div class="issue-title">Regulatory checklist (${esc(r.industry.name)})</div>
     <div class="muted small">"Not addressed in materials" means the files do not mention it. It is not a finding of
       non-compliance.</div>${items}</div>`;
 }
 
-function claimRowHtml(c) {
+// Display only: evidence headlines and notes are shown as the run stored them, with three changes. "here" becomes the
+// claim's own page, large dollar amounts are shortened ($1,440,000,000 → $1.44B), and ranges get an en dash.
+// Quotes are never rewritten.
+function shortMoney(digits) {
+  const n = Number(digits.replace(/,/g, ""));
+  const [unit, size] = n >= 1e9 ? ["B", 1e9] : n >= 1e6 ? ["M", 1e6] : [null, 1];
+  return unit ? `$${Number((n / size).toFixed(2))}${unit}` : null;
+}
+
+function displayText(text, claim) {
+  let t = String(text);
+  const page = claim && /p\.\d+/.exec(locationOf(claim));
+  if (page) t = t.replace(/ here and /, ` on ${page[0]}, `).replace(/\bhere\b/, `on ${page[0]}`);
+  return t.replace(/(p\.\d+) ¶\d+/g, "$1")
+    .replace(/\$(\d{1,3}(?:,\d{3})+)(?!,?\d)/g, (m, digits) => shortMoney(digits) || m)
+    .replace(/(\d) x (\$?\d)/g, "$1 × $2")
+    .replace(/(\d)-(\d+%)/g, "$1–$2");
+}
+
+// The one-line conclusion on a folded card: the counted evidence behind the status, else what was found.
+function conclusionOf(c) {
+  const counted = c.evidence.filter((e) => !e.scope || e.scope === "company");
+  const stance = { contradicted: "contradicts", possibly_overstated: "overstates" }[c.status];
+  const e = counted.find((x) => x.stance === stance) || counted[0] || c.evidence[0];
+  return e ? displayText(e.headline, c) : "No evidence found";
+}
+
+// Claim cards start folded to one line; clicking the line opens the quote, evidence, question and buttons.
+function claimCardHtml(c) {
   const [label, cls] = CLAIM_STATUS[c.status] || [c.status, "st-none"];
-  return `<tr class="${c.review_state === "dismissed" ? "dismissed" : ""}">
-    <td><span class="status ${cls}">${esc(label)}</span></td>
-    <td><div class="claim-label">${esc(c.label)}${c.category ? ` <span class="muted small">· ${esc(c.category)}</span>` : ""}</div>
+  const open = claims.openCards.has(c.fingerprint);
+  const decided = c.review_state === "awaiting_review" ? ""
+    : `<span class="card-decision ${c.review_state}">${c.review_state === "confirmed" ? "Confirmed" : "Dismissed"}</span>`;
+  const body = open ? `<div class="card-body">
       <div class="claim-quote">“${boldValue(c.quote, c.value_raw)}”</div>
-      <div class="muted small">${esc(c.filename)} · ${esc(locationOf(c))}</div>${foldedQuestionHtml(c.question, `claim:${c.fingerprint}`)}</td>
-    <td>${evidenceListHtml(c)}</td>
-    <td>${reviewCellHtml(c)}</td>
-  </tr>`;
+      <div class="source-loc">${esc(c.filename)} · ${esc(locationOf(c))}</div>
+      <div class="card-evidence">${evidenceListHtml(c)}</div>
+      ${foldedQuestionHtml(c.question, `claim:${c.fingerprint}`)}
+      <div class="card-review">${reviewCellHtml(c)}</div>
+    </div>` : "";
+  return `<li class="claim-card${open ? " open" : ""}${c.review_state === "dismissed" ? " dismissed" : ""}">
+    <button type="button" class="card-head" data-card="${esc(c.fingerprint)}" aria-expanded="${open}">
+      <span class="status ${cls}">${esc(label)}</span>
+      <span class="card-line"><span class="card-label">${esc(c.label)}</span> <b>${esc(conclusionOf(c))}</b></span>
+      ${decided}<span class="card-arrow" aria-hidden="true">${open ? "▾" : "▸"}</span>
+    </button>${body}
+  </li>`;
 }
 
 function runSummaryHtml(d) {
@@ -1473,43 +1507,49 @@ function runSummaryHtml(d) {
     parts.push(`<div class="answer error">The latest claim check failed: ${esc(d.failed_run.error)}${kept}</div>`);
   }
   if (d.run) {
-    const when = d.run.finished_at ? ` · ${esc(localTime(d.run.finished_at))}` : "";
-    parts.push(`<div class="muted small">Last check: ${esc(d.run.filename)}${when}${usageText(d.run.usage)}</div>`);
+    parts.push(runLineHtml(d.run, `Deck: ${d.run.filename}`));
     if (d.run.notes.length) parts.push(`<ul class="run-notes">${d.run.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`);
   }
   return parts.join("");
 }
 
-function usageText(u) {
-  if (!u) return "";
-  const parts = [`${u.model_calls} model call${u.model_calls === 1 ? "" : "s"}`];
-  if (u.tokens) parts.push(`${(u.tokens.input_tokens + u.tokens.cache_read_input_tokens
-    + u.tokens.cache_creation_input_tokens).toLocaleString()} input / ${u.tokens.output_tokens.toLocaleString()} output tokens`);
-  if (u.estimated_usd != null) parts.push(`about $${u.estimated_usd.toFixed(2)} (estimate)`);
-  parts.push(`${u.web_searches} web search${u.web_searches === 1 ? "" : "es"}`);
-  parts.push(`${Math.round(u.seconds)} s`);
-  return ` · ${parts.map(esc).join(" · ")}`;
+const minutesText = (seconds) => (seconds < 60 ? "under 1 min" : `${Math.round(seconds / 60)} min`);
+
+// "Checked Nov 9, 2026 · about $0.62 · 3 min"; calls, tokens and searches are in the hover text.
+function runLineHtml(run, first) {
+  const u = run.usage;
+  const parts = [`Checked ${localTime(run.finished_at, { dateStyle: "medium" })}`];
+  if (u && u.estimated_usd != null) parts.push(`about $${u.estimated_usd.toFixed(2)}`);
+  if (u) parts.push(minutesText(u.seconds));
+  const details = [first, `Finished ${localTime(run.finished_at)}`];
+  if (u) {
+    details.push(plural(u.model_calls, "model call"));
+    if (u.tokens) details.push(`${(u.tokens.input_tokens + u.tokens.cache_read_input_tokens
+      + u.tokens.cache_creation_input_tokens).toLocaleString()} input / ${u.tokens.output_tokens.toLocaleString()} output tokens`);
+    if (u.web_searches != null) details.push(`${u.web_searches} web search${u.web_searches === 1 ? "" : "es"}`);
+    details.push(`${Math.round(u.seconds)} s`);
+    if (u.estimated_usd != null) details.push("The cost is an estimate from token counts.");
+  }
+  return `<div class="run-line" tabindex="0" title="${esc(details.join("\n"))}">${esc(parts.join(" · "))}</div>`;
 }
 
-function summaryHtml(s) {
+function summaryHtml(s, d) {
   if (!s) return "";
   const cats = s.categories.map((c) => `<span class="summary-cat${c.issues ? " has-issues" : ""}"><b>${c.issues}</b>
-    ${esc(c.category)}${c.unverified ? ` <span class="muted small">(${c.unverified} unverified)</span>` : ""}</span>`).join("");
+    ${esc(c.category)}</span>`).join("");
   const label = (t) => (t.status === "changed" ? ["Changed", "st-warn"]
     : t.status === "not_addressed" ? ["Not addressed", "st-warn"] : CLAIM_STATUS[t.status] || [t.status, "st-none"]);
   const top = s.top.map((t) => {
     const [name, cls] = label(t);
-    const cut = t.text.indexOf(": ");
-    const text = cut > 0 ? `<b>${esc(t.text.slice(0, cut))}</b>${esc(t.text.slice(cut))}` : esc(t.text);
-    return `<li><span class="status ${cls}">${esc(name)}</span> ${text}</li>`;
+    const text = displayText(t.text, d.claims.find((c) => c.fingerprint === t.fingerprint));
+    const cut = text.indexOf(": ");
+    const shown = cut > 0 ? `<b>${esc(text.slice(0, cut))}</b>${esc(text.slice(cut))}` : esc(text);
+    return `<li><span class="status ${cls}">${esc(name)}</span> <span>${shown}</span></li>`;
   }).join("");
   return `<section class="summary-box" aria-label="Summary">
-    <div class="summary-title">Summary <span class="muted small">issues by category (contradicted${shows("changes")
-      ? ", possibly overstated, or changed since the last deck" : " or possibly overstated"}; dismissed items are not
-      counted)</span></div>
+    <div class="summary-title">Summary</div>
     <div class="summary-cats">${cats}</div>
-    ${top ? `<div class="summary-sub">Most important</div><ol class="summary-top">${top}</ol>`
-      : '<div class="muted small">No issues found.</div>'}
+    ${top ? `<div class="summary-sub">Most important</div><ol class="summary-top">${top}</ol>` : "<div>No issues found.</div>"}
   </section>`;
 }
 
@@ -1521,7 +1561,7 @@ function changesHtml(changes) {
         <b>${esc(c.label)}</b>: <b>${esc(c.old.value_raw)}</b> → <b>${esc(c.new.value_raw)}</b>
         <span class="muted small">(${esc(c.old.filename)} → ${esc(c.new.filename)})</span></div>
       <div class="quote">Before: “${esc(c.old.quote)}” · Now: “${esc(c.new.quote)}”</div>
-      ${questionHtml(c.question)}
+      ${foldedQuestionHtml(c.question, `drift:${c.fingerprint}`)}
       ${reviewCellHtml(c, "drift")}
     </div>`).join("");
   return `<div class="issue-card changes">
@@ -1559,27 +1599,25 @@ function renderClaims() {
       ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(siteOf(url))}</a>` : ""}
       ${c.source_type ? `<span class="muted small">(${esc(c.source_type)})</span>` : ""}</li>`;
   }).join("")}</ul>` : "";
-  const table = (rows) => `<table class="claims-table">
-      <thead><tr><th>Evidence status</th><th>Claim</th><th>Evidence</th><th>Review</th></tr></thead>
-      <tbody>${rows.map(claimRowHtml).join("")}</tbody>
-    </table>`;
-  const note = `<div class="muted small">Evidence statuses describe the evidence found, not whether a claim is true.
-    Nothing is a finding until you confirm it.</div>`;
+  // The status column is as wide as the longest status in the list.
+  const wide = (rows) => rows.some((c) => c.status === "consistent_with_company_data" || c.status === "externally_supported");
+  const table = (rows) => `<ul class="claim-cards${wide(rows) ? " wide" : ""}">${rows.map(claimCardHtml).join("")}</ul>`;
+  const note = `<p class="claims-note">Statuses describe the evidence found, not whether a claim is true. Nothing is a
+    finding until you confirm it.</p>`;
   let body;
   if (claims.tab === "alignment") {
     body = alignmentHtml(d.alignment) || '<div class="muted">The deck does not say who pays, how it charges or who benefits.</div>';
   } else if (claims.tab === "all") {
     body = `<div class="claims-summary">${byStatus.join(" ")}
         <span class="muted small">${countsText(d.counts)}</span> ${dismissed}</div>
-      ${note}${table(claims.showOther ? main.concat(other) : main)}
+      ${table(claims.showOther ? main.concat(other) : main)}${note}
       <div class="claims-more">${otherToggle}</div>
       ${competitors}`;
   } else {
     const issues = main.filter((c) => ISSUE_STATUSES.includes(c.status));
-    body = `${summaryHtml(d.summary)}${changesHtml(d.changes || [])}${regulatoryHtml(d.regulatory)}
-      <h3>Claims with issues <span class="muted small">contradicted or possibly overstated · ${issues.length} of
-        ${plural(d.counts.claims, "claim")}; the rest are under All claims</span></h3>
-      ${issues.length ? note + table(issues) : '<div class="muted">No contradicted or possibly overstated claims.</div>'}`;
+    body = `${summaryHtml(d.summary, d)}${changesHtml(d.changes || [])}${regulatoryHtml(d.regulatory)}
+      <h3 class="cards-title">Claims with issues <span class="cards-count">${issues.length} of ${d.counts.claims}</span></h3>
+      ${issues.length ? table(issues) + note : "<div>No contradicted or possibly overstated claims.</div>"}`;
   }
   const tabs = CLAIM_TABS.map(([id, name]) => `<button type="button" role="tab" data-tab="${id}"
     class="claim-tab${claims.tab === id ? " active" : ""}" aria-selected="${claims.tab === id}">${name}</button>`).join("");
@@ -1637,6 +1675,12 @@ $("claims-company").onchange = () => {
 $("claims-memo").onclick = toggleMemo;
 $("claims-run").onclick = async () => {
   if (!claims.companyId) return;
+  const deck = claims.data && claims.data.run ? ` (${claims.data.run.filename})` : "";
+  const go = await confirmRun("Run claim check?", [
+    `The model reads the newest deck${deck}, checks it against the company's files and searches the web.`,
+    runEstimate(claims.data && claims.data.run, "about 3 min", "about $0.70"),
+    "The new results replace the ones shown now. Confirm and dismiss decisions are kept."]);
+  if (!go || !claims.companyId) return;
   $("claims-run").disabled = true;
   try {
     const run = await postJson(`/api/companies/${claims.companyId}/claim-check`, {});
@@ -1684,10 +1728,48 @@ $("claims-body").addEventListener("click", async (e) => {
     a.click();
     return URL.revokeObjectURL(a.href);
   }
+  const card = e.target.closest("[data-card]");
+  if (card) {
+    const fp = card.dataset.card;
+    if (claims.openCards.has(fp)) claims.openCards.delete(fp); else claims.openCards.add(fp);
+    return renderClaims();
+  }
   if (toggleChange(e) || toggleQuestion(e)) return renderClaims();
   const button = e.target.closest("[data-review]");
   if (button) openReview(button.dataset.fp, button.dataset.review, button.dataset.type || "claim");
 });
+
+// Before a run that calls the model: what it does, how long and what it costs. Built into the page, like the
+// delete confirmation, because some browsers block the native dialogs.
+let answerRun = null;
+
+function confirmRun(title, lines) {
+  $("run-title").textContent = title;
+  $("run-message").innerHTML = lines.map((l) => `<div>${esc(l)}</div>`).join("");
+  $("run-dialog").showModal();
+  $("run-cancel").focus();
+  return new Promise((resolve) => { answerRun = resolve; });
+}
+
+function finishRun(answer) {
+  $("run-dialog").close();
+  if (answerRun) answerRun(answer);
+  answerRun = null;
+}
+
+$("run-cancel").onclick = () => finishRun(false);
+$("run-confirm").onclick = () => finishRun(true);
+$("run-dialog").addEventListener("cancel", () => finishRun(false)); // Escape
+
+// Time and cost of the last run when there is one, else a typical figure.
+function runEstimate(last, time, cost) {
+  const u = last && last.usage;
+  if (u && u.estimated_usd != null) {
+    const time = u.seconds < 60 ? "under a minute" : `about ${Math.round(u.seconds / 60)} min`;
+    return `It takes ${time} and costs about $${u.estimated_usd.toFixed(2)}, judging by the last run.`;
+  }
+  return `It takes ${time} and costs ${cost}.`;
+}
 
 // ---------------------------------------------------------------- portfolio monitoring
 
@@ -1747,14 +1829,6 @@ async function pollMonitor(companyId, runId) {
 
 const money = (m) => (m ? esc(m.value_raw) : '<span class="muted">—</span>');
 
-function monitorUsageText(u) {
-  if (!u) return "";
-  const parts = [`${u.model_calls} model call${u.model_calls === 1 ? "" : "s"}`];
-  if (u.estimated_usd != null) parts.push(`about $${u.estimated_usd.toFixed(2)} (estimate)`);
-  parts.push(`${Math.round(u.seconds)} s`);
-  return ` · ${parts.map(esc).join(" · ")}`;
-}
-
 function signalHtml(s) {
   const [label, cls] = SIGNAL_LEVEL[s.level] || [s.level, "st-none"];
   const evidence = s.evidence.map((e) => `<div class="ev"><div class="quote">“${esc(e.quote)}”</div>
@@ -1778,7 +1852,7 @@ function renderMonitor() {
   if (running) head.push(`<div class="answer pending">${esc(d.running.stage || "Starting")}…</div>`);
   if (d.failed_run) head.push(`<div class="answer error">The latest run failed: ${esc(d.failed_run.error)}</div>`);
   if (d.run) {
-    head.push(`<div class="muted small">Last run: ${esc(localTime(d.run.finished_at))}${monitorUsageText(d.run.usage)}</div>`);
+    head.push(runLineHtml(d.run, "Quarterly updates"));
     if (d.run.notes.length) head.push(`<ul class="run-notes">${d.run.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`);
   }
   if (!d.run) {
@@ -1839,6 +1913,11 @@ $("monitor-company").onchange = () => {
 };
 $("monitor-run").onclick = async () => {
   if (!mon.companyId) return;
+  const go = await confirmRun("Run monitoring?", [
+    "The model reads the company's quarterly updates; the program recalculates runway, growth and the signals.",
+    runEstimate(mon.data && mon.data.run, "under 1 min", "about $0.10"),
+    "Confirm and dismiss decisions are kept."]);
+  if (!go || !mon.companyId) return;
   $("monitor-run").disabled = true;
   try {
     const run = await postJson(`/api/companies/${mon.companyId}/monitor`, {});

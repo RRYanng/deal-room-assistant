@@ -27,10 +27,11 @@ brief that flags **missing** and **conflicting** information instead of hiding i
    missing information and conflicts, each line with its source.
 5. **Missing and conflicting information** is shown explicitly: "Not found in the provided
    materials", and conflicting values are listed side by side with their sources. The system never
-   picks a winner. The **Issues** panel lists these per company and updates after every upload or delete.
+   picks a winner. The **Data checks** panel lists these per company and updates after every upload or delete.
 
 The screen is one conversation, with an Upload / Ask switch above the input. The top bar has
-**Library** (files and key metrics per company), **Issues**, an optional **Company** selector and
+**Library** (files and key metrics per company), **Data checks** (conflicts and gaps in the files
+themselves), an optional **Company** selector and
 **Generate Brief**.
 
 ## v2: diligence co-pilot
@@ -85,7 +86,10 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    Built by the program from the results; no model writes it.
 
 The claim check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
-claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**.
+claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**. Each claim
+is one line (status, label, conclusion); clicking it opens the quote, the evidence, the founder question and
+the Confirm / Dismiss buttons. **Run claim check** and **Run monitoring** ask for confirmation first, with
+the time and cost of the last run.
 
 **Page switches** (`config/ui.toml`): `changes_since_last_deck` and `regulatory_checklist` are set to
 `false`, so the page and the memo leave out those panels, the Regulatory summary category, their founder
@@ -341,7 +345,7 @@ dialog, with the same suggestions and warnings on each row. One file still opens
   the background, one file at a time, and each row shows its progress.
 - A failure stays on its own row with the reason. If only extraction failed, the file stays stored,
   and the *re-extract* link in Library can run it again.
-- The Issues count updates as rows finish.
+- The Data checks count updates as rows finish.
 
 Progress is kept in memory. If the server restarts during a batch, the files stored so far stay
 stored, but files still waiting are not processed.

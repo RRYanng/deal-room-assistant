@@ -32,7 +32,7 @@
       <div class="brand" id="brand">Deal Room Assistant</div>
       <nav class="nav">
         <button type="button" id="nav-library" class="nav-item">Library</button>
-        <button type="button" id="nav-issues" class="nav-item">Issues <span id="issues-badge" class="count" hidden></span></button>
+        <button type="button" id="nav-issues" class="nav-item">Data checks <span id="issues-badge" class="count" hidden></span></button>
         <button type="button" id="nav-claims" class="nav-item">Claim check</button>
         <button type="button" id="nav-monitor" class="nav-item">Portfolio</button>
       </nav>
@@ -163,6 +163,18 @@
     </div>
   </dialog>
 
+  <!-- Run confirmation: a claim check or monitoring run calls the model and costs money -->
+  <dialog id="run-dialog" class="dialog" aria-labelledby="run-title">
+    <div class="stack">
+      <h2 id="run-title" class="dialog-title"></h2>
+      <div id="run-message" class="stack"></div>
+      <div class="dialog-actions">
+        <button type="button" id="run-cancel" class="secondary">Cancel</button>
+        <button type="button" id="run-confirm">Run</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Brief result -->
   <div id="brief-overlay" class="overlay" hidden>
     <div class="overlay-card" role="dialog" aria-modal="true" aria-labelledby="brief-title">
@@ -185,7 +197,7 @@
         <h2 id="claims-title">Claim check</h2>
         <div class="overlay-actions">
           <select id="claims-company" aria-label="Company"></select>
-          <button type="button" id="claims-run">Run claim check</button>
+          <button type="button" id="claims-run" class="secondary">Run claim check</button>
           <button type="button" id="claims-memo" class="secondary">Memo</button>
           <button type="button" id="claims-close" class="secondary">Close</button>
         </div>
@@ -201,7 +213,7 @@
         <h2 id="monitor-title">Portfolio monitoring</h2>
         <div class="overlay-actions">
           <select id="monitor-company" aria-label="Company"></select>
-          <button type="button" id="monitor-run">Run monitoring</button>
+          <button type="button" id="monitor-run" class="secondary">Run monitoring</button>
           <button type="button" id="monitor-close" class="secondary">Close</button>
         </div>
       </div>
