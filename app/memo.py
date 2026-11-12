@@ -58,7 +58,7 @@ def memo_to_markdown(memo: dict) -> str:
     changes = [c for c in memo["changes"] if c["review_state"] != "dismissed"]
     lines = [f"# Investment memo: {memo['company']}", "",
              f"Generated {memo['generated_at']}. "
-             + (f"Claim check of {run['filename']}." if run else "No claim check yet."),
+             + (f"Deck check of {run['filename']}." if run else "No deck check yet."),
              "This memo reorganizes the checked results; it adds no new conclusions. Evidence statuses describe the "
              "evidence found, not whether a claim is true.", ""]
 

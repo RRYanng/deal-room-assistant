@@ -1312,7 +1312,7 @@ async function pollClaimRun(companyId, runId) {
 function syncClaimButtons() {
   const running = !!(claims.data && claims.data.running);
   $("claims-run").disabled = !claims.companyId || running;
-  $("claims-run").textContent = running ? "Checking…" : "Run claim check";
+  $("claims-run").textContent = running ? "Checking…" : "Run deck check";
   $("claims-memo").textContent = claims.view === "memo" ? "Back to claims" : "Memo";
   $("claims-memo").disabled = !claims.data || !claims.data.run;
   // Printing prints the memo alone, and only while it is open.
@@ -1509,7 +1509,7 @@ function runSummaryHtml(d) {
   }
   if (d.failed_run) {
     const kept = d.run ? " The results below are from the last check that finished." : "";
-    parts.push(`<div class="answer error">The latest claim check failed: ${esc(d.failed_run.error)}${kept}</div>`);
+    parts.push(`<div class="answer error">The latest deck check failed: ${esc(d.failed_run.error)}${kept}</div>`);
   }
   if (d.run) {
     parts.push(runLineHtml(d.run, `Deck: ${d.run.filename}`));
@@ -1581,7 +1581,7 @@ function renderClaims() {
   if (claims.view === "memo") return renderMemo();
   const head = runSummaryHtml(d);
   if (!d.run) {
-    $("claims-body").innerHTML = head + (d.running || d.failed_run ? "" : `<div class="muted">No claim check yet. Run one
+    $("claims-body").innerHTML = head + (d.running || d.failed_run ? "" : `<div class="muted">No deck check yet. Run one
       to list the deck's key claims and the evidence for and against each.</div>`);
     return;
   }
@@ -1626,7 +1626,7 @@ function renderClaims() {
   }
   const tabs = CLAIM_TABS.map(([id, name]) => `<button type="button" role="tab" data-tab="${id}"
     class="claim-tab${claims.tab === id ? " active" : ""}" aria-selected="${claims.tab === id}">${name}</button>`).join("");
-  $("claims-body").innerHTML = `${head}<div class="claim-tabs" role="tablist" aria-label="Claim check views">${tabs}</div>
+  $("claims-body").innerHTML = `${head}<div class="claim-tabs" role="tablist" aria-label="Deck check views">${tabs}</div>
     ${body}`;
 }
 
@@ -1735,7 +1735,7 @@ $("claims-memo").onclick = toggleMemo;
 $("claims-run").onclick = async () => {
   if (!claims.companyId) return;
   const deck = claims.data && claims.data.run ? ` (${claims.data.run.filename})` : "";
-  const go = await confirmRun("Run claim check?", [
+  const go = await confirmRun("Run deck check?", [
     `The model reads the newest deck${deck}, checks it against the company's files and searches the web.`,
     runEstimate(claims.data && claims.data.run, "about 3 min", "about $0.70"),
     "The new results replace the ones shown now. Confirm and dismiss decisions are kept."]);

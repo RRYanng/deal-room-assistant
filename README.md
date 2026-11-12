@@ -45,7 +45,7 @@ status, number and signal**, and an investor confirms or dismisses each flag.
 
 ### Features
 
-6. **Claim check**: lists a deck's key claims and the evidence for or against each. Each claim gets
+6. **Deck check** (claim check): lists a deck's key claims and the evidence for or against each. Each claim gets
    an evidence status: Contradicted, Possibly overstated, Externally supported, Consistent with
    company data, or Unverified. The program sets the status from the evidence; the model only
    finds evidence and never says whether a claim is true.
@@ -83,13 +83,13 @@ status, number and signal**, and an investor confirms or dismisses each flag.
 15. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
    alignment, risks the deck states), portfolio signals, awaiting review, questions for the founder.
    Built by the program from the results; no model writes it. The page shows it as a document with the
-   same display wording as the claim check (page numbers instead of "here", amounts such as $1.44B); quotes
+   same display wording as the Deck check page (page numbers instead of "here", amounts such as $1.44B); quotes
    are never rewritten. **Print / Save as PDF** prints the memo alone, black on white.
 
-The claim check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
+The Deck check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
 claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**. Each claim
 is one line (status, label, conclusion); clicking it opens the quote, the evidence, the founder question and
-the Confirm / Dismiss buttons. **Run claim check** and **Run monitoring** ask for confirmation first, with
+the Confirm / Dismiss buttons. **Run deck check** and **Run monitoring** ask for confirmation first, with
 the time and cost of the last run.
 
 **Page switches** (`config/ui.toml`): `changes_since_last_deck` and `regulatory_checklist` are set to

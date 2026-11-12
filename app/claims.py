@@ -488,7 +488,7 @@ def run_claim_check(conn: sqlite3.Connection, run_id: int, llm: LLMClient, web=N
         _fail(conn, run_id, f"Model call failed: {e}", notes)
     except Exception as e:  # noqa: BLE001 (the run must end in a stored state the page can show)
         log.exception("Claim check %s failed", run_id)
-        _fail(conn, run_id, f"Claim check failed ({type(e).__name__}: {e}).", notes)
+        _fail(conn, run_id, f"Deck check failed ({type(e).__name__}: {e}).", notes)
     finally:
         log_event(conn, log_id, 0, "usage", output=llm.summary() | {
             "web_searches": web.searches if web else 0, "search_credits": web.credits if web else None,

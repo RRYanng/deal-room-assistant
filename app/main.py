@@ -418,7 +418,7 @@ def start_check(company_id: int, request: Request, body: ClaimCheckIn | None = N
     """Check a deck's claims in the background; read progress with GET .../claim-runs/{run_id}."""
     require_company(conn, company_id)
     if conn.execute("SELECT 1 FROM claim_runs WHERE company_id = ? AND status = 'running'", (company_id,)).fetchone():
-        raise HTTPException(409, "A claim check for this company is already running.")
+        raise HTTPException(409, "A deck check for this company is already running.")
     document_id = body.document_id if body and body.document_id else None
     if document_id is None:
         deck = latest_deck(conn, company_id)
