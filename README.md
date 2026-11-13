@@ -235,6 +235,8 @@ Tests:
 .venv/bin/python scripts/verify.py         # the 7 required checks end to end → docs/verification.md
 ```
 
+`tests/test_ui_dismissed.py` runs `static/app.js` in Node.js with a stub DOM; it is skipped if `node` is not installed.
+
 ## Configuration (`.env`)
 
 | Variable | Default | Purpose |

@@ -1377,7 +1377,7 @@ function evidenceListHtml(c) {
 // Reviewed items show only the decision and its reason; "Change" brings back the two buttons.
 const changingReview = new Set();  // `${type}:${fingerprint}` of reviewed items being changed
 
-function reviewCellHtml(c, type = "claim") {
+function reviewCellHtml(c, type = "claim", { label: showLabel = true } = {}) {
   const data = `data-type="${type}" data-fp="${esc(c.fingerprint)}"`;
   const button = (decision, text) => `<button type="button" class="secondary small-button" data-review="${decision}"
     ${data}>${text}</button>`;
@@ -1393,7 +1393,7 @@ function reviewCellHtml(c, type = "claim") {
   const change = changing
     ? actions(`<button type="button" class="link small" data-change="cancel" ${data}>Cancel</button>`)
     : `<div class="review-actions"><button type="button" class="secondary small-button" data-change="start" ${data}>Change</button></div>`;
-  return `<div class="review-done ${c.review_state}"><b>${label}</b></div>${reason(c.review)}${change}`;
+  return `${showLabel ? `<div class="review-done ${c.review_state}"><b>${label}</b></div>` : ""}${reason(c.review)}${change}`;
 }
 
 // Handles a click on "Change" or "Cancel"; true if the click was one of them.
@@ -1492,7 +1492,9 @@ function claimCardHtml(c) {
       <div class="card-evidence">${evidenceListHtml(c)}</div>
       ${foldedQuestionHtml(c.question, `claim:${c.fingerprint}`)}
       <div class="card-review">${reviewCellHtml(c)}</div>
-    </div>` : "";
+    </div>`
+    // A dismissed card shows its reason and Change while folded; the line already says Dismissed.
+    : c.review_state === "dismissed" ? `<div class="card-body">${reviewCellHtml(c, "claim", { label: false })}</div>` : "";
   return `<li class="claim-card${open ? " open" : ""}${c.review_state === "dismissed" ? " dismissed" : ""}">
     <button type="button" class="card-head" data-card="${esc(c.fingerprint)}" aria-expanded="${open}">
       <span class="status ${cls}">${esc(label)}</span>
@@ -1558,8 +1560,7 @@ function summaryHtml(s, d) {
   </section>`;
 }
 
-function changesHtml(changes) {
-  const shown = changes.filter((c) => claims.showDismissed || c.review_state !== "dismissed");
+function changesHtml(shown, title = "Changed since the last deck") {
   if (!shown.length) return "";
   const rows = shown.map((c) => `<div class="change ${c.review_state === "dismissed" ? "dismissed" : ""}">
       <div>${c.kind === "changed" ? '<span class="status st-warn">Changed</span>' : '<span class="status st-none">Updated</span>'}
@@ -1570,7 +1571,7 @@ function changesHtml(changes) {
       ${reviewCellHtml(c, "drift")}
     </div>`).join("");
   return `<div class="issue-card changes">
-    <div class="issue-title">Changed since the last deck</div>${rows}
+    <div class="issue-title">${esc(title)}</div>${rows}
     <div class="muted small">Market figures should not move between decks; traction, team and costs change with time.</div>
   </div>`;
 }
@@ -1585,7 +1586,7 @@ function renderClaims() {
       to list the deck's key claims and the evidence for and against each.</div>`);
     return;
   }
-  const visible = d.claims.filter((c) => claims.showDismissed || c.review_state !== "dismissed")
+  const visible = d.claims.filter((c) => c.review_state !== "dismissed")
     .map((c, i) => [c, i])
     .sort(([a, i], [b, j]) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || i - j)
     .map(([c]) => c);
@@ -1595,9 +1596,6 @@ function renderClaims() {
     ${claims.showOther ? "Hide" : "Show"} ${other.length} other claim${other.length === 1 ? "" : "s"} (bios, descriptions)</button>` : "";
   const byStatus = Object.keys(CLAIM_STATUS).map((s) => [s, main.filter((c) => c.status === s).length])
     .filter(([, n]) => n).map(([s, n]) => `<span class="status ${CLAIM_STATUS[s][1]}">${esc(CLAIM_STATUS[s][0])}: ${n}</span>`);
-  const dismissed = d.counts.dismissed
-    ? `<button type="button" class="link small" id="claims-toggle-dismissed">${claims.showDismissed ? "Hide" : "Show"}
-       dismissed (${d.counts.dismissed})</button>` : "";
   const competitors = d.competitors.length ? `<h3>Competitors found by web research</h3><ul>${d.competitors.map((c) => {
     const url = safeUrl(c.url);
     return `<li><b>${esc(c.name)}</b>${c.description ? ` — ${esc(c.description)}` : ""}
@@ -1609,20 +1607,28 @@ function renderClaims() {
   const table = (rows) => `<ul class="claim-cards${wide(rows) ? " wide" : ""}">${rows.map(claimCardHtml).join("")}</ul>`;
   const note = `<p class="claims-note">Statuses describe the evidence found, not whether a claim is true. Nothing is a
     finding until you confirm it.</p>`;
+  // Dismissed claims and changes leave the lists above; the bottom of the Issues and All claims tabs lists them.
+  const gone = d.claims.filter((c) => c.review_state === "dismissed");
+  const goneChanges = (d.changes || []).filter((c) => c.review_state === "dismissed");
+  const goneCount = gone.length + goneChanges.length;
+  const dismissed = goneCount ? `<div class="claims-more"><button type="button" class="link small"
+      id="claims-toggle-dismissed">${claims.showDismissed ? "Hide" : "Show"} dismissed (${goneCount})</button></div>
+    ${claims.showDismissed ? (gone.length ? table(gone) : "") + changesHtml(goneChanges, "Dismissed changes since the last deck") : ""}` : "";
   let body;
   if (claims.tab === "alignment") {
     body = alignmentHtml(d.alignment) || '<div class="muted">The deck does not say who pays, how it charges or who benefits.</div>';
   } else if (claims.tab === "all") {
     body = `<div class="claims-summary">${byStatus.join(" ")}
-        <span class="muted small">${countsText(d.counts)}</span> ${dismissed}</div>
+        <span class="muted small">${countsText(d.counts)}</span></div>
       ${table(claims.showOther ? main.concat(other) : main)}${note}
       <div class="claims-more">${otherToggle}</div>
-      ${competitors}`;
+      ${competitors}${dismissed}`;
   } else {
     const issues = main.filter((c) => ISSUE_STATUSES.includes(c.status));
-    body = `${summaryHtml(d.summary, d)}${changesHtml(d.changes || [])}${regulatoryHtml(d.regulatory)}
+    const changes = (d.changes || []).filter((c) => c.review_state !== "dismissed");
+    body = `${summaryHtml(d.summary, d)}${changesHtml(changes)}${regulatoryHtml(d.regulatory)}
       <h3 class="cards-title">Claims with issues <span class="cards-count">${issues.length} of ${d.counts.claims}</span></h3>
-      ${issues.length ? table(issues) + note : "<div>No contradicted or possibly overstated claims.</div>"}`;
+      ${issues.length ? table(issues) + note : "<div>No contradicted or possibly overstated claims.</div>"}${dismissed}`;
   }
   const tabs = CLAIM_TABS.map(([id, name]) => `<button type="button" role="tab" data-tab="${id}"
     class="claim-tab${claims.tab === id ? " active" : ""}" aria-selected="${claims.tab === id}">${name}</button>`).join("");
@@ -1967,13 +1973,18 @@ function renderMonitor() {
       Run it to read the company's updates and check cash runway, key people and milestones.</div>`);
     return;
   }
+  // Dismissed signals leave the chart, the table and the list; the bottom of the page lists them.
   const byPeriod = {};
-  const dismissedCount = d.signals.filter((s) => s.review_state === "dismissed").length;
+  const gone = [];
   for (const s of d.signals) {
-    if (mon.showDismissed || s.review_state !== "dismissed") (byPeriod[s.period_end] ||= []).push(s);
+    if (s.review_state === "dismissed") gone.push(s);
+    else (byPeriod[s.period_end] ||= []).push(s);
   }
-  const dismissedToggle = dismissedCount ? `<button type="button" class="link small" id="monitor-toggle-dismissed">
-    ${mon.showDismissed ? "Hide" : "Show"} dismissed (${dismissedCount})</button>` : "";
+  const goneHtml = d.periods.filter((p) => gone.some((s) => s.period_end === p.period_end)).map((p) =>
+    `<h3>${esc(p.period_end)}</h3>${gone.filter((s) => s.period_end === p.period_end).map(signalHtml).join("")}`).join("");
+  const dismissed = gone.length ? `<div class="claims-more"><button type="button" class="link small"
+      id="monitor-toggle-dismissed">${mon.showDismissed ? "Hide" : "Show"} dismissed (${gone.length})</button></div>
+    ${mon.showDismissed ? goneHtml : ""}` : "";
   const rows = d.periods.map((p) => {
     const growth = p.revenue_growth_pct == null ? '<span class="muted">—</span>'
       : `${p.revenue_growth_pct}%${p.revenue_growth_calculated ? ' <span class="calculated-note">(calculated)</span>' : ""}`;
@@ -1997,8 +2008,7 @@ function renderMonitor() {
       <th>Signals</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
-    <div class="claims-more">${dismissedToggle}</div>
-    ${signals || '<p class="muted">No signals to show.</p>'}`;
+    ${signals || '<p class="muted">No signals to show.</p>'}${dismissed}`;
 }
 
 $("monitor-body").addEventListener("click", (e) => {
