@@ -14,7 +14,7 @@ from app.main import list_claims, monitor_results
 from app.monitor import create_run as create_monitor_run
 from app.monitor import run_monitor
 from app.reviews import record_review
-from tests.helpers_v2 import DECK, by_quote, claim_llm, load_clearclaim, monitor_llm
+from tests.helpers_v2 import DECK, by_quote, claim_llm, load_clearclaim, monitor_llm, review_row
 
 ROOT = Path(__file__).resolve().parent.parent
 NODE = shutil.which("node")
@@ -38,9 +38,10 @@ def claims_page(tab: str, data: dict, show: bool) -> str:
 def dismissed_claim(db):
     company_id, docs = load_clearclaim(db)
     run_claim_check(db, create_run(db, company_id, docs[DECK]), claim_llm(), None)
-    margin = by_quote(list_claims(company_id, conn=db)["claims"], "above 90%")
+    rows = list_claims(company_id, conn=db)["rows"]
+    margin = by_quote(rows, "Gross margin is 67-82%")  # one row with "above 90%"
     assert margin["status"] == "contradicted"  # shown on the Issues tab until dismissed
-    record_review(db, company_id, margin["fingerprint"], "dismissed", REASON)
+    review_row(db, company_id, rows, "Gross margin is 67-82%", "dismissed", REASON)
     return margin["fingerprint"], list_claims(company_id, conn=db)
 
 

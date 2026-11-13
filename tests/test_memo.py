@@ -8,7 +8,7 @@ from app.claims import create_run, run_claim_check
 from app.memo import build_memo, founder_questions, memo_to_markdown
 from app.monitor import create_run as create_monitor_run, run_monitor
 from app.reviews import record_review
-from tests.helpers_v2 import DECK, PRICING, by_quote, fake_web, load_clearclaim, monitor_llm, research_llm
+from tests.helpers_v2 import DECK, PRICING, by_quote, fake_web, load_clearclaim, monitor_llm, research_llm, review_row
 
 SECTIONS = ["## Summary", "## Market", "## Competition", "## Verified findings (confirmed by the investment team)",
             "## Risks", "## Portfolio signals", "## Awaiting review", "## Questions for the founder"]
@@ -59,9 +59,7 @@ def test_questions_collect_every_kind_and_nothing_dismissed(db, memo):
     assert "moved from May 31, 2026 to November 30, 2026" in text  # portfolio signal
     assert len(questions) == len(set(questions))
 
-    margin = by_quote(built["claims"], "Gross margin is 67-82%")
-    record_review(db, company_id, margin["fingerprint"], "dismissed", "Explained in the meeting.")
-    record_review(db, company_id, by_quote(built["claims"], "Current gross margin")["fingerprint"], "dismissed", "Same.")
+    review_row(db, company_id, built["claims"], "Gross margin is 67-82%", "dismissed", "Explained in the meeting.")
     again = founder_questions(build_memo(db, company_id))
     assert not any("Gross margin is stated" in q for q in again)
 
@@ -69,7 +67,7 @@ def test_questions_collect_every_kind_and_nothing_dismissed(db, memo):
 def test_verified_findings_are_grouped_by_category(db, memo):
     company_id, built = memo
     record_review(db, company_id, by_quote(built["claims"], "400,000 independent")["fingerprint"], "confirmed", "")
-    record_review(db, company_id, by_quote(built["claims"], "team of 14")["fingerprint"], "confirmed", "Asked for payroll.")
+    review_row(db, company_id, built["claims"], "team of 14", "confirmed", "Asked for payroll.")
     findings = section(memo_to_markdown(build_memo(db, company_id)), "## Verified findings")
     assert findings.index("### Market") < findings.index("### Team")
     assert "Investor note: Asked for payroll." in findings and "Investor note: \n" not in findings

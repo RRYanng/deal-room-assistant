@@ -196,6 +196,18 @@ def by_quote(claims: list[dict], fragment: str) -> dict:
     return found[0]
 
 
+def review_row(conn, company_id: int, items: list[dict], fragment: str, decision: str, reason: str | None) -> dict:
+    """Review a claim as the page does: every claim of its row (claim_rows), from claims or rows."""
+    from app.reviews import record_review  # noqa: PLC0415
+
+    item = by_quote(items, fragment)
+    group = item.get("group")
+    members = item.get("members") or [c for c in items if group and (c.get("group") or {}).get("id") == group["id"]] or [item]
+    for m in members:
+        record_review(conn, company_id, m["fingerprint"], decision, reason)
+    return item
+
+
 # --- web research ---------------------------------------------------------------------------
 # Market pages: real URLs with the one sentence each page was checked to contain (samples/company_c/SOURCES.md).
 # Competitor pages: fictional companies on example.com, so tests never make claims about real ones.

@@ -89,7 +89,9 @@ status, number and signal**, and an investor confirms or dismisses each flag.
 The Deck check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
 claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**. Each claim
 is one line (status, label, conclusion); clicking it opens the quote, the evidence, the founder question and
-the Confirm / Dismiss buttons. **Run deck check** and **Run monitoring** ask for confirmation first, with
+the Confirm / Dismiss buttons. The two sides of a contradiction in the company's materials, and claims flagged
+by the same calculation, are one line ("Gross margin: 67–82% on p.5 vs above 90% on p.9"): a decision on it
+applies to all its claims, and the counts, summary and memo count it once. **Run deck check** and **Run monitoring** ask for confirmation first, with
 the time and cost of the last run.
 
 **Page switches** (`config/ui.toml`): `changes_since_last_deck` and `regulatory_checklist` are set to

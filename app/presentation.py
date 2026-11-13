@@ -176,6 +176,89 @@ def qualify_labels(claims: list[dict]) -> list[dict]:
     return claims
 
 
+def group_claims(claims: list[dict]) -> list[dict]:
+    """Claims that read as one row on the page and in the memo (in place). Two kinds: the sides of a
+    contradiction inside the company's materials (same key, each cites the other's passage and figure), and
+    different claims flagged by one and the same calculation (team size and operating costs). Each member
+    gets `group` (the row's id, label and one-line conclusion); a claim on its own gets None. Display only:
+    every claim keeps its own status, evidence and fingerprint."""
+    parent = list(range(len(claims)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        a, b = sorted((find(i), find(j)))
+        parent[b] = a  # the row keeps the place and id of its first claim
+
+    by_chunk: dict[int, list[int]] = {}
+    for i, c in enumerate(claims):
+        by_chunk.setdefault(c["chunk_id"], []).append(i)
+    by_calculation: dict[tuple, int] = {}
+    for i, c in enumerate(claims):
+        if c["key"] == "other":
+            continue
+        for e in c["evidence"]:
+            if e["source"] == "internal" and e["stance"] == "contradicts" and c["status"] == "contradicted":
+                for j in by_chunk.get(e.get("chunk_id"), []):
+                    other = claims[j]
+                    if j != i and (other["key"], other["status"], other["value_raw"]) == (c["key"], c["status"], e.get("value_raw")):
+                        union(i, j)
+            elif e["source"] == "calculation":
+                j = by_calculation.setdefault((c["status"], e["note"]), i)
+                if j != i:
+                    union(i, j)
+    groups: dict[int, list[dict]] = {}
+    for i, c in enumerate(claims):
+        groups.setdefault(find(i), []).append(c)
+    for members in groups.values():
+        info = _group_info(members) if len(members) > 1 else None
+        for c in members:
+            c["group"] = info
+    return claims
+
+
+def _group_info(members: list[dict]) -> dict:
+    first = members[0]
+    if len({c["key"] for c in members}) == 1 and all(c["value_raw"] for c in members):
+        # "67-82% on p.5 ¶2 vs above 90% on p.9 ¶3"; the file name only when the sides are in different files
+        one_file = len({c["filename"] for c in members}) == 1
+        where = [(c["loc_label"] or "").removeprefix(c["filename"] if one_file else "").strip() for c in members]
+        return {"id": first["fingerprint"], "label": label(first["key"]),
+                "headline": " vs ".join(f"{c['value_raw']} on {w}" for c, w in zip(members, where))}
+    calculation = next((e for e in first["evidence"] if e["source"] == "calculation"), None)
+    return {"id": first["fingerprint"], "label": " / ".join(dict.fromkeys(c["label"] for c in members)),
+            "headline": calculation["headline"] if calculation else first["evidence"][0]["headline"]}
+
+
+def claim_rows(claims: list[dict]) -> list[dict]:
+    """One row per group (see group_claims), at the place of its first claim. A merged row reads like a claim:
+    the first claim's fields with the group's id, label and `headline`, its `members`, and one review state
+    for all of them (awaiting review while any member is; a decision applies to every member)."""
+    rows, merged = [], {}
+    for c in claims:
+        group = c.get("group")
+        if not group:
+            rows.append(c)
+        elif group["id"] in merged:
+            merged[group["id"]]["members"].append(c)
+        else:
+            merged[group["id"]] = dict(c, fingerprint=group["id"], label=group["label"], headline=group["headline"],
+                                       members=[c])
+            rows.append(merged[group["id"]])
+    for row in merged.values():
+        states = [m.get("review_state") for m in row["members"]]
+        if None in states:
+            continue
+        row["review_state"] = ("awaiting_review" if "awaiting_review" in states
+                               else "dismissed" if set(states) == {"dismissed"} else "confirmed")
+        row["evidence_changed"] = any(m["evidence_changed"] for m in row["members"])
+        row["review"] = next((m["review"] for m in row["members"] if m["review"]), None)
+    return rows
+
+
 def decorate(claim: dict) -> dict:
     """Add label, category and a headline per evidence item; order evidence from most to least neutral."""
     claim["label"], claim["category"] = label(claim["key"]), category(claim["key"])
@@ -197,8 +280,8 @@ def _strength(item: dict) -> int:
 
 def build_summary(claims: list[dict], changes: list[dict], regulatory: dict | None = None) -> dict:
     """Issues per category and the three that matter most, from claims and changes not dismissed, and
-    regulatory checklist items the materials do not address."""
-    live = [c for c in claims if c.get("review_state") != "dismissed" and c.get("category")]
+    regulatory checklist items the materials do not address. Counted per row, as the page shows them."""
+    live = [c for c in claim_rows(claims) if c.get("review_state") != "dismissed" and c.get("category")]
     moved = [c for c in changes if c.get("review_state") != "dismissed" and c["kind"] == "changed"]
     counts = {name: {"category": name, "issues": 0, "unverified": 0} for name in CATEGORIES}
     for c in live:
@@ -217,7 +300,8 @@ def build_summary(claims: list[dict], changes: list[dict], regulatory: dict | No
             best = min(c["evidence"], key=lambda e: SOURCE_ORDER.get((e["source"], e.get("source_type")), 5))
             rank = (ISSUE_STATUSES.index(c["status"]), _strength(c), CATEGORIES.index(c["category"]))
             candidates.append((rank, c["key"], {"status": c["status"], "category": c["category"],
-                                                "text": f"{c['label']}: {best['headline']}.", "fingerprint": c["fingerprint"]}))
+                                                "text": f"{c['label']}: {c.get('headline') or best['headline']}.",
+                                                "fingerprint": c["fingerprint"]}))
     for c in moved:
         candidates.append(((2, 1, 0), c["key"], {"status": "changed", "category": category(c["key"]) or "Market",
                                                  "text": f"{label(c['key'])} changed since the last deck: {c['note']}",

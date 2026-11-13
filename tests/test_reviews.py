@@ -12,7 +12,7 @@ from app.memo import build_memo, memo_to_markdown
 from app.reviews import ReviewError, apply_reviews, record_review, review_counts
 from tests.helpers import load_samples
 from tests.helpers_v2 import (CLAIM_RULES, DECK, by_quote, claim_extractor, claim_llm, fake_web, load_clearclaim,
-                              research_llm)
+                              research_llm, review_row)
 
 
 def run(db, company_id, deck_id, llm=None, web=None):
@@ -34,18 +34,18 @@ def test_e13_flagged_items_are_not_findings_until_confirmed(db, checked):
     assert all(c["review_state"] == "awaiting_review" for c in out["claims"])
     memo = build_memo(db, company_id)
     assert memo["findings"] == []
-    assert len(memo["awaiting_review"]) == len(CLAIM_RULES)
+    assert len(memo["awaiting_review"]) == len(CLAIM_RULES) - 2  # gross margin and team/costs are one row each
     text = memo_to_markdown(memo)
     assert "No findings confirmed yet." in text and "Not conclusions until an investor confirms them." in text
 
 
 def test_e13_confirmed_item_enters_the_memo_with_the_reason(db, checked):
     company_id, _, out = checked
-    margin = by_quote(out["claims"], "above 90%")
-    record_review(db, company_id, margin["fingerprint"], "confirmed", "Founder confirmed 70% in the meeting.")
+    margin = review_row(db, company_id, out["claims"], "above 90%", "confirmed", "Founder confirmed 70% in the meeting.")
     memo = build_memo(db, company_id)
-    assert [c["quote"] for c in memo["findings"]] == [margin["quote"]]
-    assert margin["fingerprint"] not in {c["fingerprint"] for c in memo["awaiting_review"]}
+    assert [[m["quote"] for m in c["members"]] for c in memo["findings"]] == \
+        [["Gross margin is 67-82%, depending on payer mix and the share of claims that need manual review.", margin["quote"]]]
+    assert not any(c["key"] == margin["key"] for c in memo["awaiting_review"])
     text = memo_to_markdown(memo)
     findings = text.split("## Verified findings")[1].split("## Awaiting review")[0]
     assert "Current gross margin: above 90%." in findings and "Founder confirmed 70% in the meeting." in findings
@@ -153,10 +153,10 @@ def test_api_check_review_and_memo(client):
     assert statuses["Current gross margin: above 90%."] == "contradicted"
     assert statuses["There are 400,000 independent dental practices in the United States."] == "contradicted"
     # Awaiting review: the flagged claims and the changes since the last deck, as the memo lists them.
-    flagged = [c for c in claims["claims"] if c["key"] != "other" and c["status"] != "consistent_with_company_data"
+    flagged = [c for c in claims["rows"] if c["key"] != "other" and c["status"] != "consistent_with_company_data"
                and c["status"] != "externally_supported"]
     assert claims["counts"]["awaiting_review"] == len(flagged) + len(claims["changes"])
-    assert claims["counts"]["claims"] + claims["counts"]["other"] == len(CLAIM_RULES)
+    assert claims["counts"]["claims"] + claims["counts"]["other"] == len(claims["rows"]) == len(CLAIM_RULES) - 2
     assert [c["name"] for c in claims["competitors"]] == ["Molarflow", "Toothledger"]
 
     fp = next(c["fingerprint"] for c in claims["claims"] if c["status"] == "contradicted")

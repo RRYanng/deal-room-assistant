@@ -9,7 +9,7 @@ from app.db import SCHEMA, connect, init_db
 from app.memo import build_memo, memo_to_markdown
 from app.presentation import KEY_LABELS, build_summary
 from app.reviews import ReviewError, apply_reviews, record_review
-from tests.helpers_v2 import DECK, by_quote, fake_web, load_clearclaim, research_llm
+from tests.helpers_v2 import DECK, by_quote, fake_web, load_clearclaim, research_llm, review_row
 
 
 @pytest.fixture
@@ -56,8 +56,9 @@ def test_neutral_sources_come_first():
 def test_summary_counts_issues_by_category_and_names_the_top_three(checked):
     summary = build_summary(checked[1]["claims"], checked[1]["changes"])
     counts = {c["category"]: c["issues"] for c in summary["categories"]}
-    # Market: practices, market size, industry spending + 2 changes since the September deck.
-    assert counts == {"Market": 5, "Financials": 4, "Competition": 1, "Team": 1, "Regulatory": 0}
+    # Market: practices, market size, industry spending + 2 changes since the September deck. Counted per row:
+    # Financials is gross margin (both sides, one row) and the projection; operating costs share the Team row.
+    assert counts == {"Market": 5, "Financials": 2, "Competition": 1, "Team": 1, "Regulatory": 0}
     assert len(summary["top"]) == 3
     assert summary["top"][0]["text"] == "Number of target customers: ADA: 205,088 (upper bound); deck says 400,000."
     assert len({t["text"].split(":")[0] for t in summary["top"]}) == 3  # one line per subject
@@ -98,8 +99,7 @@ def test_a_change_since_the_last_deck_can_be_dismissed(db, checked):
 
 def test_confirmed_finding_without_reason_reads_cleanly_in_the_memo(db, checked):
     company_id, out = checked
-    fp = by_quote(out["claims"], "Current gross margin: above 90%")["fingerprint"]
-    record_review(db, company_id, fp, "confirmed", None)
+    review_row(db, company_id, out["claims"], "Current gross margin: above 90%", "confirmed", None)
     text = memo_to_markdown(build_memo(db, company_id))
     findings = text.split("## Verified findings")[1].split("## Awaiting review")[0]
     assert "Gross margin" in findings and "Investor note" not in findings and "None" not in findings
@@ -135,10 +135,10 @@ def test_page_and_memo_count_the_same_items(db, checked):
     from app.main import list_claims, memo
     company_id, out = checked
     record_review(db, company_id, by_quote(out["claims"], "400,000 independent")["fingerprint"], "confirmed", "")
-    record_review(db, company_id, by_quote(out["claims"], "team of 14")["fingerprint"], "dismissed", "Payroll checked.")
+    review_row(db, company_id, out["claims"], "team of 14", "dismissed", "Payroll checked.")
     page, built = list_claims(company_id, conn=db), memo(company_id, conn=db)
     assert page["counts"] == built["counts"]
-    counts, claims = page["counts"], page["claims"]
+    counts, claims = page["counts"], page["rows"]  # one per line on the page
     assert counts["claims"] == sum(c["key"] != "other" for c in claims)
     assert counts["claims"] + counts["other"] == len(claims)
     assert counts["confirmed"] == 1 and counts["dismissed"] == 1

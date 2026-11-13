@@ -12,7 +12,7 @@ from datetime import datetime
 
 from app.claims import latest_results
 from app.monitor import latest_results as latest_monitor_results
-from app.presentation import CATEGORIES, build_summary, hide_parts, visible_summary
+from app.presentation import CATEGORIES, build_summary, claim_rows, hide_parts, visible_summary
 from app.reviews import apply_reviews, review_counts
 
 STATUS_LABELS = {
@@ -31,6 +31,7 @@ def build_memo(conn: sqlite3.Connection, company_id: int, hidden: frozenset[str]
     results = hide_parts(latest_results(conn, company_id), hidden)
     order = list(STATUS_LABELS)  # flags first, as on the page
     claims = sorted(apply_reviews(conn, company_id, results["claims"]), key=lambda c: order.index(c["status"]))
+    rows = claim_rows(claims)  # as on the page: the two sides of a contradiction are one item
     changes = apply_reviews(conn, company_id, results["changes"], "drift")
     signals = apply_reviews(conn, company_id, latest_monitor_results(conn, company_id)["signals"], "signal")
     generated = datetime.now().astimezone()  # the server's own time zone: the machine the team runs it on
@@ -38,10 +39,10 @@ def build_memo(conn: sqlite3.Connection, company_id: int, hidden: frozenset[str]
         "company": company,
         "generated_at": generated.strftime("%Y-%m-%d %H:%M %Z"),
         "run": results["run"],
-        "claims": claims,
-        "findings": [c for c in claims if c["review_state"] == "confirmed"],
-        "awaiting_review": [c for c in claims if c["review_state"] == "awaiting_review"],
-        "dismissed": [c for c in claims if c["review_state"] == "dismissed"],
+        "claims": rows,
+        "findings": [c for c in rows if c["review_state"] == "confirmed"],
+        "awaiting_review": [c for c in rows if c["review_state"] == "awaiting_review"],
+        "dismissed": [c for c in rows if c["review_state"] == "dismissed"],
         "changes": changes,
         "signals": signals,
         "competitors": results["competitors"],
@@ -155,7 +156,7 @@ def memo_to_markdown(memo: dict) -> str:
         [c for c in memo["changes"] if c["review_state"] == "dismissed"]
     if gone:
         lines += [f"## Dismissed ({len(gone)})", ""]
-        lines += [f"- {c['label']}: " + (f"\"{c['quote']}\"" if "quote" in c else c["note"])
+        lines += [f"- {c['label']}: " + (_quotes(c) if "quote" in c else c["note"])
                   + f" Reason: {c['review']['reason']}" for c in gone] + [""]
 
     if run and run["notes"]:
@@ -165,7 +166,8 @@ def memo_to_markdown(memo: dict) -> str:
 
 def founder_questions(memo: dict) -> list[str]:
     """Every question attached to an item that is not dismissed, in memo order."""
-    claims = [c for c in memo["claims"] if c["review_state"] != "dismissed" and c.get("question")]
+    claims = [m for c in memo["claims"] if c["review_state"] != "dismissed" for m in c.get("members", [c])
+              if m.get("question")]
     out = []
     for category in CATEGORIES:
         out += [c["question"]["text"] for c in claims if c["category"] == category]
@@ -200,18 +202,35 @@ def _page(item: dict, run: dict | None) -> str:
     return (item.get("loc_label") or "").replace((run or {}).get("filename") or "", "").strip()
 
 
+def _quotes(c: dict) -> str:
+    """The quote and where it is, for each claim of a row."""
+    return "; ".join(f"\"{m['quote']}\" ({m['loc_label']})" for m in c.get("members", [c]))
+
+
 def _claim_line(c: dict) -> str:
-    head = f" {c['evidence'][0]['headline']}." if c["evidence"] else " No evidence found."
-    return f"- **{STATUS_LABELS[c['status']]}** · {c['label']}: \"{c['quote']}\" ({c['loc_label']}).{head}"
+    headline = c.get("headline") or (c["evidence"][0]["headline"] if c["evidence"] else None)
+    return f"- **{STATUS_LABELS[c['status']]}** · {c['label']}: {_quotes(c)}." + (f" {headline}." if headline else " No evidence found.")
 
 
 def _claim_detail(c: dict) -> list[str]:
-    lines = [f"- **{STATUS_LABELS[c['status']]}** · {c['label']}: \"{c['quote']}\" ({c['loc_label']})"]
-    for e in c["evidence"]:
-        kind = f" ({e['source_type']})" if e.get("source_type") else ""
-        source = f" Source{kind}: {e['url']}" if e.get("url") else ""
-        lines.append(f"  - **{e['headline']}.** {e['note']}{source}")
+    members = c.get("members")
+    if not members:
+        lines = [f"- **{STATUS_LABELS[c['status']]}** · {c['label']}: \"{c['quote']}\" ({c['loc_label']})"]
+    else:  # one item: the conclusion, then each quote with its own evidence, as on the page
+        lines = [f"- **{STATUS_LABELS[c['status']]}** · {c['label']}: {c['headline']}"]
+    evidence = [[_evidence_line(e) for e in m["evidence"]] for m in members or [c]]
+    for i, m in enumerate(members or [c]):
+        if members:
+            lines.append(f"  - \"{m['quote']}\" ({m['loc_label']})")
+        if i + 1 == len(evidence) or evidence[i] != evidence[i + 1]:  # evidence shared with the next claim comes once, after it
+            lines += evidence[i]
     return lines
+
+
+def _evidence_line(e: dict) -> str:
+    kind = f" ({e['source_type']})" if e.get("source_type") else ""
+    source = f" Source{kind}: {e['url']}" if e.get("url") else ""
+    return f"  - **{e['headline']}.** {e['note']}{source}"
 
 
 def _change_line(c: dict) -> str:

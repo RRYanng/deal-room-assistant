@@ -480,3 +480,22 @@ only.
   to PDF with headless Chrome after clicking Claim check and Memo, in light and dark mode: the first page is
   the memo title, summary and market section, 6 pages in all. In the browser the button was clicked with
   `window.print` replaced by a stub, so no print dialog opened.
+
+## 26. One row per finding (2026-11-12)
+
+A walkthrough found rows that read as duplicates: Gross margin twice (67-82% on p.5 and above 90% on p.9, each
+contradicting the other), and Team size and Operating costs with the same calculated conclusion. Display only;
+statuses, evidence and fingerprints are unchanged.
+
+- `group_claims` (`app/presentation.py`) groups claims when they are loaded: the sides of a contradiction inside
+  the company's materials (same key, each cites the other's passage and figure), and claims flagged by the
+  same calculation. `claim_rows` turns them into one row each: "Gross margin: 67–82% on p.5 vs above 90% on
+  p.9", "Team size / Operating costs: $420,000 / 14 = $30,000 per full-time employee, below the $48,651 floor".
+  Other claims that only share a headline (the two projection assumptions) stay separate rows.
+- Opened, a row shows each claim's quote with its own evidence; evidence the claims share is shown once, after
+  them. One founder question per distinct text.
+- Confirm and Dismiss on a row store the decision for each of its claims (`POST /reviews` once per claim). A row
+  with only some claims decided (reviews made before this change) is awaiting review.
+- The counts, the summary and the memo count rows: ClearClaim reads 15 claims checked instead of 17, and
+  Financials 3 issues instead of 5 (Team keeps the team/costs row). `GET /claims` adds `rows`; `claims` is as
+  before.

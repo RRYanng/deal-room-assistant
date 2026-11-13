@@ -1474,11 +1474,34 @@ function displayText(text, page) {
 
 // The one-line conclusion on a folded card: the counted evidence behind the status, else what was found.
 function conclusionOf(c) {
+  if (c.headline) return displayText(c.headline);  // a merged row: "67–82% on p.5 vs above 90% on p.9"
   const counted = c.evidence.filter((e) => !e.scope || e.scope === "company");
   const stance = { contradicted: "contradicts", possibly_overstated: "overstates" }[c.status];
   const e = counted.find((x) => x.stance === stance) || counted[0] || c.evidence[0];
   return e ? displayText(e.headline, pageOf(c)) : "No evidence found";
 }
+
+// A row is one claim, or several shown as one (the server's claim_rows): the two sides of a contradiction,
+// or claims one calculation flags. Opened, it shows each claim's quote with its own evidence; evidence that
+// is the same for consecutive claims is shown once, after them.
+const membersOf = (row) => row.members || [row];
+const evidenceKey = (m) => JSON.stringify(m.evidence.map((e) => [e.headline, e.note]));
+
+function memberQuotesHtml(row) {
+  const members = membersOf(row);
+  const named = new Set(members.map((m) => m.label)).size > 1;
+  return members.map((m, i) => {
+    const sameNext = i + 1 < members.length && evidenceKey(m) === evidenceKey(members[i + 1]);
+    return `${named ? `<div class="member-label">${esc(m.label)}</div>` : ""}
+      <div class="claim-quote">“${boldValue(m.quote, m.value_raw)}”</div>
+      <div class="source-loc">${esc(m.filename)} · ${esc(locationOf(m))}</div>
+      ${sameNext ? "" : `<div class="card-evidence">${evidenceListHtml(m)}</div>`}`;
+  }).join("");
+}
+
+// One founder question per distinct text (both sides of a contradiction ask the same thing).
+const questionsOf = (row) => [...new Map(membersOf(row).filter((m) => m.question)
+  .map((m) => [m.question.text, m])).values()];
 
 // Claim cards start folded to one line; clicking the line opens the quote, evidence, question and buttons.
 function claimCardHtml(c) {
@@ -1487,10 +1510,8 @@ function claimCardHtml(c) {
   const decided = c.review_state === "awaiting_review" ? ""
     : `<span class="card-decision ${c.review_state}">${c.review_state === "confirmed" ? "Confirmed" : "Dismissed"}</span>`;
   const body = open ? `<div class="card-body">
-      <div class="claim-quote">“${boldValue(c.quote, c.value_raw)}”</div>
-      <div class="source-loc">${esc(c.filename)} · ${esc(locationOf(c))}</div>
-      <div class="card-evidence">${evidenceListHtml(c)}</div>
-      ${foldedQuestionHtml(c.question, `claim:${c.fingerprint}`)}
+      ${memberQuotesHtml(c)}
+      ${questionsOf(c).map((m) => foldedQuestionHtml(m.question, `claim:${m.fingerprint}`)).join("")}
       <div class="card-review">${reviewCellHtml(c)}</div>
     </div>`
     // A dismissed card shows its reason and Change while folded; the line already says Dismissed.
@@ -1586,7 +1607,8 @@ function renderClaims() {
       to list the deck's key claims and the evidence for and against each.</div>`);
     return;
   }
-  const visible = d.claims.filter((c) => c.review_state !== "dismissed")
+  const rows = d.rows || d.claims;
+  const visible = rows.filter((c) => c.review_state !== "dismissed")
     .map((c, i) => [c, i])
     .sort(([a, i], [b, j]) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || i - j)
     .map(([c]) => c);
@@ -1608,7 +1630,7 @@ function renderClaims() {
   const note = `<p class="claims-note">Statuses describe the evidence found, not whether a claim is true. Nothing is a
     finding until you confirm it.</p>`;
   // Dismissed claims and changes leave the lists above; the bottom of the Issues and All claims tabs lists them.
-  const gone = d.claims.filter((c) => c.review_state === "dismissed");
+  const gone = rows.filter((c) => c.review_state === "dismissed");
   const goneChanges = (d.changes || []).filter((c) => c.review_state === "dismissed");
   const goneCount = gone.length + goneChanges.length;
   const dismissed = goneCount ? `<div class="claims-more"><button type="button" class="link small"
@@ -2051,14 +2073,17 @@ $("monitor-run").onclick = async () => {
 // ---------------------------------------------------------------- review dialog
 
 function openReview(fingerprint, decision, itemType = "claim") {
-  const pool = itemType === "signal" ? mon.data.signals : itemType === "drift" ? claims.data.changes : claims.data.claims;
+  const pool = itemType === "signal" ? mon.data.signals : itemType === "drift" ? claims.data.changes
+    : claims.data.rows || claims.data.claims;
   const item = pool.find((x) => x.fingerprint === fingerprint);
   if (!item) return;
-  claims.reviewing = { fingerprint, decision, itemType,
+  // A decision on a merged row is stored for each of its claims.
+  claims.reviewing = { fingerprint, decision, itemType, fingerprints: membersOf(item).map((m) => m.fingerprint),
     companyId: itemType === "signal" ? mon.companyId : claims.companyId };
   $("review-title").textContent = decision === "confirmed" ? "Confirm this finding?" : "Dismiss this flag?";
   $("review-claim").textContent = itemType === "signal" ? `${item.period_end}: ${item.title}`
-    : itemType === "drift" ? `${item.label}: ${item.old.value_raw} → ${item.new.value_raw}` : `“${item.quote}”`;
+    : itemType === "drift" ? `${item.label}: ${item.old.value_raw} → ${item.new.value_raw}`
+    : item.members ? `${item.label}: ${conclusionOf(item)}` : `“${item.quote}”`;
   const required = decision === "dismissed";  // confirming may skip the reason; dismissing may not
   $("review-reason-label").firstChild.textContent = required ? "Reason (required) " : "Reason (optional) ";
   $("review-reason").value = "";
@@ -2081,8 +2106,10 @@ $("review-form").onsubmit = async (e) => {
   if (!r || (r.decision === "dismissed" && !reason)) return;
   $("review-save").disabled = true;
   try {
-    await postJson(`/api/companies/${r.companyId}/reviews`,
-      { fingerprint: r.fingerprint, decision: r.decision, reason, item_type: r.itemType });
+    for (const fingerprint of r.fingerprints) {
+      await postJson(`/api/companies/${r.companyId}/reviews`,
+        { fingerprint, decision: r.decision, reason, item_type: r.itemType });
+    }
     $("review-dialog").close();
     changingReview.delete(`${r.itemType}:${r.fingerprint}`);
     await (r.itemType === "signal" ? loadMonitor() : loadClaims());

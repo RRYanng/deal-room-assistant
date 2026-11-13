@@ -266,6 +266,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .claims-body h3 { font-size: 15px; margin: 24px 0 8px; }
 .claims-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 4px; }
 .claim-quote { overflow-wrap: anywhere; }
+.member-label { font-size: 12px; font-weight: 600; color: var(--muted); }
 .run-line { display: inline-block; font-size: 13px; color: var(--muted); cursor: help;
   border-bottom: 1px dotted var(--muted); }
 .cards-count { font-weight: 500; color: var(--muted); margin-left: 4px; }
