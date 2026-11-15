@@ -163,6 +163,17 @@
     </div>
   </dialog>
 
+  <!-- Remove in the memo: withdraws a confirmation -->
+  <dialog id="remove-dialog" class="dialog" aria-labelledby="remove-message">
+    <div class="stack">
+      <p id="remove-message" class="dialog-message">Remove this finding from the memo? It will go back to awaiting review on the Deck check page.</p>
+      <div class="dialog-actions">
+        <button type="button" id="remove-cancel" class="secondary">Cancel</button>
+        <button type="button" id="remove-confirm" class="danger-button">Remove</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- Run confirmation: a claim check or monitoring run calls the model and costs money -->
   <dialog id="run-dialog" class="dialog" aria-labelledby="run-title">
     <div class="stack">

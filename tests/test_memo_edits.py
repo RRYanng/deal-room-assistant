@@ -183,3 +183,43 @@ def test_library_no_longer_shows_the_chunk_count(db, company):
     from tests.test_library import library_page
     html = library_page(db, "libraryListHtml()")
     assert "chunk" not in html and "re-extract" in html
+
+
+REMOVE_TEXT = "Remove this finding from the memo? It will go back to awaiting review on the Deck check page."
+
+
+def test_the_page_has_an_in_page_remove_dialog():
+    page = (PROJECT_ROOT / "static" / "index.html").read_text()
+    dialog = page[page.index('<dialog id="remove-dialog"'):].split("</dialog>")[0]
+    assert REMOVE_TEXT in dialog
+    assert '<button type="button" id="remove-cancel" class="secondary">Cancel</button>' in dialog
+    assert '<button type="button" id="remove-confirm" class="danger-button">Remove</button>' in dialog
+    assert "confirm(" not in (PROJECT_ROOT / "static" / "app.js").read_text().replace("Confirm(", "")
+
+
+@pytest.mark.skipif(not NODE, reason="needs Node.js to run static/app.js")
+def test_remove_asks_first_and_cancel_changes_nothing(db, company):
+    built = memo(company, conn=db)
+    out = render(f"""(async () => {{
+        const posts = [];
+        fetch = (url, options) => {{ posts.push([url, options && options.body]); return new Promise(() => {{}}); }};
+        const settle = async () => {{ for (let i = 0; i < 10; i++) await null; }};
+        claims.view = "memo"; claims.companyId = {company}; claims.memo = {{...DATA, text: memoText(DATA.markdown)}};
+        const cancelled = removeMemoItem(1);
+        await settle();
+        const asked = posts.length;
+        finishRemove(false);
+        await cancelled;
+        await settle();
+        const afterCancel = {{posts: posts.length, items: claims.memo.items.length}};
+        removeMemoItem(1);
+        await settle();
+        finishRemove(true);
+        await settle();
+        return {{asked, afterCancel, posts}};
+    }})()""", built)
+    assert out["asked"] == 0  # nothing is sent while the dialog is open
+    assert out["afterCancel"] == {"posts": 0, "items": 2}
+    fingerprints = built["items"][1]["fingerprints"]
+    assert out["posts"] and out["posts"][0][0] == f"/api/companies/{company}/reviews"
+    assert '"decision":"reopened"' in out["posts"][0][1] and fingerprints[0] in out["posts"][0][1]

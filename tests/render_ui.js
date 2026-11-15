@@ -1,7 +1,7 @@
 // Runs static/app.js in Node with a stub DOM, so tests can call its render functions on real API data.
 // Usage: node tests/render_ui.js <app.js> < {"data": ..., "code": "..."}
 // The code runs after app.js has loaded, with DATA set to the JSON data; the value of its last expression
-// is printed as JSON. Only what the render functions touch is stubbed: elements remember what is assigned
+// is printed as JSON (a promise is awaited first). Only what the render functions touch is stubbed: elements remember what is assigned
 // to them, and anything else is a no-op.
 "use strict";
 const fs = require("fs");
@@ -41,4 +41,4 @@ vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), context, { filename: "
 
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 context.DATA = input.data;
-process.stdout.write(JSON.stringify(vm.runInContext(input.code, context)));
+Promise.resolve(vm.runInContext(input.code, context)).then((value) => process.stdout.write(JSON.stringify(value)));

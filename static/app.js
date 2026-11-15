@@ -1815,6 +1815,25 @@ async function reviewMemoItem(index, decision, reason = "") {
   }
 }
 
+// Remove asks first, in the page's own dialog; Cancel (or Escape) leaves everything as it was.
+let answerRemove = null;
+
+function finishRemove(answer) {
+  $("remove-dialog").close();
+  if (answerRemove) answerRemove(answer);
+  answerRemove = null;
+}
+
+async function removeMemoItem(index) {
+  $("remove-dialog").showModal();
+  const go = await new Promise((resolve) => { answerRemove = resolve; });
+  if (go) await reviewMemoItem(index, "reopened");
+}
+
+$("remove-cancel").onclick = () => finishRemove(false);
+$("remove-confirm").onclick = () => finishRemove(true);
+$("remove-dialog").addEventListener("cancel", () => finishRemove(false)); // Escape
+
 function notesChanged() {
   const m = claims.memo;
   return m && m.notesDraft != null && m.notesDraft.trim() !== m.notes.text;
@@ -2027,10 +2046,7 @@ $("claims-body").addEventListener("click", async (e) => {
     return renderMemo();
   }
   const remove = e.target.closest("[data-memo-remove]");
-  if (remove) {
-    remove.disabled = true;
-    return reviewMemoItem(Number(remove.dataset.memoRemove), "reopened");
-  }
+  if (remove) return removeMemoItem(Number(remove.dataset.memoRemove));
   if (e.target.closest("#memo-notes-save")) {
     try { await saveMemoNotes(); } catch (err) { $("memo-notes-status").textContent = `Could not save: ${err.message}`; }
     return;

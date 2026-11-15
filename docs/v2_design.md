@@ -537,7 +537,8 @@ statuses, evidence and fingerprints are unchanged.
   to edit; "Add a note" when empty) and a Remove button. Both are ordinary reviews of every claim of the item:
   a new note is a new `confirmed` record with the new reason; Remove is a new `reopened` record, which
   `latest_decisions` treats as no decision, so the item is back under awaiting review on the Deck check page.
-  Nothing is deleted. `reopened` needed the reviews table's CHECK to allow it; `init_db` copies an older
+  Remove asks first in the page's own dialog ("Remove this finding from the memo? ..."); Cancel or Escape
+  changes nothing. Nothing is deleted. `reopened` needed the reviews table's CHECK to allow it; `init_db` copies an older
   table into the new definition, keeping every row (as it did for the reason rule on 11-08).
 - Notes of changes and signals are now their own line ("  - Investor note: ..."), as for claims.
 - Investor notes: new table `memo_notes` (append-only, latest text wins, blank clears),
