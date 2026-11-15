@@ -12,6 +12,7 @@ a Remove button under each (both are new review records; see app/reviews.py).
 import sqlite3
 from datetime import datetime
 
+from app.citations import display_locations
 from app.claims import latest_results
 from app.monitor import latest_results as latest_monitor_results
 from app.presentation import CATEGORIES, build_summary, claim_rows, hide_parts, visible_summary
@@ -136,7 +137,7 @@ def memo_to_markdown(memo: dict) -> str:
     waiting = memo["counts"]["awaiting_review"]  # the count the Deck check page shows
     if waiting:
         lines.append(f"{waiting} {'item' if waiting == 1 else 'items'} still awaiting review on the Deck check page.")
-    return "\n".join(lines).rstrip() + "\n"
+    return display_locations("\n".join(lines).rstrip() + "\n")
 
 
 def _note_line(item: dict) -> list[str]:

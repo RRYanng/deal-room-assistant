@@ -61,7 +61,7 @@ def test_funding_without_as_of_date_is_unclear_basis(client):
     cid = setup_tidewell(client)
     unclear = client.get(f"/api/companies/{cid}/checks").json()["unclear_basis"]
     assert [(u["metric"], u["value"], u["reason"], u["loc_label"]) for u in unclear] == [
-        ("funding_raised", 1_200_000, "no as-of date stated", "tidewell_deck.pdf p.4 ¶2")]
+        ("funding_raised", 1_200_000, "no date stated", "tidewell_deck.pdf p.4 ¶2")]
 
 
 def test_revenue_is_listed_as_missing(client):

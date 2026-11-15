@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from app.agent import NOT_FOUND, run_agent, verify_items
-from app.citations import normalize_ws
+from app.citations import display_locations, normalize_ws
 from app.llm import LLMClient
 from app.logs import log_event
 from app.rules import KEY_METRICS, find_conflicts, get_metrics, missing_metrics, unclear_basis
@@ -232,9 +232,9 @@ def brief_to_markdown(brief: dict) -> str:
     if not brief["conflicts"]:
         lines.append("- No conflicts detected.")
     if brief["unclear_basis"]:
-        lines += ["", "## Unclear basis"]
+        lines += ["", "## Numbers without a date"]
         lines += [f"- {u['metric_label'] or u['metric']}: {u['display_value']} ({u['reason']}) "
                   f"[{u['loc_label']}: \"{u['quote']}\"]" for u in brief["unclear_basis"]]
     if brief["open_items"]:
         lines += ["", "## Open items"] + [f"- {o}" for o in brief["open_items"]]
-    return "\n".join(lines) + "\n"
+    return display_locations("\n".join(lines) + "\n")
