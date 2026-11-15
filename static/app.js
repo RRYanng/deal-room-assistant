@@ -10,6 +10,7 @@ const state = {
   library: [],          // [{company, docs, metrics, open}] behind the Library drawer
   libraryQuery: "",     // the Library search box: filters the list as you type
   librarySearch: null,  // after Enter: {query, results} from the keyword search, or {query, loading/error}
+  openSummaries: new Set(),  // files whose summary is shown in full
   openEvidence: new Set(),
   upload: null,         // the file and suggestions behind the open confirmation dialog
   batch: null,          // the files in the batch table
@@ -1062,10 +1063,24 @@ async function searchLibrary(query) {
   $("library-results").innerHTML = librarySearchHtml();
 }
 
+// One line, cut with an ellipsis; a click shows it in full and a second click folds it again.
+function docSummaryHtml(d) {
+  const open = state.openSummaries.has(d.id);
+  return `<button type="button" class="doc-summary${open ? " open" : ""}" data-summary="${d.id}" aria-expanded="${open}" title="${esc(d.summary)}">
+      <span class="doc-summary-arrow" aria-hidden="true">${open ? "▾" : "▸"}</span><span class="doc-summary-text">${esc(d.summary)}</span>
+    </button>`;
+}
+
+function toggleSummary(id) {
+  if (state.openSummaries.has(id)) state.openSummaries.delete(id);
+  else state.openSummaries.add(id);
+  $("library-list").innerHTML = libraryListHtml();
+}
+
 function documentHtml(d) {
   return `<li>
     <div class="doc-name">${esc(d.filename)}</div>
-    ${d.summary ? `<div class="doc-summary" title="${esc(d.summary)}">${esc(d.summary)}</div>` : ""}
+    ${d.summary ? docSummaryHtml(d) : ""}
     <div class="muted small">
       <span class="badge">${esc(DOC_TYPES[d.doc_type] || d.doc_type)}</span>
       ${esc(d.doc_date || "no date")} · ${plural(d.chunks, "chunk")} ·
@@ -1160,7 +1175,9 @@ $("drawer-body").addEventListener("click", async (e) => {
   const button = e.target.closest("button");
   if (!button) return;
   const data = button.dataset;
-  if (data.libraryCompany) {
+  if (data.summary) {
+    toggleSummary(Number(data.summary));
+  } else if (data.libraryCompany) {
     const id = Number(data.libraryCompany);
     if (state.openLibrary.has(id)) state.openLibrary.delete(id);
     else state.openLibrary.add(id);

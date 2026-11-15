@@ -7,7 +7,7 @@ from app.claims import create_run, run_claim_check
 from app.main import list_claims
 from app.memo import build_memo, memo_to_markdown
 from app.reviews import record_review
-from tests.helpers_v2 import CLAIM_RULES, DECK, claim_llm, load_clearclaim
+from tests.helpers_v2 import CLAIM_RULES, DECK, claim_llm, load_clearclaim, review_row
 from tests.test_ui_dismissed import NODE, render
 
 
@@ -68,11 +68,14 @@ def test_memo_lists_the_row_once_with_both_quotes(db, checked):
     memo = build_memo(db, checked)
     flagged = [r for r in memo["awaiting_review"] if r["key"] != "other"
                and r["status"] in ("contradicted", "possibly_overstated", "unverified")]
-    waiting = len(flagged) + len(memo["changes"])  # changes since the earlier deck are counted too
-    assert memo["counts"]["awaiting_review"] == waiting
+    assert memo["counts"]["awaiting_review"] == len(flagged) + len(memo["changes"])  # changes count too
+    for fragment in ("Gross margin is 67-82%", "We are a team of 14"):
+        review_row(db, checked, memo["claims"], fragment, "confirmed", "")
+    memo = build_memo(db, checked)
     text = memo_to_markdown(memo)
-    assert f"## Awaiting review ({waiting})" in text
-    waiting = text.split("## Awaiting review")[1].split("## Questions for the founder")[0]
+    assert text.rstrip().endswith(f"{len(flagged) - 2 + len(memo['changes'])} items still awaiting review on the "
+                                  "Deck check page.")  # one count for each row
+    waiting = text.split("## Verified findings")[1].split("\n## ")[0]
     lines = waiting.splitlines()
     assert sum(line.startswith("- **") and "· Gross margin" in line for line in lines) == 1
     assert sum(line.startswith("- **") and ("· Team size" in line or "· Operating costs" in line) for line in lines) == 1

@@ -1,7 +1,8 @@
 """Library: a one-line summary of each file, and a keyword search over file contents. No model is called.
 
-A summary is put together from what is already stored: the file's type and date, then the metrics extracted
-from it (key metrics first). A file with no metrics shows its first meaningful sentence instead.
+A summary is put together from what is already stored: the file's type and date, then every metric extracted
+from it (key metrics first). A file with no metrics shows its first meaningful sentence instead. The page shows
+one line and opens the rest on a click.
 
 search_files() uses the BM25 keyword index of app.rag (the same tokens: lowercase, plurals folded, stopwords
 dropped) and counts how often each file mentions the query as a phrase.
@@ -15,7 +16,7 @@ from rank_bm25 import BM25Okapi
 
 from app.rag import tokenize
 
-SUMMARY_MAX = 160
+SENTENCE_MAX = 300  # a first sentence longer than this is cut
 DOC_TYPE_NAMES = {"deck": "Pitch deck", "notes": "Notes", "crm": "CRM records"}
 # Standard metrics come first, then "other" metrics whose label names one of these, in this order.
 KEY_LABEL_WORDS = ("market", "employees", "revenue", "cash", "burn", "margin", "growth")
@@ -48,7 +49,7 @@ def document_summaries(conn: sqlite3.Connection, company_id: int) -> dict[int, s
         head = ", ".join(filter(None, [DOC_TYPE_NAMES.get(d["doc_type"], d["doc_type"]), _date(d["doc_date"])]))
         found = by_doc.get(d["id"])
         if found:
-            summaries[d["id"]] = _fit(f"{head}: ", _metric_phrases(found))
+            summaries[d["id"]] = f"{head}: " + ", ".join(_metric_phrases(found))
         else:
             sentence = _first_sentence(conn, d["id"], d["doc_type"])
             summaries[d["id"]] = _cut(f"{head}: {sentence}" if sentence else head)
@@ -96,18 +97,7 @@ def _lower_first(label: str) -> str:
     return label[0].lower() + label[1:] if label[1:2].islower() else label
 
 
-def _fit(head: str, phrases: list[str]) -> str:
-    """As many phrases as fit in SUMMARY_MAX characters, then ", …" if some were left out."""
-    text = head + phrases[0]
-    for i, phrase in enumerate(phrases[1:], 1):
-        more = i + 1 < len(phrases)
-        if len(text) + 2 + len(phrase) + (3 if more else 0) > SUMMARY_MAX:
-            return _cut(text, SUMMARY_MAX - 3) + ", …"
-        text += ", " + phrase
-    return _cut(text)
-
-
-def _cut(text: str, limit: int = SUMMARY_MAX) -> str:
+def _cut(text: str, limit: int = SENTENCE_MAX) -> str:
     if len(text) <= limit:
         return text
     return text[:limit - 1].rsplit(" ", 1)[0].rstrip(",;:") + "…"

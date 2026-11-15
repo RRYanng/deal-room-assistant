@@ -36,7 +36,9 @@ def test_e13_flagged_items_are_not_findings_until_confirmed(db, checked):
     assert memo["findings"] == []
     assert len(memo["awaiting_review"]) == len(CLAIM_RULES) - 2  # gross margin and team/costs are one row each
     text = memo_to_markdown(memo)
-    assert "No findings confirmed yet." in text and "Not conclusions until an investor confirms them." in text
+    assert "Nothing confirmed yet. Confirm findings on the Deck check page to add them here." in text
+    assert f"{memo['counts']['awaiting_review']} items still awaiting review on the Deck check page." in text
+    assert not any(c["quote"] in text for c in out["claims"])  # flagged items are not listed
 
 
 def test_e13_confirmed_item_enters_the_memo_with_the_reason(db, checked):
@@ -47,7 +49,7 @@ def test_e13_confirmed_item_enters_the_memo_with_the_reason(db, checked):
         [["Gross margin is 67-82%, depending on payer mix and the share of claims that need manual review.", margin["quote"]]]
     assert not any(c["key"] == margin["key"] for c in memo["awaiting_review"])
     text = memo_to_markdown(memo)
-    findings = text.split("## Verified findings")[1].split("## Awaiting review")[0]
+    findings = text.split("## Verified findings")[1].split("\n## ")[0]
     assert "Current gross margin: above 90%." in findings and "Founder confirmed 70% in the meeting." in findings
 
 
@@ -61,7 +63,7 @@ def test_e13_dismissed_item_is_not_raised_again_on_the_next_run(db, checked):
     assert review_counts(again["claims"])["dismissed"] == 1
     memo = build_memo(db, company_id)
     assert same["fingerprint"] not in {c["fingerprint"] for c in memo["awaiting_review"]}
-    assert "Time savings are not material" in memo_to_markdown(memo).split("## Dismissed")[1]
+    assert "Time savings are not material" not in memo_to_markdown(memo)  # the memo holds confirmed items only
 
 
 def test_e13_dismissed_item_is_raised_again_when_its_evidence_changes(db, checked):
@@ -76,7 +78,10 @@ def test_e13_dismissed_item_is_raised_again_when_its_evidence_changes(db, checke
     assert same["status"] == "contradicted"
     assert same["review_state"] == "awaiting_review" and same["evidence_changed"]
     assert same["review"]["status_then"] == "unverified"
-    assert "Evidence changed since it was dismissed." in memo_to_markdown(build_memo(db, company_id))
+    # Awaiting review again, so it is counted at the end of the memo but not listed
+    memo = build_memo(db, company_id)
+    assert same["fingerprint"] in {c["fingerprint"] for c in memo["awaiting_review"]}
+    assert same["quote"] not in memo_to_markdown(memo)
 
 
 def test_e13_a_new_number_is_a_new_item(db, checked):

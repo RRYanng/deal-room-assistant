@@ -82,9 +82,10 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    Associate Agreement, an independent security assessment). An item the files do not mention is "Not
    addressed in materials", never a breach; these count in the summary's Regulatory category. Hidden on
    the page by default (see "Page switches" below).
-15. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
-   alignment, risks the deck states), portfolio signals, awaiting review, questions for the founder.
-   Built by the program from the results; no model writes it. The page shows it as a document with the
+15. **Memo**: only what the investment team confirmed: a summary line, verified findings by category,
+   confirmed portfolio signals and the questions for the founder those items raise, then one line with how
+   many items still await review on the Deck check page. Before anything is confirmed it says so. Built by
+   the program from the results; no model writes it. The page shows it as a document with the
    same display wording as the Deck check page (page numbers instead of "here", amounts such as $1.44B); quotes
    are never rewritten. **Print / Save as PDF** prints the memo alone, black on white.
 

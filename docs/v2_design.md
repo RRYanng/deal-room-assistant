@@ -515,3 +515,17 @@ statuses, evidence and fingerprints are unchanged.
   places: "gross margin" finds the December deck (2 mentions, p.5 ¶2, p.9 ¶3) and the meeting notes (1, ¶5).
   No embeddings and no model are used.
 
+## 28. Expandable summaries; a memo of confirmed items only (2026-11-15)
+
+- A Library summary now holds every metric of the file (no 160-character cap). The page shows it on one line
+  with ▸; a click opens it in full (▾) and a second click folds it. Several can be open at once; hovering
+  still shows the full text.
+- The memo holds only what the investment team confirmed: the summary line ("2 findings confirmed by the
+  investment team (1 Market, 1 Financials): …"), verified findings by category, confirmed portfolio signals,
+  and the founder questions of those items. The Market, Competition and Risks sections (which listed every
+  checked result), the awaiting-review details, the dismissed list and the run notes are gone. The last line
+  gives only the count: "<n> items still awaiting review on the Deck check page." (the page's own count).
+  With nothing confirmed: "Nothing confirmed yet. Confirm findings on the Deck check page to add them here."
+- `GET /memo` returns the same JSON as before (all rows, counts); only the Markdown changed. The Deck check
+  page is unchanged.
+

@@ -1,12 +1,14 @@
-"""Library: a one-line summary under each file, built from stored data only, and a search box that filters
+"""Library: a one-line summary (click to open it in full) under each file, built from stored data only, and a search box that filters
 the list as you type and, on Enter, searches file contents with the BM25 keyword index. No model is called."""
+
+import re
 
 import pytest
 
 from app import rag
 from app.config import PROJECT_ROOT
 from app.ingest import ingest_document
-from app.library import SUMMARY_MAX, document_summaries, search_files
+from app.library import document_summaries, search_files
 from app.main import library_search, list_documents
 from tests.helpers_v2 import DECK, SAMPLES, load_clearclaim
 from tests.test_ui_dismissed import NODE, render
@@ -54,10 +56,13 @@ def test_summary_gives_type_date_and_key_metrics_first(db, library):
                               "14 full-time employees, 67-82% gross margin")
 
 
-def test_long_summary_is_cut_to_one_line(db, library):
+def test_summary_keeps_every_metric_for_the_expanded_view(db, library):
     company_id, docs = library
     summary = document_summaries(db, company_id)[docs[DECK]]
-    assert len(summary) <= SUMMARY_MAX and summary.endswith(", …")
+    assert "…" not in summary
+    for _metric, label, value_raw, _ in DECK_METRICS:
+        assert value_raw in summary, value_raw
+    assert summary.endswith("$3,600 price per practice per year, $420,000 annual operating costs 2025")
 
 
 def test_file_without_metrics_uses_its_first_meaningful_sentence(db, library):
@@ -141,10 +146,34 @@ def test_enter_shows_which_files_mention_the_words_and_how_often(db, library):
     assert "No file mentions “submarine”" in " ".join(none.split())
 
 
-def test_summary_stays_on_one_line():
+def test_summary_stays_on_one_line_until_opened():
     style = (PROJECT_ROOT / "static" / "style.css").read_text()
-    rule = style[style.index(".doc-summary"):].split("}")[0]
+    rule = style[style.index(".doc-summary-text {"):].split("}")[0]
     assert "white-space: nowrap" in rule and "text-overflow: ellipsis" in rule and "overflow: hidden" in rule
+    opened = style[style.index(".doc-summary.open .doc-summary-text {"):].split("}")[0]
+    assert "white-space: normal" in opened
+
+
+@pytest.mark.skipif(not NODE, reason="needs Node.js to run static/app.js")
+def test_clicking_a_summary_opens_it_and_clicking_again_closes_it(db, library):
+    _, docs = library
+    deck, notes = docs[DECK], docs["clearclaim_meeting_notes.md"]
+
+    def summaries(code):
+        html = library_page(db, f"{code}; $(\"library-list\").innerHTML || libraryListHtml()")
+        return {int(fp): (expanded, arrow) for fp, expanded, arrow in re.findall(
+            r'data-summary="(\d+)" aria-expanded="(true|false)"[^>]*>\s*<span class="doc-summary-arrow"[^>]*>(.)</span>',
+            html)}, html
+
+    shut, html = summaries("0")
+    assert len(shut) == 9 and set(shut.values()) == {("false", "▸")}
+    assert f'title="{library_page(db, "state.library[0].docs.find(d => d.id === %d).summary" % deck)}"' in html  # hover
+
+    both, _ = summaries(f"toggleSummary({deck}); toggleSummary({notes})")  # several can be open at once
+    assert both[deck] == both[notes] == ("true", "▾")
+    assert sum(v == ("true", "▾") for v in both.values()) == 2
+    one, _ = summaries(f"toggleSummary({deck}); toggleSummary({notes}); toggleSummary({deck})")
+    assert one[deck] == ("false", "▸") and one[notes] == ("true", "▾")
 
 
 def test_a_bare_number_keeps_the_unit_its_label_does_not_name(db):

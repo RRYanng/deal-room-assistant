@@ -4,6 +4,7 @@ import pytest
 
 from app.claims import create_run, run_claim_check
 from app.main import list_claims, memo, ui_config
+from app.reviews import record_review
 from tests.helpers_v2 import DECK, fake_web, load_clearclaim, research_llm
 
 HIDE = "changes,regulatory"
@@ -40,13 +41,15 @@ def test_hidden_parts_leave_the_page_data(db, company):
 
 
 def test_hidden_parts_leave_the_memo(db, company):
+    change = next(c for c in list_claims(company, conn=db)["changes"] if c["key"] == "market.customer_count")
+    record_review(db, company, change["fingerprint"], "confirmed", "", item_type="drift")
     full, hidden = memo(company, conn=db)["markdown"], memo(company, hide=HIDE, conn=db)
-    assert "Changed since the last deck" in full and "### Regulatory" in full
+    assert "**Changed** (Number of target customers)" in full and "in the earlier deck" in full  # with its question
     text = hidden["markdown"]
-    for gone in ("Changed since the last deck", "earlier deck", "### Regulatory", "Business Associate Agreement",
+    for gone in ("Number of target customers", "earlier deck", "Regulatory", "Business Associate Agreement",
                  "HIPAA"):
         assert gone not in text, gone
-    assert "### Alignment" in text and "## Questions for the founder" in text
+    assert "Nothing confirmed yet." in text
     assert hidden["counts"] == list_claims(company, hide=HIDE, conn=db)["counts"]
 
 
