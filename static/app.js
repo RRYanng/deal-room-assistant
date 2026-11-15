@@ -7,6 +7,10 @@ const state = {
   issues: [],
   drawer: null,         // null, {view: "library"} or {view: "issues", companyId}
   openLibrary: new Set(),
+  library: [],          // [{company, docs, metrics, open}] behind the Library drawer
+  libraryQuery: "",     // the Library search box: filters the list as you type
+  librarySearch: null,  // after Enter: {query, results} from the keyword search, or {query, loading/error}
+  openSummaries: new Set(),  // files whose summary is shown in full
   openEvidence: new Set(),
   upload: null,         // the file and suggestions behind the open confirmation dialog
   batch: null,          // the files in the batch table
@@ -977,30 +981,109 @@ $("delete-dialog").addEventListener("cancel", () => finishDelete(false)); // Esc
 async function libraryHtml() {
   await loadCompanies();
   if (!state.companies.length) return '<div class="muted">No companies yet. Switch to Upload to add a file.</div>';
-  const cards = await Promise.all(state.companies.map(async (c) => {
+  state.library = await Promise.all(state.companies.map(async (c) => {
     const open = state.openLibrary.has(c.id);
     const [docs, metrics] = await Promise.all([
       api(`/api/companies/${c.id}/documents`),
       open ? api(`/api/companies/${c.id}/metrics`) : null,
     ]);
+    return { company: c, docs, metrics, open };
+  }));
+  return libraryBodyHtml();
+}
+
+function libraryBodyHtml() {
+  return `<form id="library-search" class="library-search" role="search">
+      <input id="library-query" type="search" value="${esc(state.libraryQuery)}" autocomplete="off"
+        placeholder="Search files · press Enter to search inside them" aria-label="Search files">
+    </form>
+    <div id="library-results">${librarySearchHtml()}</div>
+    <div id="library-list">${libraryListHtml()}</div>`;
+}
+
+// Typing filters by file name, company, type and summary: every word must appear in one of them.
+function libraryListHtml() {
+  const words = state.libraryQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (c, d) => {
+    const text = [d.filename, c.name, DOC_TYPES[d.doc_type] || d.doc_type, d.summary].join(" ").toLowerCase();
+    return words.every((w) => text.includes(w));
+  };
+  const cards = state.library.map(({ company: c, docs, metrics, open }) => {
+    const shown = docs.filter((d) => matches(c, d));
+    if (words.length && !shown.length) return "";
+    const files = words.length ? `${shown.length} of ${plural(docs.length, "file")}` : plural(docs.length, "file");
     return `<div class="company-card">
       <button type="button" class="company-head" data-library-company="${c.id}" aria-expanded="${open}">
         <span>${esc(c.name)}</span>
-        <span class="muted">${plural(docs.length, "file")} · ${open ? "hide" : "show"} key metrics</span>
+        <span class="muted">${files} · ${open ? "hide" : "show"} key metrics</span>
       </button>
-      ${docs.length ? `<ul class="company-files">${docs.map(documentHtml).join("")}</ul>` : ""}
+      ${shown.length ? `<ul class="company-files">${shown.map(documentHtml).join("")}</ul>` : ""}
       ${open ? `<div class="company-metrics"><div class="section-title">Key metrics</div>${metricsHtml(metrics)}</div>` : ""}
     </div>`;
-  }));
-  return cards.join("");
+  }).join("");
+  return cards || `<div class="muted">No files match “${esc(state.libraryQuery)}”. Press Enter to search inside the files.</div>`;
+}
+
+// Enter: the files whose text mentions the words, from the keyword index (no model), and how often.
+function librarySearchHtml() {
+  const s = state.librarySearch;
+  if (!s) return "";
+  if (s.loading) return '<div class="library-results muted small">Searching inside the files…</div>';
+  if (s.error) return `<div class="library-results answer error">${esc(s.error)}</div>`;
+  if (!s.results.length) {
+    return `<div class="library-results muted">No file mentions “${esc(s.query)}”.</div>`;
+  }
+  const hits = s.results.map((f) => `<li>
+      <div class="doc-name">${esc(f.filename)}</div>
+      <div class="muted small">
+        ${esc(f.company)} · <span class="badge">${esc(DOC_TYPES[f.doc_type] || f.doc_type)}</span>
+        ${esc(f.doc_date || "no date")} · <b class="mentions">${plural(f.mentions, "mention")}</b> · ${esc(f.locations.join(", "))}
+      </div>
+    </li>`).join("");
+  return `<div class="library-results">
+      <div class="results-title">${s.results.length === 1 ? "1 file mentions" : `${s.results.length} files mention`} “${esc(s.query)}”</div>
+      <ul class="company-files search-hits">${hits}</ul>
+    </div>`;
+}
+
+let librarySearchRequest = 0;
+
+async function searchLibrary(query) {
+  const request = ++librarySearchRequest;
+  state.librarySearch = { query, loading: true };
+  $("library-results").innerHTML = librarySearchHtml();
+  try {
+    const r = await api(`/api/library/search?q=${encodeURIComponent(query)}`);
+    if (request !== librarySearchRequest) return;
+    state.librarySearch = r;
+  } catch (err) {
+    if (request !== librarySearchRequest) return;
+    state.librarySearch = { query, error: `Could not search the files: ${err.message}` };
+  }
+  $("library-results").innerHTML = librarySearchHtml();
+}
+
+// One line, cut with an ellipsis; a click shows it in full and a second click folds it again.
+function docSummaryHtml(d) {
+  const open = state.openSummaries.has(d.id);
+  return `<button type="button" class="doc-summary${open ? " open" : ""}" data-summary="${d.id}" aria-expanded="${open}" title="${esc(d.summary)}">
+      <span class="doc-summary-arrow" aria-hidden="true">${open ? "▾" : "▸"}</span><span class="doc-summary-text">${esc(d.summary)}</span>
+    </button>`;
+}
+
+function toggleSummary(id) {
+  if (state.openSummaries.has(id)) state.openSummaries.delete(id);
+  else state.openSummaries.add(id);
+  $("library-list").innerHTML = libraryListHtml();
 }
 
 function documentHtml(d) {
   return `<li>
     <div class="doc-name">${esc(d.filename)}</div>
+    ${d.summary ? docSummaryHtml(d) : ""}
     <div class="muted small">
       <span class="badge">${esc(DOC_TYPES[d.doc_type] || d.doc_type)}</span>
-      ${esc(d.doc_date || "no date")} · ${plural(d.chunks, "chunk")} ·
+      ${esc(d.doc_date || "no date")} ·
       <button type="button" class="link small" data-reextract="${d.id}" data-name="${esc(d.filename)}">re-extract</button> ·
       <button type="button" class="link small danger-link" data-delete="${d.id}" data-name="${esc(d.filename)}">delete</button>
     </div>
@@ -1070,11 +1153,31 @@ async function issueDetailHtml(companyId) {
     ${group("Unclear basis", checks.unclear_basis.length, unclear)}`;
 }
 
+$("drawer-body").addEventListener("input", (e) => {
+  if (e.target.id !== "library-query") return;
+  state.libraryQuery = e.target.value;
+  if (state.librarySearch && state.librarySearch.query !== state.libraryQuery.trim()) {
+    librarySearchRequest++;  // an older search must not come back over the new words
+    state.librarySearch = null;
+    $("library-results").innerHTML = "";
+  }
+  $("library-list").innerHTML = libraryListHtml();
+});
+
+$("drawer-body").addEventListener("submit", (e) => {
+  if (e.target.id !== "library-search") return;
+  e.preventDefault();
+  const query = state.libraryQuery.trim();
+  if (query) searchLibrary(query);
+});
+
 $("drawer-body").addEventListener("click", async (e) => {
   const button = e.target.closest("button");
   if (!button) return;
   const data = button.dataset;
-  if (data.libraryCompany) {
+  if (data.summary) {
+    toggleSummary(Number(data.summary));
+  } else if (data.libraryCompany) {
     const id = Number(data.libraryCompany);
     if (state.openLibrary.has(id)) state.openLibrary.delete(id);
     else state.openLibrary.add(id);
@@ -1683,6 +1786,83 @@ async function toggleMemo() {
   if (claims.view === "memo") renderMemo();
 }
 
+// After a note, a Remove or saved Investor notes: the memo and the Deck check data are read again.
+async function refreshMemo() {
+  const before = claims.memo || {};
+  const [memo, data] = await Promise.all([
+    api(`/api/companies/${claims.companyId}/memo${hideQuery()}`),
+    api(`/api/companies/${claims.companyId}/claims${hideQuery()}`),
+  ]);
+  claims.data = data;
+  claims.memo = { ...memo, text: memoText(memo.markdown), notesDraft: before.notesDraft };
+  if (claims.view === "memo") renderMemo();
+}
+
+// A note or Remove is a new review of every claim of the item (as Confirm on the Deck check page).
+async function reviewMemoItem(index, decision, reason = "") {
+  const item = claims.memo.items[index];
+  claims.memo.actionError = null;
+  try {
+    for (const fingerprint of item.fingerprints) {
+      await postJson(`/api/companies/${claims.companyId}/reviews`,
+        { fingerprint, decision, reason, item_type: item.item_type });
+    }
+    claims.memo.editingNote = null;
+    await refreshMemo();
+  } catch (err) {
+    claims.memo.actionError = `Could not update ${item.label}: ${err.message}`;
+    renderMemo();
+  }
+}
+
+// Remove asks first, in the page's own dialog; Cancel (or Escape) leaves everything as it was.
+let answerRemove = null;
+
+function finishRemove(answer) {
+  $("remove-dialog").close();
+  if (answerRemove) answerRemove(answer);
+  answerRemove = null;
+}
+
+async function removeMemoItem(index) {
+  $("remove-dialog").showModal();
+  const go = await new Promise((resolve) => { answerRemove = resolve; });
+  if (go) await reviewMemoItem(index, "reopened");
+}
+
+$("remove-cancel").onclick = () => finishRemove(false);
+$("remove-confirm").onclick = () => finishRemove(true);
+$("remove-dialog").addEventListener("cancel", () => finishRemove(false)); // Escape
+
+function notesChanged() {
+  const m = claims.memo;
+  return m && m.notesDraft != null && m.notesDraft.trim() !== m.notes.text;
+}
+
+function notesStatus() {
+  if (notesChanged()) return "Not saved yet";
+  const saved = claims.memo.notes.saved_at;  // SQLite time, UTC
+  return saved ? `Saved ${new Date(`${saved.replace(" ", "T")}Z`).toLocaleString([],
+    { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
+}
+
+async function saveMemoNotes() {
+  const text = claims.memo.notesDraft ?? claims.memo.notes.text;
+  await api(`/api/companies/${claims.companyId}/memo-notes`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+  claims.memo.notesDraft = null;
+  await refreshMemo();
+}
+
+// Print, Copy and Download use the saved memo, so notes typed but not saved are saved first.
+async function saveNotesFirst() {
+  if (!notesChanged()) return true;
+  try { await saveMemoNotes(); return true; } catch (err) {
+    $("memo-notes-status").textContent = `Could not save: ${err.message}`;
+    return false;
+  }
+}
+
 function renderMemo() {
   syncClaimButtons();
   const m = claims.memo;
@@ -1696,7 +1876,29 @@ function renderMemo() {
         <button type="button" class="secondary" id="memo-download">Download .md</button>
       </span>
     </div>
-    <article class="memo-doc">${memoHtml(m.text)}</article>`;
+    <section class="memo-notes-editor">
+      <label for="memo-notes" class="memo-notes-label">Investor notes</label>
+      <textarea id="memo-notes" rows="4" placeholder="Your overall view of the company. It goes at the top of the memo, and into the PDF, the copy and the download.">${esc(m.notesDraft ?? m.notes.text)}</textarea>
+      <div class="memo-notes-actions">
+        <button type="button" class="secondary" id="memo-notes-save">Save notes</button>
+        <span id="memo-notes-status" class="muted small">${esc(notesStatus())}</span>
+      </div>
+    </section>
+    ${m.actionError ? `<div class="answer error">${esc(m.actionError)}</div>` : ""}
+    <article class="memo-doc">${memoHtml(m.text, m)}</article>`;
+}
+
+// Under each confirmed item: the investor's note (click to edit) and Remove.
+function memoItemControls(item, index) {
+  const editing = claims.memo.editingNote === index;
+  const note = editing
+    ? `<form class="memo-note-form" data-note-form="${index}">
+        <textarea rows="2" aria-label="Investor note">${esc(item.note || "")}</textarea>
+        <button type="submit">Save</button>
+        <button type="button" class="secondary" data-note-cancel="1">Cancel</button>
+      </form>`
+    : `<button type="button" class="memo-note${item.note ? "" : " memo-note-add"}" data-note-edit="${index}">${item.note ? `Investor note: ${esc(item.note)}` : "Add a note"}</button>`;
+  return `<div class="memo-item-actions">${note}<button type="button" class="link danger-link memo-remove" data-memo-remove="${index}" title="Withdraw the confirmation: it goes back to awaiting review on the Deck check page">Remove</button></div>`;
 }
 
 // The memo uses the page's display wording (see displayText). Quotes, bracketed citations and links stay as
@@ -1724,7 +1926,10 @@ function memoInline(text) {
 }
 
 // The memo's Markdown as a document: headings, paragraphs, lists with one level of sub-items.
-function memoHtml(markdown) {
+// With the memo's data (on the memo page), each item of Verified findings and Portfolio signals gets its note
+// and Remove (memo.items is in the same order), and the Investor notes section is only printed: the box above
+// the memo shows it on screen.
+function memoHtml(markdown, memo = null) {
   const blocks = [];
   for (const line of markdown.split("\n")) {
     const last = blocks[blocks.length - 1];
@@ -1739,14 +1944,27 @@ function memoHtml(markdown) {
     else if (last && last.lines) last.lines.push(line);
     else blocks.push({ tag: "p", lines: [line] });
   }
-  return blocks.map((b) => {
-    if (b.items) {
-      return `<${b.tag}>${b.items.map((it) => `<li>${memoInline(it.text)}${it.sub.length
-        ? `<ul>${it.sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : ""}</li>`).join("")}</${b.tag}>`;
+  const items = memo && memo.items;
+  let next = 0, section = "", printOnly = false, out = "";
+  for (const b of blocks) {
+    if (b.tag === "h2") {
+      if (printOnly) out += "</div>";
+      section = b.text;
+      printOnly = !!items && section === "Investor notes";
+      if (printOnly) out += '<div class="print-only">';
     }
-    if (b.lines) return `<p>${b.lines.map(memoInline).join("<br>")}</p>`;
-    return b.text != null ? `<${b.tag}>${memoInline(b.text)}</${b.tag}>` : "";
-  }).join("");
+    const controlled = items && b.tag === "ul" && /^(Verified findings|Portfolio signals)/.test(section);
+    if (b.items) {
+      out += `<${b.tag}>${b.items.map((it) => {
+        const index = controlled ? next++ : -1;
+        const sub = index >= 0 ? it.sub.filter((x) => !x.startsWith("Investor note: ")) : it.sub;
+        return `<li>${memoInline(it.text)}${sub.length ? `<ul>${sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : ""}${
+          index >= 0 && items[index] ? memoItemControls(items[index], index) : ""}</li>`;
+      }).join("")}</${b.tag}>`;
+    } else if (b.lines) out += `<p>${b.lines.map(memoInline).join("<br>")}</p>`;
+    else if (b.text != null) out += `<${b.tag}>${memoInline(b.text)}</${b.tag}>`;
+  }
+  return out + (printOnly ? "</div>" : "");
 }
 
 $("nav-claims").onclick = openClaims;
@@ -1781,6 +1999,20 @@ $("claims-run").onclick = async () => {
   }
 };
 
+$("claims-body").addEventListener("input", (e) => {
+  if (e.target.id !== "memo-notes" || !claims.memo) return;
+  claims.memo.notesDraft = e.target.value;
+  $("memo-notes-status").textContent = notesStatus();
+});
+
+$("claims-body").addEventListener("submit", (e) => {
+  const form = e.target.closest("[data-note-form]");
+  if (!form) return;
+  e.preventDefault();
+  form.querySelector("button[type=submit]").disabled = true;
+  reviewMemoItem(Number(form.dataset.noteForm), "confirmed", form.querySelector("textarea").value.trim());
+});
+
 $("claims-body").addEventListener("click", async (e) => {
   if (e.target.closest("#claims-toggle-dismissed")) {
     claims.showDismissed = !claims.showDismissed;
@@ -1801,6 +2033,25 @@ $("claims-body").addEventListener("click", async (e) => {
     if (claims.openSources.has(fp)) claims.openSources.delete(fp); else claims.openSources.add(fp);
     return renderClaims();
   }
+  const noteEdit = e.target.closest("[data-note-edit]");
+  if (noteEdit) {
+    claims.memo.editingNote = Number(noteEdit.dataset.noteEdit);
+    renderMemo();
+    const box = document.querySelector("[data-note-form] textarea");
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    return;
+  }
+  if (e.target.closest("[data-note-cancel]")) {
+    claims.memo.editingNote = null;
+    return renderMemo();
+  }
+  const remove = e.target.closest("[data-memo-remove]");
+  if (remove) return removeMemoItem(Number(remove.dataset.memoRemove));
+  if (e.target.closest("#memo-notes-save")) {
+    try { await saveMemoNotes(); } catch (err) { $("memo-notes-status").textContent = `Could not save: ${err.message}`; }
+    return;
+  }
+  if (e.target.closest("#memo-print, #memo-copy, #memo-download") && !await saveNotesFirst()) return;
   if (e.target.closest("#memo-print")) return window.print();
   if (e.target.closest("#memo-copy")) {
     const button = $("memo-copy");

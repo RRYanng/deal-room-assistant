@@ -5,6 +5,7 @@ import pytest
 from app.claims import create_run, latest_results, run_claim_check
 from app.memo import build_memo, memo_to_markdown
 from app.memory import changes
+from app.reviews import record_review
 from tests.helpers import load_samples
 from tests.helpers_v2 import DECK, claim_llm, load_clearclaim
 
@@ -68,11 +69,16 @@ def test_memory_survives_deleting_the_earlier_deck(db, checked):
     assert found["market.customer_count"]["old"]["filename"] == SEP_DECK
 
 
-def test_changes_are_in_the_memo(db, checked):
-    text = memo_to_markdown(build_memo(db, checked[0]))
-    section = text.split("## Changed since the last deck")[1].split("##")[0]
-    assert "**Changed** (Number of target customers): 250,000" in section
-    assert "Updated (Paying customers): 40" in section
+def test_confirmed_changes_are_in_the_memo(db, checked):
+    company_id = checked[0]
+    memo = build_memo(db, company_id)
+    assert "250,000" not in memo_to_markdown(memo)  # not until the investor confirms it
+    for c in memo["changes"]:
+        record_review(db, company_id, c["fingerprint"], "confirmed", "", item_type="drift")
+    text = memo_to_markdown(build_memo(db, company_id))
+    findings = text.split("## Verified findings")[1].split("\n## ")[0]
+    assert "**Changed** (Number of target customers): 250,000" in findings.split("### Market")[1]
+    assert "Updated (Paying customers): 40" in findings
 
 
 def test_a_single_deck_has_nothing_to_compare(db):

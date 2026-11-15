@@ -1,10 +1,12 @@
 """Investment memo, built by the program from the checked results (no model call).
 
-It follows the structure of a VC investment memo and only reorganizes what the checks found:
-summary line, market, competition, verified findings (confirmed by the team, by category), risks
-(regulatory checklist, alignment, risks the deck states), portfolio signals, items awaiting review, and
-questions for the founder. Findings are only what an investor confirmed; everything else is labelled
-as awaiting review. Nothing here is a new conclusion.
+It holds only what the investment team confirmed: the investor's own notes on the company, a one-line
+summary, verified findings by category, confirmed portfolio signals and the questions for the founder those
+items raise. Items nobody has reviewed are not listed; the memo ends with how many still await review on the
+Deck check page. Nothing here is a new conclusion.
+
+`items` lists the confirmed items in the order the memo shows them, so the page can put an editable note and
+a Remove button under each (both are new review records; see app/reviews.py).
 """
 
 import sqlite3
@@ -22,7 +24,6 @@ STATUS_LABELS = {
     "consistent_with_company_data": "Consistent with company data",
     "unverified": "Unverified",
 }
-FLAGS = ("contradicted", "possibly_overstated", "unverified")
 
 
 def build_memo(conn: sqlite3.Connection, company_id: int, hidden: frozenset[str] = frozenset()) -> dict:
@@ -35,12 +36,13 @@ def build_memo(conn: sqlite3.Connection, company_id: int, hidden: frozenset[str]
     changes = apply_reviews(conn, company_id, results["changes"], "drift")
     signals = apply_reviews(conn, company_id, latest_monitor_results(conn, company_id)["signals"], "signal")
     generated = datetime.now().astimezone()  # the server's own time zone: the machine the team runs it on
+    findings = [c for c in rows if c["review_state"] == "confirmed"]
     return {
         "company": company,
         "generated_at": generated.strftime("%Y-%m-%d %H:%M %Z"),
         "run": results["run"],
         "claims": rows,
-        "findings": [c for c in rows if c["review_state"] == "confirmed"],
+        "findings": findings,
         "awaiting_review": [c for c in rows if c["review_state"] == "awaiting_review"],
         "dismissed": [c for c in rows if c["review_state"] == "dismissed"],
         "changes": changes,
@@ -50,166 +52,130 @@ def build_memo(conn: sqlite3.Connection, company_id: int, hidden: frozenset[str]
         "regulatory": results["regulatory"],
         "summary": visible_summary(build_summary(claims, changes, results["regulatory"]), hidden),
         "counts": review_counts(claims, changes),  # the same counts as the claim-check page
+        "items": [_item(kind, x) for _, kind, x in _confirmed(findings, changes, signals)],
+        "notes": memo_notes(conn, company_id),
     }
 
 
+def memo_notes(conn: sqlite3.Connection, company_id: int) -> dict:
+    """The company's Investor notes: the latest text saved ("" when none)."""
+    row = conn.execute("SELECT text, created_at FROM memo_notes WHERE company_id = ? ORDER BY id DESC LIMIT 1",
+                       (company_id,)).fetchone()
+    return {"text": row["text"], "saved_at": row["created_at"]} if row else {"text": "", "saved_at": None}
+
+
+def save_memo_notes(conn: sqlite3.Connection, company_id: int, text: str) -> dict:
+    """Append the new text (earlier versions stay in the table). Blank text clears the notes."""
+    text = "\n".join(line.rstrip() for line in (text or "").strip().splitlines())
+    with conn:
+        conn.execute("INSERT INTO memo_notes(company_id, text) VALUES (?, ?)", (company_id, text))
+    return memo_notes(conn, company_id)
+
+
+def _confirmed(findings: list[dict], changes: list[dict], signals: list[dict]) -> list[tuple[str | None, str, dict]]:
+    """(category, item type, item) for every confirmed item, in memo order: by category the claims, then the
+    changes since the last deck; then the portfolio signals (no category)."""
+    changes = [c for c in changes if c["review_state"] == "confirmed"]
+    out = []
+    for category in CATEGORIES:
+        out += [(category, "claim", c) for c in findings if c["category"] == category]
+        out += [(category, "drift", c) for c in changes if _change_category(c) == category]
+    out += [(None, "signal", s) for s in signals if s["review_state"] == "confirmed"]
+    return out
+
+
+def _item(kind: str, x: dict) -> dict:
+    return {"item_type": kind, "fingerprints": [m["fingerprint"] for m in x.get("members", [x])],
+            "label": x.get("title") if kind == "signal" else x["label"], "note": x["review"]["reason"]}
+
+
+NOTHING_CONFIRMED = "Nothing confirmed yet. Confirm findings on the Deck check page to add them here."
+
+
 def memo_to_markdown(memo: dict) -> str:
-    run, claims = memo["run"], memo["claims"]
-    live = [c for c in claims if c["review_state"] != "dismissed" and c["key"] != "other"]
-    changes = [c for c in memo["changes"] if c["review_state"] != "dismissed"]
+    run = memo["run"]
+    confirmed = _confirmed(memo["findings"], memo["changes"], memo["signals"])
+    notes = (memo.get("notes") or {}).get("text") or ""
     lines = [f"# Investment memo: {memo['company']}", "",
              f"Generated {memo['generated_at']}. "
-             + (f"Deck check of {run['filename']}." if run else "No deck check yet."),
-             "This memo reorganizes the checked results; it adds no new conclusions. Evidence statuses describe the "
-             "evidence found, not whether a claim is true.", ""]
+             + (f"Deck check of {run['filename']}." if run else "No deck check yet."), ""]
+    if confirmed:
+        lines[-1:] = ["Only what the investment team confirmed. Evidence statuses describe the evidence found, not "
+                      "whether a claim is true.", ""]
+    if notes:
+        lines += ["## Investor notes", "", notes, ""]
 
-    lines += ["## Summary", "", _summary_line(memo), ""]
+    if not confirmed:
+        lines += [NOTHING_CONFIRMED, ""]
+    else:
+        findings = [x for _, kind, x in confirmed if kind == "claim"]
+        changes = [x for _, kind, x in confirmed if kind == "drift"]
+        signals = [x for _, kind, x in confirmed if kind == "signal"]
+        lines += ["## Summary", "", _summary_line(findings, changes, signals), ""]
 
-    lines += ["## Market", ""]
-    lines += [_claim_line(c) for c in live if c["category"] == "Market"] or ["No market claims checked."]
-    market_changes = [c for c in changes if c["key"].startswith("market.")]
-    if market_changes:
-        lines += ["", "Changed since the last deck:"] + [_change_line(c) for c in market_changes]
-    lines.append("")
+        if findings or changes:
+            lines += ["## Verified findings (confirmed by the investment team)", ""]
+            for category in CATEGORIES:
+                items = [(kind, x) for cat, kind, x in confirmed if cat == category]
+                if items:
+                    lines += [f"### {category}", ""]
+                    for kind, x in items:
+                        lines += (_claim_detail(x) if kind == "claim" else [_change_line(x)]) + _note_line(x)
+                    lines.append("")
 
-    lines += ["## Competition", ""]
-    lines += [_claim_line(c) for c in live if c["category"] == "Competition"] or ["No competition claims checked."]
-    if memo["competitors"]:
-        lines += ["", "Competitors found by web research (not reviewed):"]
-        lines += [f"- {c['name']}" + (f": {c['description']}" if c["description"] else "")
-                  + f" Source ({c['source_type'] or 'web'}): {c['url']}" for c in memo["competitors"]]
-    lines.append("")
-
-    lines += ["## Verified findings (confirmed by the investment team)", ""]
-    confirmed_changes = [c for c in memo["changes"] if c["review_state"] == "confirmed"]
-    if not memo["findings"] and not confirmed_changes:
-        lines += ["No findings confirmed yet.", ""]
-    for category in CATEGORIES:
-        items = [c for c in memo["findings"] if c["category"] == category]
-        moved = [c for c in confirmed_changes if _change_category(c) == category]
-        if items or moved:
-            lines += [f"### {category}", ""]
-            for c in items:
-                lines += _claim_detail(c) + ([f"  - Investor note: {c['review']['reason']}"] if c["review"]["reason"] else [])
-            lines += [_change_line(c) for c in moved]
+        if signals:
+            lines += ["## Portfolio signals (confirmed by the investment team)", ""]
+            for s in signals:
+                lines += [f"- **{s['level'].title()}** ({s['period_end']}): {s['title']}. {s['detail']}"] + _note_line(s)
             lines.append("")
 
-    lines += ["## Risks", ""]
-    regulatory = memo["regulatory"] or {}
-    if regulatory.get("industry"):
-        lines += [f"### Regulatory ({regulatory['industry']['name']} checklist)", "",
-                  "\"Not addressed in materials\" means the files do not mention it; it is not a finding of "
-                  "non-compliance.", ""]
-        for i in regulatory["items"]:
-            where = f" \"{i['quote']}\" ({i['filename']})" if i["quote"] else ""
-            lines.append(f"- **{i['name']}**: {i['status']}.{where} {i['why']}")
-        lines.append("")
-    alignment = memo["alignment"]
-    if alignment and (alignment["points"] or alignment["pricing"]):
-        lines += ["### Alignment (does the company earn more when its customers are better off?)", ""]
-        for role, title in (("payer", "Who pays"), ("pricing", "How it charges"), ("beneficiary", "Who benefits")):
-            lines += [f"- {title}: \"{r['quote']}\" ({_page(r, run)})" for r in alignment[role]]
-        lines += [f"- **{p['title']}.** {p['note']}" for p in alignment["points"]]
-        lines.append("")
-    stated = [c for c in live if c["key"] == "risk.stated"]
-    if stated:
-        lines += ["### Risks the deck states", ""] + [f"- \"{c['quote']}\" ({c['loc_label']})" for c in stated] + [""]
+        questions = founder_questions(memo)
+        if questions:
+            lines += ["## Questions for the founder", ""] + [f"{n}. {q}" for n, q in enumerate(questions, 1)] + [""]
 
-    signals = memo["signals"]
-    if signals:
-        confirmed_signals = [s for s in signals if s["review_state"] == "confirmed"]
-        waiting_signals = [s for s in signals if s["review_state"] == "awaiting_review"]
-        lines += ["## Portfolio signals", "", "### Portfolio signals confirmed by the investment team", ""]
-        lines += [f"- **{s['level'].title()}** ({s['period_end']}): {s['title']}. {s['detail']}"
-                  + (f" Investor note: {s['review']['reason']}" if s["review"]["reason"] else "")
-                  for s in confirmed_signals] or ["No signals confirmed yet."]
-        lines += ["", f"### Portfolio signals awaiting review ({len(waiting_signals)})", "",
-                  "Computed by rule from the updates. Not conclusions until an investor confirms them.", ""]
-        for s in waiting_signals:
-            changed = f" (evidence changed since it was {s['review']['decision']})" if s["evidence_changed"] else ""
-            lines.append(f"- **{s['level'].title()}** ({s['period_end']}): {s['title']}. {s['detail']}{changed}")
-        dismissed = sum(s["review_state"] == "dismissed" for s in signals)
-        lines += (["", f"Dismissed signals: {dismissed}."] if dismissed else []) + [""]
-
-    waiting = [c for c in memo["awaiting_review"] if c["status"] in FLAGS and c["key"] != "other"]
-    waiting_changes = [c for c in changes if c["review_state"] == "awaiting_review"]
-    lines += [f"## Awaiting review ({memo['counts']['awaiting_review']})", "",
-              "Flagged by the system. Not conclusions until an investor confirms them.", ""]
-    for category in CATEGORIES:
-        items = [c for c in waiting if c["category"] == category]
-        if items:
-            lines += [f"### {category}", ""]
-            for c in items:
-                lines += _claim_detail(c)
-                if c["evidence_changed"]:
-                    lines.append(f"  - Evidence changed since it was {c['review']['decision']}.")
-            lines.append("")
-    if waiting_changes:
-        lines += ["### Changed since the last deck", ""] + [_change_line(c) for c in waiting_changes] + [""]
-
-    questions = founder_questions(memo)
-    lines += ["## Questions for the founder", ""]
-    lines += [f"{n}. {q}" for n, q in enumerate(questions, 1)] or ["No questions."]
-    lines.append("")
-
-    gone = [c for c in memo["dismissed"] if c["key"] != "other"] + \
-        [c for c in memo["changes"] if c["review_state"] == "dismissed"]
-    if gone:
-        lines += [f"## Dismissed ({len(gone)})", ""]
-        lines += [f"- {c['label']}: " + (_quotes(c) if "quote" in c else c["note"])
-                  + f" Reason: {c['review']['reason']}" for c in gone] + [""]
-
-    if run and run["notes"]:
-        lines += ["## Notes on this check", ""] + [f"- {n}" for n in run["notes"]] + [""]
+    waiting = memo["counts"]["awaiting_review"]  # the count the Deck check page shows
+    if waiting:
+        lines.append(f"{waiting} {'item' if waiting == 1 else 'items'} still awaiting review on the Deck check page.")
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _note_line(item: dict) -> list[str]:
+    reason = item["review"]["reason"]
+    return [f"  - Investor note: {reason}"] if reason else []
+
+
 def founder_questions(memo: dict) -> list[str]:
-    """Every question attached to an item that is not dismissed, in memo order."""
-    claims = [m for c in memo["claims"] if c["review_state"] != "dismissed" for m in c.get("members", [c])
-              if m.get("question")]
+    """The questions of confirmed items only, in memo order."""
+    claims = [m for c in memo["findings"] for m in c.get("members", [c]) if m.get("question")]
     out = []
     for category in CATEGORIES:
         out += [c["question"]["text"] for c in claims if c["category"] == category]
-    out += [c["question"]["text"] for c in memo["changes"] if c["review_state"] != "dismissed" and c.get("question")]
-    if memo["alignment"]:
-        out += [p["question"]["text"] for p in memo["alignment"]["points"] if p.get("question")]
-    out += [i["question"]["text"] for i in (memo["regulatory"] or {}).get("items", []) if i.get("question")]
-    out += [s["question"]["text"] for s in memo["signals"] if s["review_state"] != "dismissed" and s.get("question")]
+    out += [c["question"]["text"] for c in memo["changes"] if c["review_state"] == "confirmed" and c.get("question")]
+    out += [s["question"]["text"] for s in memo["signals"] if s["review_state"] == "confirmed" and s.get("question")]
     return list(dict.fromkeys(out))  # two claims can share one question (both sides of a contradiction)
 
 
-def _summary_line(memo: dict) -> str:
-    claims, counts = [c for c in memo["claims"] if c["key"] != "other"], memo["counts"]
-
-    def count(status: str) -> int:
-        return sum(c["status"] == status for c in claims)
-
-    supported = count("externally_supported") + count("consistent_with_company_data")
-    top = memo["summary"]["top"]
-    lead = f" Most important: {top[0]['text']}" if top else ""
-    return (f"{counts['claims']} claims checked: {count('contradicted')} contradicted, {count('possibly_overstated')} "
-            f"possibly overstated, {count('unverified')} unverified, {supported} supported; "
-            f"{counts['confirmed']} confirmed by the team.{lead}")
+def _summary_line(findings: list[dict], changes: list[dict], signals: list[dict]) -> str:
+    """"2 findings confirmed by the investment team (1 Market, 1 Financials): 1 contradicted, 1 possibly
+    overstated." Portfolio signals follow in their own sentence."""
+    signal_text = f"{len(signals)} portfolio signal{'' if len(signals) == 1 else 's'} confirmed."
+    total = len(findings) + len(changes)
+    if not total:
+        return f"No deck findings confirmed yet; {signal_text[:-1]}."
+    categories = [c["category"] for c in findings] + [_change_category(c) for c in changes]
+    by_category = ", ".join(f"{categories.count(cat)} {cat}" for cat in CATEGORIES if cat in categories)
+    statuses = [STATUS_LABELS[c["status"]].lower() for c in findings]
+    by_status = [f"{statuses.count(label)} {label}" for label in dict.fromkeys(statuses)]
+    if changes:
+        by_status.append(f"{len(changes)} changed since the last deck")
+    line = (f"{total} finding{'' if total == 1 else 's'} confirmed by the investment team ({by_category}): "
+            f"{', '.join(by_status)}.")
+    return line + (f" {signal_text}" if signals else "")
 
 
 def _change_category(change: dict) -> str:
     return "Market" if change["key"].startswith(("market.", "product.")) else \
         "Team" if change["key"].startswith("team.") else "Financials"
-
-
-def _page(item: dict, run: dict | None) -> str:
-    return (item.get("loc_label") or "").replace((run or {}).get("filename") or "", "").strip()
-
-
-def _quotes(c: dict) -> str:
-    """The quote and where it is, for each claim of a row."""
-    return "; ".join(f"\"{m['quote']}\" ({m['loc_label']})" for m in c.get("members", [c]))
-
-
-def _claim_line(c: dict) -> str:
-    headline = c.get("headline") or (c["evidence"][0]["headline"] if c["evidence"] else None)
-    return f"- **{STATUS_LABELS[c['status']]}** · {c['label']}: {_quotes(c)}." + (f" {headline}." if headline else " No evidence found.")
 
 
 def _claim_detail(c: dict) -> list[str]:
@@ -235,7 +201,4 @@ def _evidence_line(e: dict) -> str:
 
 def _change_line(c: dict) -> str:
     head = f"**Changed** ({c['label']})" if c["kind"] == "changed" else f"Updated ({c['label']})"
-    confirmed = ""
-    if c["review_state"] == "confirmed":
-        confirmed = " Confirmed" + (f": {c['review']['reason']}" if c["review"]["reason"] else ".")
-    return f"- {head}: {c['note']}{confirmed}"
+    return f"- {head}: {c['note']}"

@@ -7,7 +7,8 @@ signals (portfolio monitoring) follow the same rules, all in code:
   - the latest decision wins (the table is append-only, so the history stays);
   - a dismissed item is not raised again, unless its evidence changes: the decision remembers the status
     and an evidence signature, and when either differs the item is back under "Awaiting review";
-  - the same applies to a confirmed item, so the memo never presents changed evidence as reviewed.
+  - the same applies to a confirmed item, so the memo never presents changed evidence as reviewed;
+  - Remove in the memo appends a 'reopened' record, which withdraws the decision before it.
 """
 
 import hashlib
@@ -19,7 +20,7 @@ from app.claims import run_claims
 from app.monitor import latest_results as latest_monitor_results
 from app.presentation import claim_rows
 
-DECISIONS = ("confirmed", "dismissed")
+DECISIONS = ("confirmed", "dismissed", "reopened")  # reopened: Remove in the memo withdraws a decision
 ITEM_TYPES = ("claim", "signal", "drift")
 FLAG_STATUSES = ("contradicted", "possibly_overstated", "unverified")
 
@@ -61,7 +62,7 @@ def record_review(conn: sqlite3.Connection, company_id: int, fingerprint: str, d
     if item_type not in ITEM_TYPES:
         raise ReviewError(f"Unknown item type '{item_type}'.")
     if decision not in DECISIONS:
-        raise ReviewError("Decision must be 'confirmed' or 'dismissed'.")
+        raise ReviewError("Decision must be 'confirmed', 'dismissed' or 'reopened'.")
     reason = normalize_ws(reason or "") or None
     if decision == "dismissed" and not reason:
         raise ReviewError("A reason is required to dismiss.")
@@ -85,6 +86,9 @@ def latest_decisions(conn: sqlite3.Connection, company_id: int, item_type: str =
                         " WHERE company_id = ? AND item_type = ? ORDER BY id", (company_id, item_type)).fetchall()
     out = {}
     for r in rows:  # later rows overwrite earlier ones: the latest decision wins
+        if r["decision"] == "reopened":  # withdrawn: as if never decided (the earlier rows stay in the table)
+            out.pop(r["fingerprint"], None)
+            continue
         out[r["fingerprint"]] = {"decision": r["decision"], "reason": r["reason"], "created_at": r["created_at"],
                                  "seen": json.loads(r["item_json"] or "{}")}
     return out

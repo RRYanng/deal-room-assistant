@@ -499,3 +499,50 @@ statuses, evidence and fingerprints are unchanged.
 - The counts, the summary and the memo count rows: ClearClaim reads 15 claims checked instead of 17, and
   Financials 3 issues instead of 5 (Team keeps the team/costs row). `GET /claims` adds `rows`; `claims` is as
   before.
+
+## 27. Library summaries and search (2026-11-15)
+
+- Each file in Library shows one line that says what it is, put together from stored data only
+  (`app/library.py`, no model call): type, date, then the metrics extracted from that file. Standard metrics
+  come first (paying and registered customers, revenue, funding), then labels naming market, employees,
+  revenue, cash, burn, margin or growth, then the rest in document order: "Pitch deck, Dec 1, 2025: 85 paying
+  customers, $12B total addressable market, 14 full-time employees, …". A file with no metrics shows its first
+  sentence of four words or more, skipping the SYNTHETIC SAMPLE line (CRM rows: their summary field). The text
+  stops at 160 characters with ", …", and the page cuts it to one line with an ellipsis (full text on hover).
+- The search box filters the list as you type: every word must appear in the file name, company, type or
+  summary. Enter calls `GET /api/library/search`, which ranks each company's chunks with the BM25 index of
+  `app/rag.py` (same tokens) and lists the files that contain the words as a phrase, with the count and the
+  places: "gross margin" finds the December deck (2 mentions, p.5 ¶2, p.9 ¶3) and the meeting notes (1, ¶5).
+  No embeddings and no model are used.
+
+## 28. Expandable summaries; a memo of confirmed items only (2026-11-15)
+
+- A Library summary now holds every metric of the file (no 160-character cap). The page shows it on one line
+  with ▸; a click opens it in full (▾) and a second click folds it. Several can be open at once; hovering
+  still shows the full text.
+- The memo holds only what the investment team confirmed: the summary line ("2 findings confirmed by the
+  investment team (1 Market, 1 Financials): …"), verified findings by category, confirmed portfolio signals,
+  and the founder questions of those items. The Market, Competition and Risks sections (which listed every
+  checked result), the awaiting-review details, the dismissed list and the run notes are gone. The last line
+  gives only the count: "<n> items still awaiting review on the Deck check page." (the page's own count).
+  With nothing confirmed: "Nothing confirmed yet. Confirm findings on the Deck check page to add them here."
+- `GET /memo` returns the same JSON as before (all rows, counts); only the Markdown changed. The Deck check
+  page is unchanged.
+
+## 29. Editing the memo (2026-11-15)
+
+- Library no longer shows the chunk count under each file.
+- `GET /memo` adds `items`: the confirmed items in the order the memo lists them (claims and changes by
+  category, then signals), each with its fingerprints and note. The page puts the note under each item (click
+  to edit; "Add a note" when empty) and a Remove button. Both are ordinary reviews of every claim of the item:
+  a new note is a new `confirmed` record with the new reason; Remove is a new `reopened` record, which
+  `latest_decisions` treats as no decision, so the item is back under awaiting review on the Deck check page.
+  Remove asks first in the page's own dialog ("Remove this finding from the memo? ..."); Cancel or Escape
+  changes nothing. Nothing is deleted. `reopened` needed the reviews table's CHECK to allow it; `init_db` copies an older
+  table into the new definition, keeping every row (as it did for the reason rule on 11-08).
+- Notes of changes and signals are now their own line ("  - Investor note: ..."), as for claims.
+- Investor notes: new table `memo_notes` (append-only, latest text wins, blank clears),
+  `PUT /api/companies/{id}/memo-notes`. The memo's Markdown has "## Investor notes" right after the header
+  when the text is not empty, so Copy Markdown, Download .md and the printed PDF include it. On screen the box
+  above the memo shows it (the section is print-only there); Print, Copy and Download save typed text first.
+

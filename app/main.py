@@ -19,9 +19,10 @@ from app.claims import fail_interrupted_runs, get_run, latest_deck, latest_resul
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
 from app.intake import analyze_upload, consistency_warnings
+from app.library import document_summaries, search_files
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
-from app.memo import build_memo, memo_to_markdown
+from app.memo import build_memo, memo_to_markdown, save_memo_notes
 from app.presentation import build_summary, claim_rows, hidden_by_config, hide_parts, parse_hide, visible_summary
 from app import monitor
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
@@ -148,7 +149,16 @@ def list_documents(company_id: int, conn=Depends(get_db)):
         " WHERE d.company_id = ? GROUP BY d.id ORDER BY d.uploaded_at, d.id",
         (company_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    summaries = document_summaries(conn, company_id)
+    return [dict(r) | {"summary": summaries.get(r["id"], "")} for r in rows]
+
+
+@app.get("/api/library/search")
+def library_search(q: str, conn=Depends(get_db)):
+    """Which files mention the words, and how often: the BM25 keyword index only, no model."""
+    if not q.strip():
+        raise HTTPException(400, "Query 'q' must not be empty.")
+    return {"query": q, "results": search_files(conn, q)}
 
 
 @app.post("/api/companies/{company_id}/documents", status_code=201)
@@ -476,6 +486,17 @@ def memo(company_id: int, hide: str = "", conn=Depends(get_db)):
     require_company(conn, company_id)
     result = build_memo(conn, company_id, parse_hide(hide))
     return result | {"markdown": memo_to_markdown(result)}
+
+
+class NotesIn(BaseModel):
+    text: str = ""
+
+
+@app.put("/api/companies/{company_id}/memo-notes")
+def save_notes(company_id: int, body: NotesIn, conn=Depends(get_db)):
+    """The investor's overall view at the top of the memo, kept per company."""
+    require_company(conn, company_id)
+    return save_memo_notes(conn, company_id, body.text)
 
 
 # --- v2: portfolio monitoring -------------------------------------------------------------------

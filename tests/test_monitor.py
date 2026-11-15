@@ -173,9 +173,10 @@ def test_confirmed_signal_enters_the_memo_with_the_reason(db):
     record_review(db, company_id, departure["fingerprint"], "confirmed", "Board confirmed; CTO search started.",
                   item_type="signal")
     text = memo_to_markdown(build_memo(db, company_id))
-    confirmed = text.split("## Portfolio signals confirmed")[1].split("## Portfolio signals awaiting")[0]
+    confirmed = text.split("## Portfolio signals (confirmed by the investment team)")[1].split("\n## ")[0]
     assert "CTO Daniel Okafor departed" in confirmed and "Board confirmed; CTO search started." in confirmed
-    assert "## Portfolio signals awaiting review (3)" in text
+    others = [s for s in signals if s["fingerprint"] != departure["fingerprint"]]
+    assert len(others) == 3 and not any(s["title"] in text for s in others)  # not reviewed: not in the memo
 
 
 def test_dismissed_signal_stays_quiet_on_the_next_run(db):

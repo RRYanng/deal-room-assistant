@@ -30,13 +30,15 @@ brief that flags **missing** and **conflicting** information instead of hiding i
    picks a winner. The **Data checks** panel lists these per company and updates after every upload or delete.
 
 The screen is one conversation, with an Upload / Ask switch above the input. The top bar has
-**Library** (files and key metrics per company), **Data checks** (conflicts and gaps in the files
+**Library** (files and key metrics per company, a one-line summary under each file, and a search box:
+typing filters by name, company, type or summary; Enter lists the files whose text mentions the words, and
+how often, from the BM25 keyword index, with no model call), **Data checks** (conflicts and gaps in the files
 themselves), an optional **Company** selector and
 **Generate Brief**.
 
 ## v2: diligence co-pilot
 
-Released as tag `v2.0` on `main`. Design and decisions: [docs/v2_design.md](docs/v2_design.md).
+Released as tag `v2.0` on `main`; `v2.1` adds Library summaries and search, and a memo of confirmed items with editable notes. Design and decisions: [docs/v2_design.md](docs/v2_design.md).
 
 v2 checks a pitch deck the way an associate would before a partner meeting: what does the deck
 claim, what do the company's other files and public sources say, what changed since the last deck,
@@ -80,11 +82,17 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    Associate Agreement, an independent security assessment). An item the files do not mention is "Not
    addressed in materials", never a breach; these count in the summary's Regulatory category. Hidden on
    the page by default (see "Page switches" below).
-15. **Memo**: summary line, market, competition, verified findings by category, risks (regulatory,
-   alignment, risks the deck states), portfolio signals, awaiting review, questions for the founder.
-   Built by the program from the results; no model writes it. The page shows it as a document with the
+15. **Memo**: only what the investment team confirmed: a summary line, verified findings by category,
+   confirmed portfolio signals and the questions for the founder those items raise, then one line with how
+   many items still await review on the Deck check page. Before anything is confirmed it says so. Built by
+   the program from the results; no model writes it. The page shows it as a document with the
    same display wording as the Deck check page (page numbers instead of "here", amounts such as $1.44B); quotes
    are never rewritten. **Print / Save as PDF** prints the memo alone, black on white.
+   Under each item, the investor's note can be edited in place ("Add a note" when there is none), and
+   **Remove** withdraws the confirmation (a new `reopened` review; earlier ones stay), so the item is back
+   under awaiting review. **Investor notes** at the top hold the overall view per company (table
+   `memo_notes`, latest text wins); Print, Copy Markdown and Download include them, and leave them out
+   when empty.
 
 The Deck check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
 claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**. Each claim
@@ -395,6 +403,7 @@ numpy matrix product; BM25 is rebuilt per query. Both are simple to explain and 
 | GET | `/api/companies/{id}/claims` | v2: latest claims with evidence, statuses and review state |
 | POST | `/api/companies/{id}/reviews` | v2: confirm or dismiss (`{"fingerprint", "decision", "reason"}`) |
 | GET | `/api/companies/{id}/memo` | v2: memo, JSON + Markdown |
+| PUT | `/api/companies/{id}/memo-notes` | v2: save the memo's Investor notes (`{"text": ...}`) |
 | POST | `/api/companies/{id}/monitor` | v2: read the company's updates and compute signals in the background |
 | GET | `/api/companies/{id}/monitor-runs/{run_id}` | v2: progress of a monitoring run |
 | GET | `/api/companies/{id}/monitor` | v2: figures per period and signals |

@@ -94,14 +94,14 @@ def test_a_change_since_the_last_deck_can_be_dismissed(db, checked):
                   item_type="drift")
     memo = build_memo(db, company_id)
     assert next(c for c in memo["changes"] if c["key"] == "market.customer_count")["review_state"] == "dismissed"
-    assert "250,000" not in memo_to_markdown(memo).split("## Changed since the last deck")[1].split("##")[0]
+    assert "250,000" not in memo_to_markdown(memo)
 
 
 def test_confirmed_finding_without_reason_reads_cleanly_in_the_memo(db, checked):
     company_id, out = checked
     review_row(db, company_id, out["claims"], "Current gross margin: above 90%", "confirmed", None)
     text = memo_to_markdown(build_memo(db, company_id))
-    findings = text.split("## Verified findings")[1].split("## Awaiting review")[0]
+    findings = text.split("## Verified findings")[1].split("\n## ")[0]
     assert "Gross margin" in findings and "Investor note" not in findings and "None" not in findings
 
 
@@ -111,7 +111,7 @@ def test_reviews_made_before_reasons_were_optional_are_kept(tmp_path):
     old = SCHEMA.replace("""    reason       TEXT,
     item_json    TEXT,                       -- what the investor saw when deciding
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (decision = 'confirmed' OR length(trim(coalesce(reason, ''))) > 0)
+    CHECK (decision IN ('confirmed', 'reopened') OR length(trim(coalesce(reason, ''))) > 0)
 );""", """    reason       TEXT NOT NULL CHECK (length(trim(reason)) > 0),
     item_json    TEXT,                       -- what the investor saw when deciding
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -143,8 +143,8 @@ def test_page_and_memo_count_the_same_items(db, checked):
     assert counts["claims"] + counts["other"] == len(claims)
     assert counts["confirmed"] == 1 and counts["dismissed"] == 1
     text = built["markdown"]
-    assert f"## Awaiting review ({counts['awaiting_review']})" in text
-    assert f"{counts['claims']} claims checked:" in text and f"{counts['confirmed']} confirmed by the team" in text
+    assert text.rstrip().endswith(f"{counts['awaiting_review']} items still awaiting review on the Deck check page.")
+    assert "1 finding confirmed by the investment team (1 Market)" in text
 
 
 def test_a_risk_the_deck_states_is_a_financials_item_not_regulatory(checked):
