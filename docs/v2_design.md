@@ -529,3 +529,19 @@ statuses, evidence and fingerprints are unchanged.
 - `GET /memo` returns the same JSON as before (all rows, counts); only the Markdown changed. The Deck check
   page is unchanged.
 
+## 29. Editing the memo (2026-11-15)
+
+- Library no longer shows the chunk count under each file.
+- `GET /memo` adds `items`: the confirmed items in the order the memo lists them (claims and changes by
+  category, then signals), each with its fingerprints and note. The page puts the note under each item (click
+  to edit; "Add a note" when empty) and a Remove button. Both are ordinary reviews of every claim of the item:
+  a new note is a new `confirmed` record with the new reason; Remove is a new `reopened` record, which
+  `latest_decisions` treats as no decision, so the item is back under awaiting review on the Deck check page.
+  Nothing is deleted. `reopened` needed the reviews table's CHECK to allow it; `init_db` copies an older
+  table into the new definition, keeping every row (as it did for the reason rule on 11-08).
+- Notes of changes and signals are now their own line ("  - Investor note: ..."), as for claims.
+- Investor notes: new table `memo_notes` (append-only, latest text wins, blank clears),
+  `PUT /api/companies/{id}/memo-notes`. The memo's Markdown has "## Investor notes" right after the header
+  when the text is not empty, so Copy Markdown, Download .md and the printed PDF include it. On screen the box
+  above the memo shows it (the section is print-only there); Print, Copy and Download save typed text first.
+

@@ -1083,7 +1083,7 @@ function documentHtml(d) {
     ${d.summary ? docSummaryHtml(d) : ""}
     <div class="muted small">
       <span class="badge">${esc(DOC_TYPES[d.doc_type] || d.doc_type)}</span>
-      ${esc(d.doc_date || "no date")} · ${plural(d.chunks, "chunk")} ·
+      ${esc(d.doc_date || "no date")} ·
       <button type="button" class="link small" data-reextract="${d.id}" data-name="${esc(d.filename)}">re-extract</button> ·
       <button type="button" class="link small danger-link" data-delete="${d.id}" data-name="${esc(d.filename)}">delete</button>
     </div>
@@ -1786,6 +1786,64 @@ async function toggleMemo() {
   if (claims.view === "memo") renderMemo();
 }
 
+// After a note, a Remove or saved Investor notes: the memo and the Deck check data are read again.
+async function refreshMemo() {
+  const before = claims.memo || {};
+  const [memo, data] = await Promise.all([
+    api(`/api/companies/${claims.companyId}/memo${hideQuery()}`),
+    api(`/api/companies/${claims.companyId}/claims${hideQuery()}`),
+  ]);
+  claims.data = data;
+  claims.memo = { ...memo, text: memoText(memo.markdown), notesDraft: before.notesDraft };
+  if (claims.view === "memo") renderMemo();
+}
+
+// A note or Remove is a new review of every claim of the item (as Confirm on the Deck check page).
+async function reviewMemoItem(index, decision, reason = "") {
+  const item = claims.memo.items[index];
+  claims.memo.actionError = null;
+  try {
+    for (const fingerprint of item.fingerprints) {
+      await postJson(`/api/companies/${claims.companyId}/reviews`,
+        { fingerprint, decision, reason, item_type: item.item_type });
+    }
+    claims.memo.editingNote = null;
+    await refreshMemo();
+  } catch (err) {
+    claims.memo.actionError = `Could not update ${item.label}: ${err.message}`;
+    renderMemo();
+  }
+}
+
+function notesChanged() {
+  const m = claims.memo;
+  return m && m.notesDraft != null && m.notesDraft.trim() !== m.notes.text;
+}
+
+function notesStatus() {
+  if (notesChanged()) return "Not saved yet";
+  const saved = claims.memo.notes.saved_at;  // SQLite time, UTC
+  return saved ? `Saved ${new Date(`${saved.replace(" ", "T")}Z`).toLocaleString([],
+    { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "";
+}
+
+async function saveMemoNotes() {
+  const text = claims.memo.notesDraft ?? claims.memo.notes.text;
+  await api(`/api/companies/${claims.companyId}/memo-notes`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+  claims.memo.notesDraft = null;
+  await refreshMemo();
+}
+
+// Print, Copy and Download use the saved memo, so notes typed but not saved are saved first.
+async function saveNotesFirst() {
+  if (!notesChanged()) return true;
+  try { await saveMemoNotes(); return true; } catch (err) {
+    $("memo-notes-status").textContent = `Could not save: ${err.message}`;
+    return false;
+  }
+}
+
 function renderMemo() {
   syncClaimButtons();
   const m = claims.memo;
@@ -1799,7 +1857,29 @@ function renderMemo() {
         <button type="button" class="secondary" id="memo-download">Download .md</button>
       </span>
     </div>
-    <article class="memo-doc">${memoHtml(m.text)}</article>`;
+    <section class="memo-notes-editor">
+      <label for="memo-notes" class="memo-notes-label">Investor notes</label>
+      <textarea id="memo-notes" rows="4" placeholder="Your overall view of the company. It goes at the top of the memo, and into the PDF, the copy and the download.">${esc(m.notesDraft ?? m.notes.text)}</textarea>
+      <div class="memo-notes-actions">
+        <button type="button" class="secondary" id="memo-notes-save">Save notes</button>
+        <span id="memo-notes-status" class="muted small">${esc(notesStatus())}</span>
+      </div>
+    </section>
+    ${m.actionError ? `<div class="answer error">${esc(m.actionError)}</div>` : ""}
+    <article class="memo-doc">${memoHtml(m.text, m)}</article>`;
+}
+
+// Under each confirmed item: the investor's note (click to edit) and Remove.
+function memoItemControls(item, index) {
+  const editing = claims.memo.editingNote === index;
+  const note = editing
+    ? `<form class="memo-note-form" data-note-form="${index}">
+        <textarea rows="2" aria-label="Investor note">${esc(item.note || "")}</textarea>
+        <button type="submit">Save</button>
+        <button type="button" class="secondary" data-note-cancel="1">Cancel</button>
+      </form>`
+    : `<button type="button" class="memo-note${item.note ? "" : " memo-note-add"}" data-note-edit="${index}">${item.note ? `Investor note: ${esc(item.note)}` : "Add a note"}</button>`;
+  return `<div class="memo-item-actions">${note}<button type="button" class="link danger-link memo-remove" data-memo-remove="${index}" title="Withdraw the confirmation: it goes back to awaiting review on the Deck check page">Remove</button></div>`;
 }
 
 // The memo uses the page's display wording (see displayText). Quotes, bracketed citations and links stay as
@@ -1827,7 +1907,10 @@ function memoInline(text) {
 }
 
 // The memo's Markdown as a document: headings, paragraphs, lists with one level of sub-items.
-function memoHtml(markdown) {
+// With the memo's data (on the memo page), each item of Verified findings and Portfolio signals gets its note
+// and Remove (memo.items is in the same order), and the Investor notes section is only printed: the box above
+// the memo shows it on screen.
+function memoHtml(markdown, memo = null) {
   const blocks = [];
   for (const line of markdown.split("\n")) {
     const last = blocks[blocks.length - 1];
@@ -1842,14 +1925,27 @@ function memoHtml(markdown) {
     else if (last && last.lines) last.lines.push(line);
     else blocks.push({ tag: "p", lines: [line] });
   }
-  return blocks.map((b) => {
-    if (b.items) {
-      return `<${b.tag}>${b.items.map((it) => `<li>${memoInline(it.text)}${it.sub.length
-        ? `<ul>${it.sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : ""}</li>`).join("")}</${b.tag}>`;
+  const items = memo && memo.items;
+  let next = 0, section = "", printOnly = false, out = "";
+  for (const b of blocks) {
+    if (b.tag === "h2") {
+      if (printOnly) out += "</div>";
+      section = b.text;
+      printOnly = !!items && section === "Investor notes";
+      if (printOnly) out += '<div class="print-only">';
     }
-    if (b.lines) return `<p>${b.lines.map(memoInline).join("<br>")}</p>`;
-    return b.text != null ? `<${b.tag}>${memoInline(b.text)}</${b.tag}>` : "";
-  }).join("");
+    const controlled = items && b.tag === "ul" && /^(Verified findings|Portfolio signals)/.test(section);
+    if (b.items) {
+      out += `<${b.tag}>${b.items.map((it) => {
+        const index = controlled ? next++ : -1;
+        const sub = index >= 0 ? it.sub.filter((x) => !x.startsWith("Investor note: ")) : it.sub;
+        return `<li>${memoInline(it.text)}${sub.length ? `<ul>${sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : ""}${
+          index >= 0 && items[index] ? memoItemControls(items[index], index) : ""}</li>`;
+      }).join("")}</${b.tag}>`;
+    } else if (b.lines) out += `<p>${b.lines.map(memoInline).join("<br>")}</p>`;
+    else if (b.text != null) out += `<${b.tag}>${memoInline(b.text)}</${b.tag}>`;
+  }
+  return out + (printOnly ? "</div>" : "");
 }
 
 $("nav-claims").onclick = openClaims;
@@ -1884,6 +1980,20 @@ $("claims-run").onclick = async () => {
   }
 };
 
+$("claims-body").addEventListener("input", (e) => {
+  if (e.target.id !== "memo-notes" || !claims.memo) return;
+  claims.memo.notesDraft = e.target.value;
+  $("memo-notes-status").textContent = notesStatus();
+});
+
+$("claims-body").addEventListener("submit", (e) => {
+  const form = e.target.closest("[data-note-form]");
+  if (!form) return;
+  e.preventDefault();
+  form.querySelector("button[type=submit]").disabled = true;
+  reviewMemoItem(Number(form.dataset.noteForm), "confirmed", form.querySelector("textarea").value.trim());
+});
+
 $("claims-body").addEventListener("click", async (e) => {
   if (e.target.closest("#claims-toggle-dismissed")) {
     claims.showDismissed = !claims.showDismissed;
@@ -1904,6 +2014,28 @@ $("claims-body").addEventListener("click", async (e) => {
     if (claims.openSources.has(fp)) claims.openSources.delete(fp); else claims.openSources.add(fp);
     return renderClaims();
   }
+  const noteEdit = e.target.closest("[data-note-edit]");
+  if (noteEdit) {
+    claims.memo.editingNote = Number(noteEdit.dataset.noteEdit);
+    renderMemo();
+    const box = document.querySelector("[data-note-form] textarea");
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    return;
+  }
+  if (e.target.closest("[data-note-cancel]")) {
+    claims.memo.editingNote = null;
+    return renderMemo();
+  }
+  const remove = e.target.closest("[data-memo-remove]");
+  if (remove) {
+    remove.disabled = true;
+    return reviewMemoItem(Number(remove.dataset.memoRemove), "reopened");
+  }
+  if (e.target.closest("#memo-notes-save")) {
+    try { await saveMemoNotes(); } catch (err) { $("memo-notes-status").textContent = `Could not save: ${err.message}`; }
+    return;
+  }
+  if (e.target.closest("#memo-print, #memo-copy, #memo-download") && !await saveNotesFirst()) return;
   if (e.target.closest("#memo-print")) return window.print();
   if (e.target.closest("#memo-copy")) {
     const button = $("memo-copy");

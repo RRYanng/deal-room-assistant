@@ -111,7 +111,7 @@ def test_reviews_made_before_reasons_were_optional_are_kept(tmp_path):
     old = SCHEMA.replace("""    reason       TEXT,
     item_json    TEXT,                       -- what the investor saw when deciding
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (decision = 'confirmed' OR length(trim(coalesce(reason, ''))) > 0)
+    CHECK (decision IN ('confirmed', 'reopened') OR length(trim(coalesce(reason, ''))) > 0)
 );""", """    reason       TEXT NOT NULL CHECK (length(trim(reason)) > 0),
     item_json    TEXT,                       -- what the investor saw when deciding
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

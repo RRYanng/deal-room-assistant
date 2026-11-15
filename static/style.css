@@ -395,6 +395,20 @@ button.small-button { padding: 3px 9px; font-size: 12px; }
 .memo-doc li li { margin: 3px 0; }
 .memo-doc li li b { color: var(--text); }
 .memo-doc a { color: var(--accent); }
+.memo-notes-editor { max-width: 720px; margin: 16px auto 0; }
+.memo-notes-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.memo-notes-editor textarea { margin-top: 6px; font-size: 14px; line-height: 1.5; }
+.memo-notes-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.memo-item-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 4px 0 2px;
+  font-size: 13.5px; }
+.memo-note { padding: 0; border: 0; background: none; color: var(--muted); font-weight: 400; text-align: left;
+  cursor: pointer; }
+.memo-note:hover { color: var(--text); text-decoration: underline; }
+.memo-note-add { color: var(--accent); }
+.memo-remove { font-size: 13px; }
+.memo-note-form { display: flex; gap: 6px; align-items: flex-start; width: 100%; }
+.memo-note-form textarea { flex: 1; font-size: 13.5px; }
+.print-only { display: none; }
 .tone-bad { color: var(--danger); }
 .tone-warn { color: var(--warn); }
 .tone-ok { color: var(--ok); }
@@ -435,4 +449,7 @@ button.small-button { padding: 3px 9px; font-size: 12px; }
   body.memo-open .memo-doc { max-width: none; margin: 0; font-size: 11pt; line-height: 1.5; }
   body.memo-open .memo-doc h2, body.memo-open .memo-doc h3 { break-after: avoid; }
   body.memo-open .memo-doc li { break-inside: avoid; }
+  body.memo-open .memo-remove, body.memo-open .memo-note-add, body.memo-open .memo-notes-editor { display: none !important; }
+  body.memo-open .print-only { display: block; }
+  body.memo-open .memo-note { color: var(--muted); text-decoration: none; }
 }

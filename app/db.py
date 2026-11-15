@@ -234,13 +234,23 @@ CREATE TABLE IF NOT EXISTS reviews (
     company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     item_type    TEXT NOT NULL CHECK (item_type IN ('claim', 'signal', 'drift')),
     fingerprint  TEXT NOT NULL,
-    decision     TEXT NOT NULL CHECK (decision IN ('confirmed', 'dismissed')),
+    -- 'reopened' withdraws the decision before it (Remove in the memo): the item awaits review again
+    decision     TEXT NOT NULL CHECK (decision IN ('confirmed', 'dismissed', 'reopened')),
     reason       TEXT,
     item_json    TEXT,                       -- what the investor saw when deciding
     created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (decision = 'confirmed' OR length(trim(coalesce(reason, ''))) > 0)
+    CHECK (decision IN ('confirmed', 'reopened') OR length(trim(coalesce(reason, ''))) > 0)
 );
 CREATE INDEX IF NOT EXISTS idx_reviews_company ON reviews(company_id, fingerprint);
+
+-- The investor's overall view of a company, written at the top of the memo. Append-only: the latest wins.
+CREATE TABLE IF NOT EXISTS memo_notes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    text         TEXT NOT NULL,              -- empty text clears the notes
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_memo_notes_company ON memo_notes(company_id);
 """
 
 
@@ -262,22 +272,24 @@ ADDED_COLUMNS = [
 ]
 
 
-def _relax_review_reason(conn: sqlite3.Connection) -> None:
-    """Databases made before 2026-11-08 required a reason for every review; now only dismissing does.
-    SQLite cannot change a CHECK in place, so the table is copied into the new definition."""
+def _migrate_reviews(conn: sqlite3.Connection) -> None:
+    """Bring an older reviews table to the current CHECKs, keeping every row. Databases made before 2026-11-08
+    required a reason for every review (now only dismissing does); before 2026-11-15 there was no 'reopened'.
+    SQLite cannot change a CHECK in place, so the rows are copied into the new definition."""
     row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reviews'").fetchone()
-    if row and "reason       TEXT NOT NULL" in row[0]:
+    if row and ("reason       TEXT NOT NULL" in row[0]
+                or "decision IN ('confirmed', 'dismissed', 'reopened')" not in row[0]):
         conn.executescript("""
-            ALTER TABLE reviews RENAME TO reviews_before_2026_11_08;
+            ALTER TABLE reviews RENAME TO reviews_before_migration;
             DROP INDEX IF EXISTS idx_reviews_company;
         """)
         conn.executescript(SCHEMA)
-        conn.execute("INSERT INTO reviews SELECT * FROM reviews_before_2026_11_08")
-        conn.execute("DROP TABLE reviews_before_2026_11_08")
+        conn.execute("INSERT INTO reviews SELECT * FROM reviews_before_migration")
+        conn.execute("DROP TABLE reviews_before_migration")
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    _relax_review_reason(conn)
+    _migrate_reviews(conn)
     conn.executescript(SCHEMA)
     for table, column, definition in ADDED_COLUMNS:
         have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}

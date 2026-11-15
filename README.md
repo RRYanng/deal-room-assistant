@@ -88,6 +88,11 @@ status, number and signal**, and an investor confirms or dismisses each flag.
    the program from the results; no model writes it. The page shows it as a document with the
    same display wording as the Deck check page (page numbers instead of "here", amounts such as $1.44B); quotes
    are never rewritten. **Print / Save as PDF** prints the memo alone, black on white.
+   Under each item, the investor's note can be edited in place ("Add a note" when there is none), and
+   **Remove** withdraws the confirmation (a new `reopened` review; earlier ones stay), so the item is back
+   under awaiting review. **Investor notes** at the top hold the overall view per company (table
+   `memo_notes`, latest text wins); Print, Copy Markdown and Download include them, and leave them out
+   when empty.
 
 The Deck check page has three tabs: **Issues** (the summary and the contradicted or possibly overstated
 claims), **All claims** (every claim, the counts and the competitors found) and **Alignment**. Each claim
@@ -398,6 +403,7 @@ numpy matrix product; BM25 is rebuilt per query. Both are simple to explain and 
 | GET | `/api/companies/{id}/claims` | v2: latest claims with evidence, statuses and review state |
 | POST | `/api/companies/{id}/reviews` | v2: confirm or dismiss (`{"fingerprint", "decision", "reason"}`) |
 | GET | `/api/companies/{id}/memo` | v2: memo, JSON + Markdown |
+| PUT | `/api/companies/{id}/memo-notes` | v2: save the memo's Investor notes (`{"text": ...}`) |
 | POST | `/api/companies/{id}/monitor` | v2: read the company's updates and compute signals in the background |
 | GET | `/api/companies/{id}/monitor-runs/{run_id}` | v2: progress of a monitoring run |
 | GET | `/api/companies/{id}/monitor` | v2: figures per period and signals |

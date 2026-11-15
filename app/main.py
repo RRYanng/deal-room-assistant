@@ -22,7 +22,7 @@ from app.intake import analyze_upload, consistency_warnings
 from app.library import document_summaries, search_files
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
-from app.memo import build_memo, memo_to_markdown
+from app.memo import build_memo, memo_to_markdown, save_memo_notes
 from app.presentation import build_summary, claim_rows, hidden_by_config, hide_parts, parse_hide, visible_summary
 from app import monitor
 from app.rag import DEFAULT_TOP_K, EmbeddingError, search
@@ -486,6 +486,17 @@ def memo(company_id: int, hide: str = "", conn=Depends(get_db)):
     require_company(conn, company_id)
     result = build_memo(conn, company_id, parse_hide(hide))
     return result | {"markdown": memo_to_markdown(result)}
+
+
+class NotesIn(BaseModel):
+    text: str = ""
+
+
+@app.put("/api/companies/{company_id}/memo-notes")
+def save_notes(company_id: int, body: NotesIn, conn=Depends(get_db)):
+    """The investor's overall view at the top of the memo, kept per company."""
+    require_company(conn, company_id)
+    return save_memo_notes(conn, company_id, body.text)
 
 
 # --- v2: portfolio monitoring -------------------------------------------------------------------
