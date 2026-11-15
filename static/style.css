@@ -180,6 +180,18 @@ mark { background: var(--mark); color: inherit; padding: 0 1px; border-radius: 2
 .company-files { list-style: none; margin: 0; padding: 0 12px; }
 .company-files li { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
 .doc-name { overflow-wrap: anywhere; }
+.doc-summary { margin: 2px 0; color: var(--text); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-search { margin-bottom: 12px; }
+.library-search input[type=search] {
+  width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+  color: var(--text); font-size: 14px;
+}
+.library-results { margin-bottom: 14px; }
+.results-title { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.search-hits { border: 1px solid var(--border); border-radius: var(--radius); }
+.search-hits li:first-child { border-top: 0; }
+.mentions { color: var(--text); font-weight: 600; }
 .company-metrics { padding: 10px 12px 12px; border-top: 1px solid var(--border); }
 .issue-row { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; font-weight: 500;
   background: none; border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: var(--radius); }

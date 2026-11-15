@@ -7,6 +7,9 @@ const state = {
   issues: [],
   drawer: null,         // null, {view: "library"} or {view: "issues", companyId}
   openLibrary: new Set(),
+  library: [],          // [{company, docs, metrics, open}] behind the Library drawer
+  libraryQuery: "",     // the Library search box: filters the list as you type
+  librarySearch: null,  // after Enter: {query, results} from the keyword search, or {query, loading/error}
   openEvidence: new Set(),
   upload: null,         // the file and suggestions behind the open confirmation dialog
   batch: null,          // the files in the batch table
@@ -977,27 +980,92 @@ $("delete-dialog").addEventListener("cancel", () => finishDelete(false)); // Esc
 async function libraryHtml() {
   await loadCompanies();
   if (!state.companies.length) return '<div class="muted">No companies yet. Switch to Upload to add a file.</div>';
-  const cards = await Promise.all(state.companies.map(async (c) => {
+  state.library = await Promise.all(state.companies.map(async (c) => {
     const open = state.openLibrary.has(c.id);
     const [docs, metrics] = await Promise.all([
       api(`/api/companies/${c.id}/documents`),
       open ? api(`/api/companies/${c.id}/metrics`) : null,
     ]);
+    return { company: c, docs, metrics, open };
+  }));
+  return libraryBodyHtml();
+}
+
+function libraryBodyHtml() {
+  return `<form id="library-search" class="library-search" role="search">
+      <input id="library-query" type="search" value="${esc(state.libraryQuery)}" autocomplete="off"
+        placeholder="Search files · press Enter to search inside them" aria-label="Search files">
+    </form>
+    <div id="library-results">${librarySearchHtml()}</div>
+    <div id="library-list">${libraryListHtml()}</div>`;
+}
+
+// Typing filters by file name, company, type and summary: every word must appear in one of them.
+function libraryListHtml() {
+  const words = state.libraryQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (c, d) => {
+    const text = [d.filename, c.name, DOC_TYPES[d.doc_type] || d.doc_type, d.summary].join(" ").toLowerCase();
+    return words.every((w) => text.includes(w));
+  };
+  const cards = state.library.map(({ company: c, docs, metrics, open }) => {
+    const shown = docs.filter((d) => matches(c, d));
+    if (words.length && !shown.length) return "";
+    const files = words.length ? `${shown.length} of ${plural(docs.length, "file")}` : plural(docs.length, "file");
     return `<div class="company-card">
       <button type="button" class="company-head" data-library-company="${c.id}" aria-expanded="${open}">
         <span>${esc(c.name)}</span>
-        <span class="muted">${plural(docs.length, "file")} · ${open ? "hide" : "show"} key metrics</span>
+        <span class="muted">${files} · ${open ? "hide" : "show"} key metrics</span>
       </button>
-      ${docs.length ? `<ul class="company-files">${docs.map(documentHtml).join("")}</ul>` : ""}
+      ${shown.length ? `<ul class="company-files">${shown.map(documentHtml).join("")}</ul>` : ""}
       ${open ? `<div class="company-metrics"><div class="section-title">Key metrics</div>${metricsHtml(metrics)}</div>` : ""}
     </div>`;
-  }));
-  return cards.join("");
+  }).join("");
+  return cards || `<div class="muted">No files match “${esc(state.libraryQuery)}”. Press Enter to search inside the files.</div>`;
+}
+
+// Enter: the files whose text mentions the words, from the keyword index (no model), and how often.
+function librarySearchHtml() {
+  const s = state.librarySearch;
+  if (!s) return "";
+  if (s.loading) return '<div class="library-results muted small">Searching inside the files…</div>';
+  if (s.error) return `<div class="library-results answer error">${esc(s.error)}</div>`;
+  if (!s.results.length) {
+    return `<div class="library-results muted">No file mentions “${esc(s.query)}”.</div>`;
+  }
+  const hits = s.results.map((f) => `<li>
+      <div class="doc-name">${esc(f.filename)}</div>
+      <div class="muted small">
+        ${esc(f.company)} · <span class="badge">${esc(DOC_TYPES[f.doc_type] || f.doc_type)}</span>
+        ${esc(f.doc_date || "no date")} · <b class="mentions">${plural(f.mentions, "mention")}</b> · ${esc(f.locations.join(", "))}
+      </div>
+    </li>`).join("");
+  return `<div class="library-results">
+      <div class="results-title">${s.results.length === 1 ? "1 file mentions" : `${s.results.length} files mention`} “${esc(s.query)}”</div>
+      <ul class="company-files search-hits">${hits}</ul>
+    </div>`;
+}
+
+let librarySearchRequest = 0;
+
+async function searchLibrary(query) {
+  const request = ++librarySearchRequest;
+  state.librarySearch = { query, loading: true };
+  $("library-results").innerHTML = librarySearchHtml();
+  try {
+    const r = await api(`/api/library/search?q=${encodeURIComponent(query)}`);
+    if (request !== librarySearchRequest) return;
+    state.librarySearch = r;
+  } catch (err) {
+    if (request !== librarySearchRequest) return;
+    state.librarySearch = { query, error: `Could not search the files: ${err.message}` };
+  }
+  $("library-results").innerHTML = librarySearchHtml();
 }
 
 function documentHtml(d) {
   return `<li>
     <div class="doc-name">${esc(d.filename)}</div>
+    ${d.summary ? `<div class="doc-summary" title="${esc(d.summary)}">${esc(d.summary)}</div>` : ""}
     <div class="muted small">
       <span class="badge">${esc(DOC_TYPES[d.doc_type] || d.doc_type)}</span>
       ${esc(d.doc_date || "no date")} · ${plural(d.chunks, "chunk")} ·
@@ -1069,6 +1137,24 @@ async function issueDetailHtml(companyId) {
     ${group("Missing", checks.missing.length, missing)}
     ${group("Unclear basis", checks.unclear_basis.length, unclear)}`;
 }
+
+$("drawer-body").addEventListener("input", (e) => {
+  if (e.target.id !== "library-query") return;
+  state.libraryQuery = e.target.value;
+  if (state.librarySearch && state.librarySearch.query !== state.libraryQuery.trim()) {
+    librarySearchRequest++;  // an older search must not come back over the new words
+    state.librarySearch = null;
+    $("library-results").innerHTML = "";
+  }
+  $("library-list").innerHTML = libraryListHtml();
+});
+
+$("drawer-body").addEventListener("submit", (e) => {
+  if (e.target.id !== "library-search") return;
+  e.preventDefault();
+  const query = state.libraryQuery.trim();
+  if (query) searchLibrary(query);
+});
 
 $("drawer-body").addEventListener("click", async (e) => {
   const button = e.target.closest("button");

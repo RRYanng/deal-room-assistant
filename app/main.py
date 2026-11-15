@@ -19,6 +19,7 @@ from app.claims import fail_interrupted_runs, get_run, latest_deck, latest_resul
 from app.extract import extract_metrics
 from app.ingest import IngestError, ingest_document
 from app.intake import analyze_upload, consistency_warnings
+from app.library import document_summaries, search_files
 from app.llm import LLMAuthError, LLMClient, LLMError, get_llm
 from app.logs import get_run_log
 from app.memo import build_memo, memo_to_markdown
@@ -148,7 +149,16 @@ def list_documents(company_id: int, conn=Depends(get_db)):
         " WHERE d.company_id = ? GROUP BY d.id ORDER BY d.uploaded_at, d.id",
         (company_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    summaries = document_summaries(conn, company_id)
+    return [dict(r) | {"summary": summaries.get(r["id"], "")} for r in rows]
+
+
+@app.get("/api/library/search")
+def library_search(q: str, conn=Depends(get_db)):
+    """Which files mention the words, and how often: the BM25 keyword index only, no model."""
+    if not q.strip():
+        raise HTTPException(400, "Query 'q' must not be empty.")
+    return {"query": q, "results": search_files(conn, q)}
 
 
 @app.post("/api/companies/{company_id}/documents", status_code=201)

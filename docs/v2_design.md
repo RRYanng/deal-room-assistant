@@ -499,3 +499,19 @@ statuses, evidence and fingerprints are unchanged.
 - The counts, the summary and the memo count rows: ClearClaim reads 15 claims checked instead of 17, and
   Financials 3 issues instead of 5 (Team keeps the team/costs row). `GET /claims` adds `rows`; `claims` is as
   before.
+
+## 27. Library summaries and search (2026-11-15)
+
+- Each file in Library shows one line that says what it is, put together from stored data only
+  (`app/library.py`, no model call): type, date, then the metrics extracted from that file. Standard metrics
+  come first (paying and registered customers, revenue, funding), then labels naming market, employees,
+  revenue, cash, burn, margin or growth, then the rest in document order: "Pitch deck, Dec 1, 2025: 85 paying
+  customers, $12B total addressable market, 14 full-time employees, …". A file with no metrics shows its first
+  sentence of four words or more, skipping the SYNTHETIC SAMPLE line (CRM rows: their summary field). The text
+  stops at 160 characters with ", …", and the page cuts it to one line with an ellipsis (full text on hover).
+- The search box filters the list as you type: every word must appear in the file name, company, type or
+  summary. Enter calls `GET /api/library/search`, which ranks each company's chunks with the BM25 index of
+  `app/rag.py` (same tokens) and lists the files that contain the words as a phrase, with the count and the
+  places: "gross margin" finds the December deck (2 mentions, p.5 ¶2, p.9 ¶3) and the meeting notes (1, ¶5).
+  No embeddings and no model are used.
+

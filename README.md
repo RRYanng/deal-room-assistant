@@ -30,7 +30,9 @@ brief that flags **missing** and **conflicting** information instead of hiding i
    picks a winner. The **Data checks** panel lists these per company and updates after every upload or delete.
 
 The screen is one conversation, with an Upload / Ask switch above the input. The top bar has
-**Library** (files and key metrics per company), **Data checks** (conflicts and gaps in the files
+**Library** (files and key metrics per company, a one-line summary under each file, and a search box:
+typing filters by name, company, type or summary; Enter lists the files whose text mentions the words, and
+how often, from the BM25 keyword index, with no model call), **Data checks** (conflicts and gaps in the files
 themselves), an optional **Company** selector and
 **Generate Brief**.
 
