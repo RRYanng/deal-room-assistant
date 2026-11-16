@@ -2,7 +2,7 @@
 
 Two kinds of content, kept apart on purpose:
   - Program-built (deterministic): key metrics table, recent communications (CRM),
-    missing key metrics, conflicts, unclear-basis metrics. Each row carries its source.
+    missing key metrics, conflicts, numbers that need review, changes over time. Each row carries its source.
   - Model-written: 2-4 short sections that follow the user's requirements
     (e.g. "focus on traction and risks"), produced by the same tool loop as Q&A.
     Every bullet must cite a verbatim quote; bullets that fail the check are dropped.
@@ -16,7 +16,7 @@ from app.agent import NOT_FOUND, run_agent, verify_items
 from app.citations import display_locations, normalize_ws
 from app.llm import LLMClient
 from app.logs import log_event
-from app.rules import KEY_METRICS, find_conflicts, get_metrics, missing_metrics, unclear_basis
+from app.rules import KEY_METRICS, data_checks, get_metrics, missing_metrics, shown_value
 
 RECENT_CRM_ROWS = 3
 _DERIVED_FIGURE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s?(?:%|x\b|percent\b|times\b)", re.IGNORECASE)
@@ -68,7 +68,8 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
     requirements = requirements.strip() or DEFAULT_REQUIREMENTS
     prompt = f"Write the brief for {company}.\nRequirements from the investment team: {requirements}"
     missing = missing_metrics(conn, company_id)
-    conflicts = find_conflicts(conn, company_id)
+    checks = data_checks(conn, company_id)
+    conflicts = checks["conflicts"]
     covered = missing + [c["metric_label"] or c["metric"] for c in conflicts]
     if covered:
         prompt += f"\nAlready covered by the system, so leave out of open_items: {', '.join(covered)}"
@@ -99,7 +100,8 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
         "recent_communications": recent_communications(conn, company_id),
         "missing": [{"metric": m, "text": f"{m}: {NOT_FOUND}"} for m in missing],
         "conflicts": conflicts,
-        "unclear_basis": unclear_basis(conn, company_id),
+        "needs_review": checks["needs_review"],
+        "changed": checks["changed"],
         "open_items": open_items,
         "tool_calls": run["tool_calls"],
     }
@@ -112,8 +114,9 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
 def conflict_todo(conflict: dict) -> str:
     """The decision a conflict leaves open: "Confirm which paying-customer count is correct (60 vs 80)"."""
     metric = conflict["metric"]
-    noun = _CONFLICT_NOUNS.get(metric) or f"{conflict['metric_label'] or metric.replace('_', ' ')} figure"
-    by_value = {s["value"]: s["display_value"].removesuffix(" customers") for s in conflict["sources"]}
+    label = conflict["metric_label"] or metric.replace("_", " ")
+    noun = _CONFLICT_NOUNS.get(metric) or f"{label[:1].lower() + label[1:]} figure"  # mid-sentence: "total addressable …"
+    by_value = {s["value"]: shown_value(s).removesuffix(" customers") for s in conflict["sources"]}
     return f"Confirm which {noun} is correct ({' vs '.join(by_value[v] for v in sorted(by_value))})"
 
 
@@ -227,14 +230,20 @@ def brief_to_markdown(brief: dict) -> str:
     lines += [f"- {m['text']}" for m in brief["missing"]] or ["- None of the key metrics are missing."]
     lines += ["", "## Conflicting information"]
     for c in brief["conflicts"]:
-        lines.append(f"- {c['metric']} as of {c['as_of_date']}: values differ, not resolved:")
-        lines += [f"  - {s['display_value']} [{s['loc_label']}: \"{s['quote']}\"]" for s in c["sources"]]
+        lines.append(f"- {c['metric_label'] or c['metric']}: {c['summary']}. {c['reason']}; not resolved:")
+        lines += [f"  - {shown_value(s)} [{s['loc_label']}: \"{s['quote']}\"]" for s in c["sources"]]
     if not brief["conflicts"]:
         lines.append("- No conflicts detected.")
-    if brief["unclear_basis"]:
-        lines += ["", "## Numbers without a date"]
-        lines += [f"- {u['metric_label'] or u['metric']}: {u['display_value']} ({u['reason']}) "
-                  f"[{u['loc_label']}: \"{u['quote']}\"]" for u in brief["unclear_basis"]]
+    if brief["needs_review"]:
+        lines += ["", "## Needs review"]
+        for r in brief["needs_review"]:
+            lines.append(f"- {r['metric_label'] or r['metric']}: {r['summary']}. {r['note']}")
+            lines += [f"  - {shown_value(s)} [{s['loc_label']}: \"{s['quote']}\"]" for s in r["sources"]]
+    if brief["changed"]:
+        lines += ["", "## Changed over time"]
+        for c in brief["changed"]:
+            lines.append(f"- {c['metric_label'] or c['metric']}: {c['summary']}")
+            lines += [f"  - {shown_value(s)} [{s['loc_label']}: \"{s['quote']}\"]" for s in c["sources"]]
     if brief["open_items"]:
         lines += ["", "## Open items"] + [f"- {o}" for o in brief["open_items"]]
     return display_locations("\n".join(lines) + "\n")

@@ -12,7 +12,7 @@ const state = {
   librarySearch: null,  // after Enter: {query, results} from the keyword search, or {query, loading/error}
   openSummaries: new Set(),  // files whose summary is shown in full
   openEvidence: new Set(),
-  openBoxes: new Set(),  // the opened "Numbers without a date" and "Open items" boxes under answers
+  openBoxes: new Set(),  // the opened "Needs review" and "Open items" boxes under answers
   upload: null,         // the file and suggestions behind the open confirmation dialog
   batch: null,          // the files in the batch table
   lastBrief: null,
@@ -225,15 +225,24 @@ function claimGroupHtml(a, group, id) {
     <div class="evidence" id="${id}" ${open ? "" : "hidden"}>${evidenceHtml(group.evidence, supports)}</div></div>`;
 }
 
-function conflictHtml(c) {
-  const sources = c.sources.map((s) => `
-    <div class="conflict-source"><b>${esc(s.display_value)}</b> — ${sourceSpan(s)}
+// A Data checks entry, from app/rules.py: the summary with every value and its source ("250,000 (Sep 2025 deck,
+// p.3) vs 400,000 (Dec 2025 deck, p.3)"), why it is listed, then each value with its quote (hover: exact text).
+function checkSources(c) {
+  return c.sources.map((s) => `
+    <div class="conflict-source"><b>${esc(s.value_raw)}</b> — <span class="src" title="${esc(s.quote)}">${esc(s.where)}</span>
       <div class="quote">“${esc(s.quote)}”</div></div>`).join("");
-  return `<div><b>${esc(metricName(c.metric, c.metric_label))}</b> as of ${esc(c.as_of_date)}:
-    ${c.values.length} different values. Not resolved — check the sources.${sources}</div>`;
 }
 
-// "Numbers without a date (9) ▸": folded to its title line until clicked (Conflicting information stays open).
+function checkHtml(c, why) {
+  return `<div><b>${esc(metricName(c.metric, c.metric_label))}</b>: ${esc(c.summary)}
+    ${why ? `<div class="muted small">${esc(why)}</div>` : ""}${checkSources(c)}</div>`;
+}
+
+const conflictHtml = (c) => checkHtml(c, `${c.reason}. Not resolved — check the sources.`);
+const reviewHtml = (r) => checkHtml(r, r.note);
+const changedHtml = (c) => checkHtml(c, "");
+
+// "Needs review (2) ▸": folded to its title line until clicked (Conflicting information stays open).
 function foldedBoxHtml(id, title, items) {
   const open = state.openBoxes.has(id);
   return `<div class="box warn box-folded${open ? " open" : ""}">
@@ -256,14 +265,14 @@ function answerHtml(a, entryId) {
   const claims = a.evidence_groups.map((g, j) => claimGroupHtml(a, g, `ev-${entryId}-${j}`)).join("");
   const open = a.open_items.length ? foldedBoxHtml(`open-${entryId}`, "Open items",
     a.open_items.map((o) => `<li>${esc(o)}</li>`)) : "";
-  const conflicts = a.conflicts.length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
+  const conflicts = (a.conflicts || []).length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
     ${a.conflicts.map(conflictHtml).join("<hr>")}</div>` : "";
-  const unclear = a.unclear_basis.length ? foldedBoxHtml(`undated-${entryId}`, "Numbers without a date",
-    a.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)}</li>`)) : "";
+  const review = (a.needs_review || []).length ? foldedBoxHtml(`review-${entryId}`, "Needs review",
+    a.needs_review.map((r) => `<li>${esc(metricName(r.metric, r.metric_label))}: ${esc(r.summary)} — ${esc(r.note)}</li>`)) : "";
   const tools = [...new Set(a.tool_calls.map((t) => t.tool))].join(", ") || "none";
   return `<div class="answer">
     ${claims || '<div class="muted">No answer found in this company\'s materials.</div>'}
-    ${conflicts}${unclear}${open}
+    ${conflicts}${review}${open}
     <div class="answer-foot"><span>Tools: ${esc(tools)}</span>
       <a href="/api/runs/${esc(a.run_id)}/log" target="_blank" rel="noopener">View agent log</a></div>
   </div>`;
@@ -1179,45 +1188,33 @@ async function issueListHtml() {
   return state.issues.map((c) => `
     <button type="button" class="issue-row" data-issues-company="${c.id}">
       <span>${esc(c.name)} · ${plural(c.total, "issue")}</span>
-      <span class="muted">${plural(c.conflicts, "conflict")}, ${c.missing} missing, ${c.unclear_basis} without a date</span>
+      <span class="muted">${plural(c.conflicts, "conflict")}, ${c.needs_review} to review, ${c.missing} missing</span>
     </button>`).join("");
-}
-
-function sourceLine(s, extra = "") {
-  return `<div class="source-line">
-    <span class="source-value">${esc(s.display_value)}</span> ${extra}
-    <div class="source-loc">${esc(s.filename)} · ${esc(locationOf(s))}</div>
-    <div class="quote">“${esc(s.quote)}”</div>
-  </div>`;
 }
 
 async function issueDetailHtml(companyId) {
   const [checks] = await Promise.all([api(`/api/companies/${companyId}/checks`), loadIssues()]);
   const company = state.issues.find((c) => c.id === companyId);
-  const conflicts = checks.conflicts.map((c) => `
-    <div class="issue-card conflict">
-      <div class="issue-title">${esc(metricName(c.metric, c.metric_label))} as of ${esc(c.as_of_date)}</div>
-      <div class="muted small">${c.values.length} different values. Not resolved — check the sources.</div>
-      ${c.sources.map((s) => sourceLine(s)).join("")}
-    </div>`).join("");
+  const card = (kind, html) => `<div class="issue-card ${kind}">${html}</div>`;
+  const conflicts = checks.conflicts.map((c) => card("conflict", conflictHtml(c))).join("");
+  const review = checks.needs_review.map((r) => card("review", reviewHtml(r))).join("");
+  const changed = checks.changed.map((c) => card("changed", changedHtml(c))).join("");
   const missing = checks.missing.map((m) => `
     <div class="issue-card">
       <div class="issue-title">${esc(metricName(m))}</div>
       <div class="muted small">Not found in the provided materials.</div>
-    </div>`).join("");
-  const unclear = checks.unclear_basis.map((u) => `
-    <div class="issue-card unclear">
-      <div class="issue-title">${esc(metricName(u.metric, u.metric_label))}</div>
-      <div class="muted small">${esc(u.reason)}</div>
-      ${sourceLine(u)}
     </div>`).join("");
   const group = (title, count, body) => `<div class="drawer-section">
     <div class="section-title">${title} (${count})</div>${body || '<div class="muted small">None.</div>'}</div>`;
   return `<button type="button" class="link small" data-issues-back="1">← All companies</button>
     <h2 class="dialog-title" style="margin:10px 0 14px">${esc(company.name)} · ${plural(company.total, "issue")}</h2>
     ${group("Conflicts", checks.conflicts.length, conflicts)}
-    ${group("Missing", checks.missing.length, missing)}
-    ${group("Numbers without a date", checks.unclear_basis.length, unclear)}`;
+    ${group("Needs review", checks.needs_review.length, review)}
+    <details class="drawer-section drawer-fold"><summary class="section-title">Changed over time (${checks.changed.length})
+      <span class="fold-arrow" aria-hidden="true"></span></summary>
+      <div class="muted small fold-note">Values that changed between dates more than 31 days apart. Not counted as issues.</div>
+      ${changed || '<div class="muted small">None.</div>'}</details>
+    ${group("Missing", checks.missing.length, missing)}`;
 }
 
 $("drawer-body").addEventListener("input", (e) => {
@@ -1349,8 +1346,8 @@ function showBrief(b) {
   const missing = b.missing.length ? `<ul>${b.missing.map((m) => `<li>${esc(metricName(m.metric))}: Not found in the provided materials</li>`).join("")}</ul>`
     : '<div class="muted">None of the key metrics are missing.</div>';
   const conflicts = b.conflicts.length ? b.conflicts.map(conflictHtml).join("<hr>") : '<div class="muted">No conflicts detected.</div>';
-  const unclear = b.unclear_basis.length ? `<h3>Numbers without a date</h3><ul>${b.unclear_basis.map((u) =>
-    `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)} <span class="cite">[${sourceSpan(u)}]</span></li>`).join("")}</ul>` : "";
+  const review = (b.needs_review || []).length ? `<h3>Needs review</h3>${b.needs_review.map(reviewHtml).join("<hr>")}` : "";
+  const changed = (b.changed || []).length ? `<h3>Changed over time</h3>${b.changed.map(changedHtml).join("<hr>")}` : "";
   const open = b.open_items.length ? `<h3>Open items</h3><ul>${b.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>` : "";
 
   $("brief-title").textContent = `Company brief: ${b.company}`;
@@ -1361,7 +1358,7 @@ function showBrief(b) {
     <h3>Recent communications</h3>${comms}
     <h3>Missing information</h3>${missing}
     <h3>Conflicting information</h3>${conflicts}
-    ${unclear}${open}`;
+    ${review}${changed}${open}`;
   $("brief-overlay").hidden = false;
 }
 

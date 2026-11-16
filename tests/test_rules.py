@@ -1,4 +1,5 @@
-"""Conflicts, unclear basis and missing metrics on the sample data, through the API."""
+"""Data checks (conflicts, needs review, changed over time, missing) on the sample data, through the API.
+The period rules on ClearClaim are in test_data_checks.py."""
 
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.llm import FakeLLM, LLMAuthError
 from app.main import app, get_extract_llm
-from app.rules import display_value, find_conflicts, missing_metrics
+from app.rules import data_checks, display_value, missing_metrics
 from tests.helpers import KITEBRIDGE_RULES, TIDEWELL_RULES, fake_extractor
 
 SAMPLES = Path(__file__).resolve().parent.parent / "samples"
@@ -51,17 +52,18 @@ def test_fourth_file_creates_paying_conflict_with_both_sources(client):
     conflicts = client.get(f"/api/companies/{cid}/checks").json()["conflicts"]
     assert len(conflicts) == 1
     c = conflicts[0]
-    assert (c["metric"], c["as_of_date"], c["values"]) == ("paying_customers", "2026-06-30", [60, 80])
+    assert (c["metric"], c["values"]) == ("paying_customers", [60, 80])
+    assert c["reason"] == "Dates within 31 days: the same period"  # both as of 2026-06-30
     assert sorted((s["value"], s["loc_label"]) for s in c["sources"]) == [
         (60, "tidewell_meeting_notes.md ¶3"), (80, "tidewell_update_2026-08.txt ¶2")]
     assert all(s["quote"] for s in c["sources"])
 
 
-def test_funding_without_as_of_date_is_unclear_basis(client):
-    cid = setup_tidewell(client)
-    unclear = client.get(f"/api/companies/{cid}/checks").json()["unclear_basis"]
-    assert [(u["metric"], u["value"], u["reason"], u["loc_label"]) for u in unclear] == [
-        ("funding_raised", 1_200_000, "no date stated", "tidewell_deck.pdf p.4 ¶2")]
+def test_a_number_stated_once_is_not_listed_even_without_a_date(client):
+    cid = setup_tidewell(client)  # funding $1.2M has no as-of date: it takes the deck's date, nothing to compare
+    checks = client.get(f"/api/companies/{cid}/checks").json()
+    assert checks["conflicts"] == checks["needs_review"] == checks["changed"] == []
+    assert "unclear_basis" not in checks
 
 
 def test_revenue_is_listed_as_missing(client):
@@ -80,7 +82,7 @@ def test_other_company_metrics_do_not_mix(client):
     assert {(m["metric"], m["value"]) for m in b_metrics} == {
         ("registered_customers", 1250), ("funding_raised", 8_500_000), ("paying_customers", 410)}
     checks_b = client.get(f"/api/companies/{b}/checks").json()
-    assert checks_b == {"conflicts": [], "unclear_basis": [], "missing": ["revenue"]}
+    assert checks_b == {"conflicts": [], "needs_review": [], "changed": [], "missing": ["revenue"]}
 
 
 def test_replacing_file_removes_its_conflict(client):
@@ -124,18 +126,53 @@ def seeded(db):
     return db, cid, did, chid
 
 
+def add_document(db, cid, name, doc_date=None):
+    did = db.execute("INSERT INTO documents(company_id, filename, doc_type, doc_date) VALUES (?, ?, 'notes', ?)",
+                     (cid, name, doc_date)).lastrowid
+    chid = db.execute("INSERT INTO chunks(document_id, company_id, chunk_index, text, loc_label)"
+                      " VALUES (?, ?, 0, 't', ?)", (did, cid, f"{name} ¶1")).lastrowid
+    return did, chid
+
+
 def test_rule_edge_cases(seeded):
-    db, cid, did, chid = seeded
+    db, cid, did, chid = seeded  # a.md has no date
     insert_metric(db, cid, did, chid, "paying_customers", 60, "2026-06-30")
     insert_metric(db, cid, did, chid, "paying_customers", 60, "2026-06-30")  # agreement, not conflict
-    insert_metric(db, cid, did, chid, "paying_customers", 90, "2026-03-31")  # different date
-    insert_metric(db, cid, did, chid, "paying_customers", 75, None)  # unclear basis: never compared
+    insert_metric(db, cid, did, chid, "paying_customers", 90, "2026-03-31")  # its own date, 91 days earlier
     insert_metric(db, cid, did, chid, "revenue", 1000, "2026-06-30", "USD", "USD")
     insert_metric(db, cid, did, chid, "revenue", 900, "2026-06-30", "EUR", "EUR")  # different currency
     insert_metric(db, cid, did, chid, "other", 5, "2026-06-30", "%", label="churn")
     insert_metric(db, cid, did, chid, "other", 7, "2026-06-30", "%", label="growth")  # different label
-    assert find_conflicts(db, cid) == []
+    checks = data_checks(db, cid)
+    assert checks["conflicts"] == [] and checks["needs_review"] == []
+    assert [c["summary"] for c in checks["changed"]] == ["90 (Mar 2026) → 60 (Jun 2026)"]  # a series in one file
     assert missing_metrics(db, cid) == ["registered_customers", "funding_raised"]
+
+    other, other_chunk = add_document(db, cid, "b.md")  # no date either
+    insert_metric(db, cid, other, other_chunk, "paying_customers", 75, None)
+    review = data_checks(db, cid)["needs_review"]
+    assert [(r["metric"], r["values"]) for r in review] == [("paying_customers", [60, 75, 90])]
+    assert "75 (date unknown; b.md, para 1)" in review[0]["summary"]
+
+
+def test_different_values_in_one_file_conflict_unless_each_states_its_own_date(seeded):
+    db, cid, did, chid = seeded
+    insert_metric(db, cid, did, chid, "registered_customers", 100, None)
+    insert_metric(db, cid, did, chid, "registered_customers", 120, "2026-06-30")  # one of them has no date
+    conflicts = data_checks(db, cid)["conflicts"]
+    assert [(c["metric"], c["values"], c["reasons"]) for c in conflicts] == [
+        ("registered_customers", [100, 120], ["same_file"])]
+
+
+def test_a_dated_file_gives_its_numbers_its_date(seeded):
+    db, cid, _, _ = seeded
+    june, june_chunk = add_document(db, cid, "june.md", "2026-06-10")
+    july, july_chunk = add_document(db, cid, "july.md", "2026-07-08")  # 28 days later
+    insert_metric(db, cid, june, june_chunk, "other", 70, None, "%", label="gross margin")
+    insert_metric(db, cid, july, july_chunk, "other", 80, None, "%", label="Gross margin")
+    conflict, = data_checks(db, cid)["conflicts"]
+    assert [s["date_source"] for s in conflict["sources"]] == ["file", "file"]
+    assert conflict["summary"] == "70 (Jun 2026 notes, para 1) vs 80 (Jul 2026 notes, para 1)"
 
 
 # --- values with units ------------------------------------------------------------

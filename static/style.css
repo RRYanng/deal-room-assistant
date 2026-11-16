@@ -278,7 +278,15 @@ mark { background: var(--mark); color: inherit; padding: 0 1px; border-radius: 2
 .issue-card { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 13px; }
 .issue-card + .issue-card { margin-top: 8px; }
 .issue-card.conflict { border-left: 3px solid var(--danger); }
-.issue-card.unclear { border-left: 3px solid var(--warn); }
+.issue-card.review { border-left: 3px solid var(--warn); }
+.issue-card.changed { border-left: 3px solid var(--border); }
+/* Changed over time: folded to its title until clicked */
+.drawer-fold > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 6px; }
+.drawer-fold > summary::-webkit-details-marker { display: none; }
+.drawer-fold > summary:hover { color: var(--text); }
+.fold-arrow::before { content: "▸"; font-size: 17px; line-height: 1; letter-spacing: 0; }
+.drawer-fold[open] .fold-arrow::before { content: "▾"; }
+.fold-note { margin: 0 0 8px; }
 .issue-title { font-weight: 600; }
 .source-line { margin-top: 8px; }
 .source-value { font-weight: 600; font-variant-numeric: tabular-nums; }

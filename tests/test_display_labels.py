@@ -1,5 +1,6 @@
 """Display wording only: locations read "p.5, para 2" and "para 3" (CSV keeps "row 3") wherever they are shown,
-and metrics without a date are "Numbers without a date" / "no date stated". Stored labels and logic are
+and a metric without a date shows "no date" in the metrics table (the Data checks are in test_data_checks.py).
+Stored labels and logic are
 unchanged (chunks keep "p.5 ¶2"; questions and evidence are built from them as before). Also: the run dialogs
 give the time only, and the Brief is stamped in local time."""
 
@@ -13,7 +14,6 @@ from app.citations import display_locations
 from app.claims import create_run, run_claim_check
 from app.config import PROJECT_ROOT
 from app.main import get_checks, library_search, list_claims, memo
-from app.rules import unclear_basis
 from tests.helpers_v2 import DECK, fake_web, load_clearclaim, research_llm, review_row
 from tests.test_library import DECK_METRICS, store_metrics
 from tests.test_ui_dismissed import NODE, render
@@ -53,23 +53,19 @@ def test_memo_and_its_questions_use_words_and_the_stored_data_keeps_its_labels(d
     assert any("(p.5 ¶2)" in (c.get("question") or {}).get("text", "") for c in claims)
 
 
-def test_metrics_without_a_date_say_no_date_stated(db, company):
-    reasons = {u["reason"] for u in unclear_basis(db, company)}  # these test metrics also have no number
-    assert reasons == {"no date stated; value could not be read as a number"}
-    assert get_checks(company, conn=db)["unclear_basis"][0]["reason"].startswith("no date stated")
-
-
 def test_brief_markdown_uses_the_new_wording():
     brief = {"company": "Acme", "requirements": "all", "generated_at": "now",
              "sections": [{"title": "Traction", "items": [{"text": "85 paying.", "citations": [
                  {"loc_label": "deck.pdf p.3 ¶2", "quote": "85 pay."}]}]}],
              "key_metrics": [], "recent_communications": [], "missing": [], "conflicts": [], "open_items": [],
-             "unclear_basis": [{"metric": "other", "metric_label": "cash", "display_value": "$4.4M",
-                                "reason": "no date stated", "loc_label": "update.txt ¶4", "quote": "We had $4.4M."}]}
+             "needs_review": [{"metric": "other", "metric_label": "cash", "summary": "$4.4M (date unknown; update.txt, para 4)",
+                               "note": "Dates unknown, can't tell if this is growth or a conflict.",
+                               "sources": [{"value_raw": "$4.4M", "loc_label": "update.txt ¶4", "quote": "We had $4.4M."}]}],
+             "changed": []}
     md = brief_to_markdown(brief)
     assert "¶" not in md and "[deck.pdf p.3, para 2: \"85 pay.\"]" in md
-    assert "## Numbers without a date" in md and "Unclear basis" not in md
-    assert "- cash: $4.4M (no date stated) [update.txt para 4: \"We had $4.4M.\"]" in md
+    assert "## Needs review" in md and "Numbers without a date" not in md and "Unclear basis" not in md
+    assert "  - $4.4M [update.txt para 4: \"We had $4.4M.\"]" in md
 
 
 # --- page (static/app.js in Node) ------------------------------------------------------------
@@ -99,24 +95,10 @@ def test_deck_check_page_and_memo_page_show_no_pilcrow(db, company):
 
 
 @needs_node
-def test_data_checks_say_numbers_without_a_date(db, company):
-    checks = get_checks(company, conn=db)
-    issues = [{"id": company, "name": "ClearClaim AI", "total": 5, "conflicts": 0, "missing": 2, "unclear_basis": 3}]
-    out = render(f"""(async () => {{
-        fetch = async (url) => ({{ ok: true, json: async () => url.includes("/checks") ? DATA.checks : DATA.issues }});
-        return {{ list: await issueListHtml(), detail: await issueDetailHtml({company}) }};
-    }})()""", {"checks": checks, "issues": issues})
-    assert "3 without a date" in out["list"] and "unclear" not in out["list"].lower()
-    assert "Numbers without a date (" in out["detail"] and "no date stated" in out["detail"]
-    assert "Unclear basis" not in out["detail"] and "¶" not in out["detail"] and "p.3, para 3" in out["detail"]
-
-
-@needs_node
 def test_answers_brief_and_library_use_the_new_wording(db, company):
-    unclear = unclear_basis(db, company)
     answer = render("""answerHtml({claims: [], evidence_groups: [], open_items: [], conflicts: [], tool_calls: [],
-        unclear_basis: DATA}, 1)""", unclear)
-    assert "Numbers without a date" in answer and "Unclear basis" not in answer and "no date stated" in answer
+        needs_review: []}, 1)""", None)
+    assert "Numbers without a date" not in answer and "Unclear basis" not in answer
     metrics = render("metricsHtml(DATA)", [{"metric": "other", "metric_label": "cash", "display_value": "$4.4M",
                                               "as_of_date": None, "quote": "q", "loc_label": "update.txt ¶4"}])
     assert ">no date<" in metrics and "unclear" not in metrics and "update.txt para 4" in metrics

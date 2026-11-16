@@ -1,0 +1,19 @@
+{
+  "_about": "Settings for the Data checks (app/rules.py). Labels are matched in lower case.",
+  "_market_facts": "Facts about the market that do not change with how the company is doing. Two files that state different values are a conflict, whatever their dates.",
+  "market_facts": [
+    "independent dental practices in us",
+    "us dental care spending per year",
+    "total addressable market",
+    "serviceable addressable market",
+    "market size"
+  ],
+  "_same_metric": "Labels the extraction writes differently for the same metric, mapped to one name.",
+  "same_metric": {
+    "current gross margin": "gross margin",
+    "average monthly net burn": "monthly net burn",
+    "us annual dental care spend": "us dental care spending per year"
+  },
+  "_same_period_days": "Two dates at most this many days apart are the same period: different values then are a conflict.",
+  "same_period_days": 31
+}

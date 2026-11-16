@@ -600,3 +600,12 @@ statuses, evidence and fingerprints are unchanged.
   then reads "Add to <company>". A company found in the file is still chosen for you. When the material type is
   guessed from the extension alone (PDF or text file), it starts on "Other – choose a type" and Add waits for a
   choice; nothing is stored as "Other", since the server knows only Pitch deck, Meeting notes and CRM records.
+- 2026-11-15, Data checks compare numbers by period. A number's date is its own as-of date, else its file's date,
+  else "date unknown". Within one metric (labels written differently are mapped in `app/data_checks.json`), two
+  different values are a Conflict when they are in the same file, when the metric is a market fact (listed in the
+  same file) and two files disagree, or when their dates are at most 31 days apart; "Needs review" when a date is
+  unknown ("Dates unknown, can't tell if this is growth or a conflict."); otherwise "Changed over time", folded
+  and not counted as an issue: "Paying customers: 40 (Aug 2025) → 85 (Nov 2025) → 120 (Apr 2026, file date)".
+  Every entry shows each value with its file and page. "Numbers without a date" is gone, in the drawer, under
+  answers and in the Brief. On ClearClaim: 3 conflicts (dental practices, TAM, gross margin), 0 to review, 6
+  changes, 2 missing, 5 issues instead of 34.

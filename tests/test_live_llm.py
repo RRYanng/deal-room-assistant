@@ -51,7 +51,8 @@ def test_real_extraction_on_tidewell_samples(db):
     paying = [c for c in checks["conflicts"] if c["metric"] == "paying_customers"]
     assert paying and paying[0]["values"] == [60, 80]
     assert "revenue" in checks["missing"]
-    assert any(u["metric"] == "funding_raised" and u["value"] == 1_200_000 for u in checks["unclear_basis"])
+    assert any(m["metric"] == "funding_raised" and m["value"] == 1_200_000 and m["as_of_date"] is None for m in metrics)
+    assert not any(c["metric"] == "funding_raised" for g in ("conflicts", "needs_review") for c in checks[g])
 
 
 def _ask_live(db, question, include_update=False):

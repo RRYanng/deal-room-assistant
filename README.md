@@ -388,7 +388,7 @@ numpy matrix product; BM25 is rebuilt per query. Both are simple to explain and 
 | GET | `/api/documents/{id}/chunks` | Chunks with locations |
 | GET | `/api/companies/{id}/search?q=…&k=6` | Debug view of hybrid search with both ranks |
 | GET | `/api/companies/{id}/metrics` | Extracted metrics with sources |
-| GET | `/api/companies/{id}/checks` | Conflicts, unclear basis, missing key metrics |
+| GET | `/api/companies/{id}/checks` | Conflicts, needs review, changed over time, missing key metrics |
 | POST | `/api/uploads/analyze` | Suggest company, type and date for a file; stores nothing |
 | POST | `/api/uploads/warnings` | Consistency warnings for the company chosen in the confirmation |
 | POST | `/api/uploads/batch` | Store several files in the background (multipart: `files`, plus `items` as JSON with `company_id` or `new_company`, `doc_type`, `doc_date`) |
@@ -462,7 +462,8 @@ app/
   extract.py      metric extraction + validation
   numbers.py      number normalization
   citations.py    verbatim quote check
-  rules.py        conflicts, unclear basis, missing metrics
+  rules.py        Data checks: conflicts, needs review, changed over time, missing
+  data_checks.json market facts, labels for the same metric, same-period days
   agent.py        Q&A tool loop and citation verification
   brief.py        company brief (program parts + verified model sections)
   logs.py         agent_logs
