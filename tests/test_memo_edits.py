@@ -152,12 +152,14 @@ def memo_page(db, company_id, code="renderMemo(); $(\"claims-body\").innerHTML")
 
 @pytest.mark.skipif(not NODE, reason="needs Node.js to run static/app.js")
 def test_each_confirmed_item_has_its_note_and_remove(db, company):
-    html = memo_page(db, company)
+    from tests.test_ui_memo_fold import screen  # opened (items are folded to one line by default), on screen
+    open_all = 'claims.memo.items.forEach((i) => claims.memoOpen.add(i.fingerprints.join(" ")));'
+    html = screen(memo_page(db, company, open_all + ' renderMemo(); $("claims-body").innerHTML'))
     assert html.count('data-memo-remove="') == 2 and ">Remove<" in html
     assert 'data-note-edit="0"' in html and ">Add a note<" in html  # Market size has no note
     assert f">Investor note: {NOTE}<" in html.replace("\n", "")
     assert html.count(f"Investor note: {NOTE}") == 1  # the Markdown line is not shown a second time
-    editing = memo_page(db, company, 'claims.memo.editingNote = 1; renderMemo(); $("claims-body").innerHTML')
+    editing = memo_page(db, company, open_all + ' claims.memo.editingNote = 1; renderMemo(); $("claims-body").innerHTML')
     assert 'data-note-form="1"' in editing and f">{NOTE}</textarea>" in editing and ">Save<" in editing
 
 

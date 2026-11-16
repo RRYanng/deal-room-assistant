@@ -584,3 +584,10 @@ statuses, evidence and fingerprints are unchanged.
   buttons (Ask, Generate Brief, Run, Confirm) and the selected tab's underline. Everything else stays black and
   white; the status labels keep their colours (the blue-grey of "consistent" is greyer and lighter than navy).
   Delete and Remove keep a neutral black button.
+- 2026-11-15, shorter memo page. Each confirmed item is one line, "Contradicted · Market size: 400,000 × $3,600 =
+  $1.44B, not $12B": the same conclusion as its folded card on Deck check (a change reads "Changed · Number of
+  target customers: 250,000 → 400,000", a signal "High · Cash runway 7.0 months (2026-09-30)"). ▸ opens the
+  quotes with their place, the evidence with its sources, the investor's note and Remove; an item stays open
+  after a note is saved. Questions for the founder show the question alone, after the topic it comes from (two
+  questions can be worded alike); the full question is its hover text. Investor notes stay on top. Print / Save
+  as PDF prints every item and question in full, and Copy and Download use the memo's Markdown, unchanged.

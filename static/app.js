@@ -1364,7 +1364,7 @@ const EVIDENCE_STANCE = { supports: "supports", contradicts: "contradicts", over
 const CLAIM_POLL_MS = 1000;
 
 const claims = { companyId: null, data: null, view: "claims", tab: "issues", showDismissed: false, showOther: false,
-  timer: null, memo: null, reviewing: null, openSources: new Set(), openCards: new Set() };
+  timer: null, memo: null, reviewing: null, openSources: new Set(), openCards: new Set(), memoOpen: new Set() };
 const CLAIM_TABS = [["issues", "Issues"], ["all", "All claims"], ["alignment", "Alignment"]];
 const ISSUE_STATUSES = ["contradicted", "possibly_overstated"];
 // Parts switched off in the UI config file ("changes", "regulatory"). The server still computes them; the page
@@ -1948,10 +1948,96 @@ function memoInline(text) {
   }).join("");
 }
 
+// On the memo page each confirmed item is one line, "Contradicted · Market size: 400,000 × $3,600 = $1.44B,
+// not $12B", the same conclusion as its folded card on the Deck check page. ▸ opens the quotes, the evidence
+// with its sources, the investor's note and Remove. Printing shows every item in full, as written in the
+// Markdown (Copy and Download use the Markdown itself), because a reader of the PDF cannot open anything.
+const MEMO_CATEGORIES = ["Market", "Financials", "Competition", "Team", "Regulatory"];  // app/presentation.py
+
+function memoRow(memo, item) {
+  const fp = item.fingerprints[0];
+  if (item.item_type === "claim") return (memo.findings || []).find((r) => membersOf(r)[0].fingerprint === fp);
+  if (item.item_type === "drift") return (memo.changes || []).find((c) => c.fingerprint === fp);
+  return (memo.signals || []).find((s) => s.fingerprint === fp);
+}
+
+function memoLine(item, row) {
+  const word = (label) => `<b class="${MEMO_TONES[label] || ""}">${esc(label)}</b>`;
+  if (item.item_type === "claim") return `${word(CLAIM_STATUS[row.status][0])} · ${esc(row.label)}: ${esc(conclusionOf(row))}`;
+  if (item.item_type === "drift") {
+    return `${row.kind === "changed" ? word("Changed") : "Updated"} · ${esc(row.label)}: ${esc(row.old.value_raw)} → ${esc(row.new.value_raw)}`;
+  }
+  const level = row.level.charAt(0).toUpperCase() + row.level.slice(1);
+  return `${word(level)} · ${esc(row.title)} <span class="memo-line-date">(${esc(row.period_end)})</span>`;
+}
+
+// What ▸ opens: the quote and its place (the folded line has the conclusion), the change with the two decks,
+// or the signal's calculation; then the evidence lines of the Markdown, the note and Remove.
+function memoDetail(it, item, row) {
+  let lead = "";
+  if (item.item_type === "claim" && !row.members) {
+    const quote = it.text.search(/ ["“]/);
+    lead = quote >= 0 ? it.text.slice(quote + 1) : "";
+  } else if (item.item_type === "drift") lead = it.text.slice(it.text.indexOf("): ") + 3);
+  else if (item.item_type === "signal") lead = memoText(row.detail);
+  const lines = [lead, ...it.sub.filter((x) => !x.startsWith("Investor note: "))].filter(Boolean);
+  return lines.length ? `<ul>${lines.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : "";
+}
+
+function memoSubList(sub) {
+  return sub.length ? `<ul>${sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : "";
+}
+
+function foldedMemoItem(it, item, index, memo) {
+  const row = memoRow(memo, item);
+  const full = `${memoInline(it.text)}${memoSubList(it.sub)}`;
+  if (!row) {  // not in the memo's data: shown as before
+    return `<li>${memoInline(it.text)}${memoSubList(it.sub.filter((x) => !x.startsWith("Investor note: ")))}${
+      memoItemControls(item, index)}</li>`;
+  }
+  const key = item.fingerprints.join(" ");
+  const open = claims.memoOpen.has(key);
+  return `<li class="memo-item${open ? " open" : ""}"><div class="memo-screen">
+      <button type="button" class="memo-fold" data-memo-fold="${esc(key)}" aria-expanded="${open}">
+        <span class="memo-fold-arrow" aria-hidden="true">${open ? "▾" : "▸"}</span><span class="memo-line">${memoLine(item, row)}</span></button>
+      ${open ? `<div class="memo-detail">${memoDetail(it, item, row)}${memoItemControls(item, index)}</div>` : ""}
+    </div><div class="memo-print">${full}</div></li>`;
+}
+
+// The topic of each question for the founder, in the order app/memo.py founder_questions lists them, so two
+// questions worded alike ("What changed: the definition, the source, or the business?") can be told apart.
+function founderTopics(memo) {
+  const topics = [], seen = new Set();
+  const add = (q, topic) => { if (q && !seen.has(q.text)) { seen.add(q.text); topics.push(topic); } };
+  for (const category of MEMO_CATEGORIES) {
+    for (const row of memo.findings || []) for (const m of membersOf(row)) if (m.category === category) add(m.question, row.label);
+  }
+  for (const c of memo.changes || []) if (c.review_state === "confirmed") add(c.question, c.label);
+  for (const s of memo.signals || []) if (s.review_state === "confirmed") add(s.question, s.title);
+  return topics;
+}
+
+// "ADA reports 202,401 … (p.3, para 2). How was 400,000 counted, and from which source?" -> the question
+// itself, from the sentence holding the first "?".
+function questionOnly(text) {
+  const mark = text.indexOf("?");
+  if (mark < 0) return text;
+  let start = 0;
+  for (const m of text.slice(0, mark).matchAll(/[.!?]["”]?\)?\s+(?=[A-Z"“])/g)) start = m.index + m[0].length;
+  return text.slice(start);
+}
+
+function memoQuestion(it, topic) {
+  const ask = questionOnly(it.text);
+  return `<li class="memo-question"><span class="memo-screen"${ask === it.text ? "" : ` title="${esc(it.text)}"`}>${
+    topic ? `<span class="memo-q-topic">${esc(topic)}:</span> ` : ""}${memoInline(ask)}</span><span class="memo-print">${
+    memoInline(it.text)}</span></li>`;
+}
+
 // The memo's Markdown as a document: headings, paragraphs, lists with one level of sub-items.
-// With the memo's data (on the memo page), each item of Verified findings and Portfolio signals gets its note
-// and Remove (memo.items is in the same order), and the Investor notes section is only printed: the box above
-// the memo shows it on screen.
+// With the memo's data (on the memo page), each item of Verified findings and Portfolio signals is one line
+// that opens to its details, note and Remove (memo.items is in the same order); Questions for the founder show
+// the question alone; the Investor notes section is only printed: the box above the memo shows it on screen.
 function memoHtml(markdown, memo = null) {
   const blocks = [];
   for (const line of markdown.split("\n")) {
@@ -1977,12 +2063,14 @@ function memoHtml(markdown, memo = null) {
       if (printOnly) out += '<div class="print-only">';
     }
     const controlled = items && b.tag === "ul" && /^(Verified findings|Portfolio signals)/.test(section);
+    const asked = items && b.tag === "ol" && section === "Questions for the founder";
     if (b.items) {
-      out += `<${b.tag}>${b.items.map((it) => {
+      const topics = asked ? founderTopics(memo) : [];
+      out += `<${b.tag}${controlled ? ' class="memo-folds"' : asked ? ' class="memo-questions"' : ""}>${b.items.map((it, n) => {
+        if (asked) return memoQuestion(it, topics.length === b.items.length ? topics[n] : "");
         const index = controlled ? next++ : -1;
-        const sub = index >= 0 ? it.sub.filter((x) => !x.startsWith("Investor note: ")) : it.sub;
-        return `<li>${memoInline(it.text)}${sub.length ? `<ul>${sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : ""}${
-          index >= 0 && items[index] ? memoItemControls(items[index], index) : ""}</li>`;
+        if (index >= 0 && items[index]) return foldedMemoItem(it, items[index], index, memo);
+        return `<li>${memoInline(it.text)}${memoSubList(it.sub)}</li>`;
       }).join("")}</${b.tag}>`;
     } else if (b.lines) out += `<p>${b.lines.map(memoInline).join("<br>")}</p>`;
     else if (b.text != null) out += `<${b.tag}>${memoInline(b.text)}</${b.tag}>`;
@@ -2066,6 +2154,12 @@ $("claims-body").addEventListener("click", async (e) => {
   }
   if (e.target.closest("[data-note-cancel]")) {
     claims.memo.editingNote = null;
+    return renderMemo();
+  }
+  const fold = e.target.closest("[data-memo-fold]");
+  if (fold) {
+    const key = fold.dataset.memoFold;
+    if (claims.memoOpen.has(key)) claims.memoOpen.delete(key); else claims.memoOpen.add(key);
     return renderMemo();
   }
   const remove = e.target.closest("[data-memo-remove]");

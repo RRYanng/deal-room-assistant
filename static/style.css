@@ -480,6 +480,23 @@ button.small-button { padding: 4px 11px; font-size: 12px; border-radius: 8px; }
 .memo-note-add { color: var(--link); text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--link) 35%, transparent); text-underline-offset: 3px; }
 .memo-remove { font-size: 13px; }
+/* One line per confirmed item; ▸ opens the quotes, evidence, note and Remove. Print shows the full text. */
+.memo-doc ul.memo-folds { list-style: none; padding-left: 0; margin: 4px 0 12px; }
+.memo-doc .memo-folds > li { margin: 0; }
+.memo-fold { display: flex; gap: 8px; width: 100%; padding: 5px 0; border: 0; border-radius: 0; background: none;
+  color: var(--text); font-size: 15px; font-weight: 400; line-height: 1.55; text-align: left; cursor: pointer; }
+.memo-fold:hover:not(:disabled) { background: none; }
+.memo-fold:hover .memo-fold-arrow, .memo-item.open .memo-fold-arrow { color: var(--text); }
+.memo-fold-arrow { flex: none; width: 12px; color: var(--muted); font-size: 17px; line-height: 23px; }
+.memo-line { min-width: 0; }
+.memo-line-date { color: var(--muted); }
+.memo-detail { margin: 0 0 12px 20px; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.memo-doc .memo-detail ul { margin: 2px 0 4px; padding-left: 16px; }
+.memo-doc .memo-detail li { margin: 3px 0; }
+.memo-detail b { color: var(--text); }
+.memo-doc ol.memo-questions li { margin: 6px 0; }
+.memo-q-topic { color: var(--muted); }
+.memo-print { display: none; }
 .memo-note-form { display: flex; gap: 6px; align-items: flex-start; width: 100%; }
 .memo-note-form textarea { flex: 1; font-size: 13.5px; }
 .print-only { display: none; }
@@ -535,5 +552,10 @@ button.small-button { padding: 4px 11px; font-size: 12px; border-radius: 8px; }
   body.memo-open .memo-doc li { break-inside: avoid; }
   body.memo-open .memo-remove, body.memo-open .memo-note-add, body.memo-open .memo-notes-editor { display: none !important; }
   body.memo-open .print-only { display: block; }
+  body.memo-open .memo-screen { display: none !important; }
+  body.memo-open div.memo-print { display: block; }
+  body.memo-open span.memo-print { display: inline; }
+  body.memo-open .memo-doc ul.memo-folds { list-style: disc; padding-left: 22px; }
+  body.memo-open .memo-doc .memo-folds > li { margin: 8px 0; }
   body.memo-open .memo-note { color: var(--muted); text-decoration: none; }
 }
