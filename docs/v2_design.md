@@ -591,3 +591,6 @@ statuses, evidence and fingerprints are unchanged.
   after a note is saved. Questions for the founder show the question alone, after the topic it comes from (two
   questions can be worded alike); the full question is its hover text. Investor notes stay on top. Print / Save
   as PDF prints every item and question in full, and Copy and Download use the memo's Markdown, unchanged.
+- 2026-11-15, under an answer, "Numbers without a date" and "Open items" start folded to one clickable line with
+  their count, "Numbers without a date (8) ▸"; a click opens the list in place (as "Show evidence" does) and the
+  answer remembers it. "Conflicting information" stays open.

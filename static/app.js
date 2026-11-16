@@ -12,6 +12,7 @@ const state = {
   librarySearch: null,  // after Enter: {query, results} from the keyword search, or {query, loading/error}
   openSummaries: new Set(),  // files whose summary is shown in full
   openEvidence: new Set(),
+  openBoxes: new Set(),  // the opened "Numbers without a date" and "Open items" boxes under answers
   upload: null,         // the file and suggestions behind the open confirmation dialog
   batch: null,          // the files in the batch table
   lastBrief: null,
@@ -232,14 +233,33 @@ function conflictHtml(c) {
     ${c.values.length} different values. Not resolved — check the sources.${sources}</div>`;
 }
 
+// "Numbers without a date (9) ▸": folded to its title line until clicked (Conflicting information stays open).
+function foldedBoxHtml(id, title, items) {
+  const open = state.openBoxes.has(id);
+  return `<div class="box warn box-folded${open ? " open" : ""}">
+    <button type="button" class="box-title box-fold" data-box="${id}" aria-expanded="${open}" aria-controls="${id}">${esc(title)} (${items.length})
+      <span class="box-arrow" aria-hidden="true">${open ? "▾" : "▸"}</span></button>
+    <ul id="${id}" ${open ? "" : "hidden"}>${items.join("")}</ul></div>`;
+}
+
+// A click on the title line opens or closes the list in place, as "Show evidence" does.
+function toggleBox(button) {
+  const list = document.getElementById(button.dataset.box);
+  list.hidden = !list.hidden;
+  button.setAttribute("aria-expanded", String(!list.hidden));
+  button.querySelector(".box-arrow").textContent = list.hidden ? "▸" : "▾";
+  button.parentElement.classList.toggle("open", !list.hidden);
+  if (list.hidden) state.openBoxes.delete(button.dataset.box); else state.openBoxes.add(button.dataset.box);
+}
+
 function answerHtml(a, entryId) {
   const claims = a.evidence_groups.map((g, j) => claimGroupHtml(a, g, `ev-${entryId}-${j}`)).join("");
-  const open = a.open_items.length ? `<div class="box warn"><div class="box-title">Open items</div>
-    <ul>${a.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>` : "";
+  const open = a.open_items.length ? foldedBoxHtml(`open-${entryId}`, "Open items",
+    a.open_items.map((o) => `<li>${esc(o)}</li>`)) : "";
   const conflicts = a.conflicts.length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
     ${a.conflicts.map(conflictHtml).join("<hr>")}</div>` : "";
-  const unclear = a.unclear_basis.length ? `<div class="box warn"><div class="box-title">Numbers without a date</div>
-    <ul>${a.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)}</li>`).join("")}</ul></div>` : "";
+  const unclear = a.unclear_basis.length ? foldedBoxHtml(`undated-${entryId}`, "Numbers without a date",
+    a.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)}</li>`)) : "";
   const tools = [...new Set(a.tool_calls.map((t) => t.tool))].join(", ") || "none";
   return `<div class="answer">
     ${claims || '<div class="muted">No answer found in this company\'s materials.</div>'}
@@ -258,6 +278,8 @@ $("chat").addEventListener("click", (e) => {
     button.textContent = box.hidden ? button.dataset.show : "Hide evidence";
     if (box.hidden) state.openEvidence.delete(button.dataset.toggle);
     else state.openEvidence.add(button.dataset.toggle);
+  } else if (button.dataset.box) {
+    toggleBox(button);
   } else if (button.dataset.choose) {
     chooseCompany(Number(button.dataset.choose), Number(button.dataset.company));
   } else if (button.dataset.openIssues) {
