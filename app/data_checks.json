@@ -11,8 +11,16 @@
   "_same_metric": "Labels the extraction writes differently for the same metric, mapped to one name.",
   "same_metric": {
     "current gross margin": "gross margin",
+    "gross margin (current)": "gross margin",
+    "gross margin range": "gross margin",
     "average monthly net burn": "monthly net burn",
-    "us annual dental care spend": "us dental care spending per year"
+    "us annual dental care spend": "us dental care spending per year",
+    "us independent dental practices": "independent dental practices in us",
+    "independent dental practices (us)": "independent dental practices in us",
+    "number of independent dental practices in the us": "independent dental practices in us",
+    "us dental practices": "independent dental practices in us",
+    "total addressable market (tam)": "total addressable market",
+    "tam": "total addressable market"
   },
   "_same_period_days": "Two dates at most this many days apart are the same period: different values then are a conflict.",
   "same_period_days": 31
