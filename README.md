@@ -38,7 +38,7 @@ themselves), an optional **Company** selector and
 
 ## v2: diligence co-pilot
 
-Released as tag `v2.0` on `main`; `v2.1` adds Library summaries and search, and a memo of confirmed items with editable notes. Design and decisions: [docs/v2_design.md](docs/v2_design.md).
+Released as tag `v2.0` on `main`; `v2.1` adds Library summaries and search, and a memo of confirmed items with editable notes; `v2.2` shows locations in words ("p.5, para 2") and renames unclear basis to "Numbers without a date". Design and decisions: [docs/v2_design.md](docs/v2_design.md).
 
 v2 checks a pitch deck the way an associate would before a partner meeting: what does the deck
 claim, what do the company's other files and public sources say, what changed since the last deck,
