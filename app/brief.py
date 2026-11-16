@@ -10,7 +10,7 @@ Two kinds of content, kept apart on purpose:
 
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 
 from app.agent import NOT_FOUND, run_agent, verify_items
 from app.citations import display_locations, normalize_ws
@@ -93,7 +93,7 @@ def generate_brief(conn: sqlite3.Connection, company_id: int, requirements: str,
         "run_id": run["run_id"],
         "company": company,
         "requirements": requirements,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "generated_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"),  # local time, as the memo
         "sections": sections,
         "key_metrics": key_metrics(conn, company_id),
         "recent_communications": recent_communications(conn, company_id),

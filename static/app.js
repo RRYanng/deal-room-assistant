@@ -1990,7 +1990,7 @@ $("claims-run").onclick = async () => {
   const deck = claims.data && claims.data.run ? ` (${claims.data.run.filename})` : "";
   const go = await confirmRun("Run deck check?", [
     `The model reads the newest deck${deck}, checks it against the company's files and searches the web.`,
-    runEstimate(claims.data && claims.data.run, "about 3 min", "about $0.70"),
+    runEstimate(claims.data && claims.data.run, "about 3 min"),
     "The new results replace the ones shown now. Confirm and dismiss decisions are kept."]);
   if (!go || !claims.companyId) return;
   $("claims-run").disabled = true;
@@ -2107,14 +2107,14 @@ $("run-cancel").onclick = () => finishRun(false);
 $("run-confirm").onclick = () => finishRun(true);
 $("run-dialog").addEventListener("cancel", () => finishRun(false)); // Escape
 
-// Time and cost of the last run when there is one, else a typical figure.
-function runEstimate(last, time, cost) {
+// How long the last run took when there is one, else a typical time.
+function runEstimate(last, time) {
   const u = last && last.usage;
-  if (u && u.estimated_usd != null) {
-    const time = u.seconds < 60 ? "under a minute" : `about ${Math.round(u.seconds / 60)} min`;
-    return `It takes ${time} and costs about $${u.estimated_usd.toFixed(2)}, judging by the last run.`;
+  if (u && u.seconds != null) {
+    const took = u.seconds < 60 ? "under a minute" : `about ${Math.round(u.seconds / 60)} min`;
+    return `It takes ${took}, judging by the last run.`;
   }
-  return `It takes ${time} and costs ${cost}.`;
+  return `It takes ${time}.`;
 }
 
 // ---------------------------------------------------------------- portfolio monitoring
@@ -2313,7 +2313,7 @@ $("monitor-run").onclick = async () => {
   if (!mon.companyId) return;
   const go = await confirmRun("Run monitoring?", [
     "The model reads the company's quarterly updates; the program recalculates runway, growth and the signals.",
-    runEstimate(mon.data && mon.data.run, "under 1 min", "about $0.10"),
+    runEstimate(mon.data && mon.data.run, "under 1 min"),
     "Confirm and dismiss decisions are kept."]);
   if (!go || !mon.companyId) return;
   $("monitor-run").disabled = true;

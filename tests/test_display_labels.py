@@ -1,6 +1,10 @@
 """Display wording only: locations read "p.5, para 2" and "para 3" (CSV keeps "row 3") wherever they are shown,
 and metrics without a date are "Numbers without a date" / "no date stated". Stored labels and logic are
-unchanged (chunks keep "p.5 ¶2"; questions and evidence are built from them as before)."""
+unchanged (chunks keep "p.5 ¶2"; questions and evidence are built from them as before). Also: the run dialogs
+give the time only, and the Brief is stamped in local time."""
+
+import json
+import re
 
 import pytest
 
@@ -123,3 +127,40 @@ def test_answers_brief_and_library_use_the_new_wording(db, company):
     search = {"query": "gross margin", "results": library_search(q="gross margin", conn=db)["results"]}
     html = render("state.librarySearch = DATA; librarySearchHtml()", search)
     assert "p.5, para 2, p.9, para 3" in html and "¶" not in html
+
+
+# --- run dialogs: time only; Brief: local time ---------------------------------------------------
+
+@needs_node
+def test_run_dialogs_give_the_time_only():
+    last = {"usage": {"seconds": 190, "estimated_usd": 0.62}}
+    assert render(f"runEstimate({json.dumps(last)}, 'about 3 min')", None) == \
+        "It takes about 3 min, judging by the last run."
+    assert render("runEstimate({usage: {seconds: 40, estimated_usd: 0.09}}, 'under 1 min')", None) == \
+        "It takes under a minute, judging by the last run."
+    assert render("runEstimate(null, 'about 3 min')", None) == "It takes about 3 min."
+    app_js = (PROJECT_ROOT / "static" / "app.js").read_text()
+    dialogs = [app_js[app_js.index(t):app_js.index("]);", app_js.index(t))] for t in ("Run deck check?", "Run monitoring?")]
+    assert all(not re.search(r"\$\d|estimated_usd|cost", d) for d in dialogs)  # no amounts in either dialog
+    assert "estimated_usd" not in app_js[app_js.index("function runEstimate"):app_js.index("// ---", app_js.index("function runEstimate"))]
+
+
+def test_brief_is_stamped_in_local_time(monkeypatch):
+    import time
+
+    from app.brief import generate_brief
+    from app.db import connect, init_db
+    from tests.helpers import load_samples
+    from tests.test_brief import fake_brief_llm
+
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    try:
+        conn = connect(":memory:")
+        init_db(conn)
+        cid = load_samples(conn, include_update=True)["Tidewell Insurance"]
+        stamp = generate_brief(conn, cid, "overview", fake_brief_llm())["generated_at"]
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()
+    assert stamp.endswith((" PST", " PDT")) and "UTC" not in stamp, stamp  # as the memo: "2026-11-15 15:29 PST"
