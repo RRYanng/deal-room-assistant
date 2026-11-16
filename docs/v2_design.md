@@ -546,3 +546,13 @@ statuses, evidence and fingerprints are unchanged.
   when the text is not empty, so Copy Markdown, Download .md and the printed PDF include it. On screen the box
   above the memo shows it (the section is print-only there); Print, Copy and Download save typed text first.
 
+## 30. Display labels (2026-11-15)
+
+- Locations are shown in words: "p.5 ¶2" reads "p.5, para 2", "¶3" reads "para 3"; CSV keeps "row 3".
+  Display only: chunks keep their stored labels ("deck.pdf p.5 ¶2"), and questions, evidence and every check
+  are built from those as before. The page converts all text it shows (`esc` in static/app.js), and the
+  server converts the memo and Brief Markdown (`citations.display_locations`), so Copy, Download and the
+  printed PDF match the page. Headlines still name only the page ("67–82% on p.5 vs above 90% on p.9").
+- Data checks: "Unclear basis" is now "Numbers without a date", and the reason "no as-of date stated" is
+  "no date stated"; the same wording in answers, the Brief and the Library key metrics ("no date" badge).
+

@@ -79,7 +79,7 @@ def test_markdown_export_keeps_sources(tidewell):
     md = brief_to_markdown(generate_brief(conn, cid, "", fake_brief_llm()))
     assert "# Company brief: Tidewell Insurance" in md
     assert "- revenue: Not found in the provided materials" in md
-    assert '[tidewell_update_2026-08.txt ¶2: "As of June 30, 2026, we had 80 paying customers' in md
+    assert '[tidewell_update_2026-08.txt para 2: "As of June 30, 2026, we had 80 paying customers' in md
     assert "tidewell_crm.csv row 3" in md
 
 
@@ -133,7 +133,7 @@ def test_traction_bullet_with_conflicting_value_gets_the_note(tidewell):
 def test_note_appears_after_the_bullet_in_markdown(tidewell):
     conn, cid = tidewell
     md = brief_to_markdown(generate_brief(conn, cid, "", brief_with(traction_and_risks)))
-    assert f"- About paying_customers. {RISKS_NOTE} [tidewell_meeting_notes.md ¶3:" in md
+    assert f"- About paying_customers. {RISKS_NOTE} [tidewell_meeting_notes.md para 3:" in md
     assert "- About registered_customers. [tidewell_deck.pdf" in md
 
 
@@ -255,7 +255,7 @@ def test_markdown_shows_values_with_units(tidewell):
     md = brief_to_markdown(generate_brief(conn, cid, "", fake_brief_llm()))
     assert "- paying_customers: 60 customers as of 2026-06-30" in md
     assert "  - 80 customers [tidewell_update_2026-08.txt" in md
-    assert "- funding_raised: USD 1,200,000 (no as-of date stated)" in md
+    assert "- funding_raised: USD 1,200,000 (no date stated)" in md
 
 
 # --- no repeats between model and program sections --------------------------------------------

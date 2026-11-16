@@ -21,10 +21,17 @@ let nextEntryId = 1;
 
 const $ = (id) => document.getElementById(id);
 
-function esc(value) {
+function escHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+
+// Locations in words wherever text is shown: "p.5 ¶2" -> "p.5, para 2", "¶3" -> "para 3" (CSV "row 3" stays).
+// Display only: stored labels keep the ¶ form (the server's memo and brief Markdown do the same).
+const showLocations = (text) => String(text ?? "").replace(/(p\.\d+) ¶(\d+)/g, "$1, para $2").replace(/¶(\d+)/g, "para $1");
+
+// Every text put into the page goes through esc. What the investor types is shown as typed (escHtml).
+const esc = (value) => escHtml(showLocations(value));
 
 async function api(path, options = {}) {
   const res = await fetch(path, options);
@@ -213,7 +220,7 @@ function answerHtml(a, entryId) {
     <ul>${a.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>` : "";
   const conflicts = a.conflicts.length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
     ${a.conflicts.map(conflictHtml).join("<hr>")}</div>` : "";
-  const unclear = a.unclear_basis.length ? `<div class="box warn"><div class="box-title">Unclear basis</div>
+  const unclear = a.unclear_basis.length ? `<div class="box warn"><div class="box-title">Numbers without a date</div>
     <ul>${a.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)}</li>`).join("")}</ul></div>` : "";
   const tools = [...new Set(a.tool_calls.map((t) => t.tool))].join(", ") || "none";
   return `<div class="answer">
@@ -994,7 +1001,7 @@ async function libraryHtml() {
 
 function libraryBodyHtml() {
   return `<form id="library-search" class="library-search" role="search">
-      <input id="library-query" type="search" value="${esc(state.libraryQuery)}" autocomplete="off"
+      <input id="library-query" type="search" value="${escHtml(state.libraryQuery)}" autocomplete="off"
         placeholder="Search files · press Enter to search inside them" aria-label="Search files">
     </form>
     <div id="library-results">${librarySearchHtml()}</div>
@@ -1096,7 +1103,7 @@ function metricsHtml(metrics) {
     <tr>
       <td>${esc(metricName(m.metric, m.metric_label))}</td>
       <td class="num">${esc(m.display_value)}</td>
-      <td class="num">${m.as_of_date ? esc(m.as_of_date) : '<span class="badge warn">unclear basis</span>'}</td>
+      <td class="num">${m.as_of_date ? esc(m.as_of_date) : '<span class="badge warn">no date</span>'}</td>
       <td>${sourceSpan(m)}</td>
     </tr>`).join("");
   return `<table>
@@ -1112,7 +1119,7 @@ async function issueListHtml() {
   return state.issues.map((c) => `
     <button type="button" class="issue-row" data-issues-company="${c.id}">
       <span>${esc(c.name)} · ${plural(c.total, "issue")}</span>
-      <span class="muted">${plural(c.conflicts, "conflict")}, ${c.missing} missing, ${c.unclear_basis} unclear</span>
+      <span class="muted">${plural(c.conflicts, "conflict")}, ${c.missing} missing, ${c.unclear_basis} without a date</span>
     </button>`).join("");
 }
 
@@ -1150,7 +1157,7 @@ async function issueDetailHtml(companyId) {
     <h2 class="dialog-title" style="margin:10px 0 14px">${esc(company.name)} · ${plural(company.total, "issue")}</h2>
     ${group("Conflicts", checks.conflicts.length, conflicts)}
     ${group("Missing", checks.missing.length, missing)}
-    ${group("Unclear basis", checks.unclear_basis.length, unclear)}`;
+    ${group("Numbers without a date", checks.unclear_basis.length, unclear)}`;
 }
 
 $("drawer-body").addEventListener("input", (e) => {
@@ -1282,7 +1289,7 @@ function showBrief(b) {
   const missing = b.missing.length ? `<ul>${b.missing.map((m) => `<li>${esc(metricName(m.metric))}: Not found in the provided materials</li>`).join("")}</ul>`
     : '<div class="muted">None of the key metrics are missing.</div>';
   const conflicts = b.conflicts.length ? b.conflicts.map(conflictHtml).join("<hr>") : '<div class="muted">No conflicts detected.</div>';
-  const unclear = b.unclear_basis.length ? `<h3>Unclear basis</h3><ul>${b.unclear_basis.map((u) =>
+  const unclear = b.unclear_basis.length ? `<h3>Numbers without a date</h3><ul>${b.unclear_basis.map((u) =>
     `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)} <span class="cite">[${sourceSpan(u)}]</span></li>`).join("")}</ul>` : "";
   const open = b.open_items.length ? `<h3>Open items</h3><ul>${b.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>` : "";
 
@@ -1569,7 +1576,7 @@ const pageOf = (c) => (c && (/p\.\d+/.exec(locationOf(c)) || [])[0]) || null;
 function displayText(text, page) {
   let t = String(text);
   if (page) t = t.replace(/ here and /, ` on ${page}, `).replace(/\bhere\b/, `on ${page}`);
-  return t.replace(/(p\.\d+) ¶\d+/g, "$1")
+  return t.replace(/(p\.\d+)(?: ¶|, para )\d+/g, "$1")  // headlines name the page; the source lines give the paragraph
     .replace(/\$(\d{1,3}(?:,\d{3})+)(?!,?\d)/g, (m, digits) => shortMoney(digits) || m)
     .replace(/(\d) x (\$?\d)/g, "$1 × $2")
     .replace(/(\d)-(\d+%)/g, "$1–$2");
@@ -1878,7 +1885,7 @@ function renderMemo() {
     </div>
     <section class="memo-notes-editor">
       <label for="memo-notes" class="memo-notes-label">Investor notes</label>
-      <textarea id="memo-notes" rows="4" placeholder="Your overall view of the company. It goes at the top of the memo, and into the PDF, the copy and the download.">${esc(m.notesDraft ?? m.notes.text)}</textarea>
+      <textarea id="memo-notes" rows="4" placeholder="Your overall view of the company. It goes at the top of the memo, and into the PDF, the copy and the download.">${escHtml(m.notesDraft ?? m.notes.text)}</textarea>
       <div class="memo-notes-actions">
         <button type="button" class="secondary" id="memo-notes-save">Save notes</button>
         <span id="memo-notes-status" class="muted small">${esc(notesStatus())}</span>
@@ -1893,7 +1900,7 @@ function memoItemControls(item, index) {
   const editing = claims.memo.editingNote === index;
   const note = editing
     ? `<form class="memo-note-form" data-note-form="${index}">
-        <textarea rows="2" aria-label="Investor note">${esc(item.note || "")}</textarea>
+        <textarea rows="2" aria-label="Investor note">${escHtml(item.note || "")}</textarea>
         <button type="submit">Save</button>
         <button type="button" class="secondary" data-note-cancel="1">Cancel</button>
       </form>`
@@ -1906,8 +1913,8 @@ function memoItemControls(item, index) {
 function memoText(markdown) {
   let page = null;
   return markdown.split("\n").map((line) => {
-    if (line.startsWith("- ")) page = (/\(\S+ (p\.\d+) ¶\d+\)/.exec(line) || [])[1] || null;
-    return line.split(/("[^"]*"|“[^”]*”|\([^()]*¶[^()]*\)|https?:\/\/\S+)/)
+    if (line.startsWith("- ")) page = (/\(\S+ (p\.\d+), para \d+\)/.exec(line) || [])[1] || null;
+    return line.split(/("[^"]*"|“[^”]*”|\([^()]*para \d+[^()]*\)|https?:\/\/\S+)/)
       .map((part, i) => (i % 2 ? part : displayText(part, page))).join("");
   }).join("\n");
 }
@@ -1983,7 +1990,7 @@ $("claims-run").onclick = async () => {
   const deck = claims.data && claims.data.run ? ` (${claims.data.run.filename})` : "";
   const go = await confirmRun("Run deck check?", [
     `The model reads the newest deck${deck}, checks it against the company's files and searches the web.`,
-    runEstimate(claims.data && claims.data.run, "about 3 min", "about $0.70"),
+    runEstimate(claims.data && claims.data.run, "about 3 min"),
     "The new results replace the ones shown now. Confirm and dismiss decisions are kept."]);
   if (!go || !claims.companyId) return;
   $("claims-run").disabled = true;
@@ -2100,14 +2107,14 @@ $("run-cancel").onclick = () => finishRun(false);
 $("run-confirm").onclick = () => finishRun(true);
 $("run-dialog").addEventListener("cancel", () => finishRun(false)); // Escape
 
-// Time and cost of the last run when there is one, else a typical figure.
-function runEstimate(last, time, cost) {
+// How long the last run took when there is one, else a typical time.
+function runEstimate(last, time) {
   const u = last && last.usage;
-  if (u && u.estimated_usd != null) {
-    const time = u.seconds < 60 ? "under a minute" : `about ${Math.round(u.seconds / 60)} min`;
-    return `It takes ${time} and costs about $${u.estimated_usd.toFixed(2)}, judging by the last run.`;
+  if (u && u.seconds != null) {
+    const took = u.seconds < 60 ? "under a minute" : `about ${Math.round(u.seconds / 60)} min`;
+    return `It takes ${took}, judging by the last run.`;
   }
-  return `It takes ${time} and costs ${cost}.`;
+  return `It takes ${time}.`;
 }
 
 // ---------------------------------------------------------------- portfolio monitoring
@@ -2306,7 +2313,7 @@ $("monitor-run").onclick = async () => {
   if (!mon.companyId) return;
   const go = await confirmRun("Run monitoring?", [
     "The model reads the company's quarterly updates; the program recalculates runway, growth and the signals.",
-    runEstimate(mon.data && mon.data.run, "under 1 min", "about $0.10"),
+    runEstimate(mon.data && mon.data.run, "under 1 min"),
     "Confirm and dismiss decisions are kept."]);
   if (!go || !mon.companyId) return;
   $("monitor-run").disabled = true;

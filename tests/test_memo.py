@@ -5,6 +5,7 @@ import re
 
 import pytest
 
+from app.citations import display_locations
 from app.claims import create_run, run_claim_check
 from app.memo import build_memo, founder_questions, memo_to_markdown
 from app.monitor import create_run as create_monitor_run, run_monitor
@@ -84,7 +85,8 @@ def test_memo_holds_only_the_confirmed_findings_and_their_questions(db, memo):
     expected = [size["question"]["text"], margin["members"][0]["question"]["text"]]
     assert founder_questions(again) == expected
     questions = [l for l in section(text, "## Questions for the founder").splitlines() if l.strip()]
-    assert questions[:2] == [f"1. {expected[0]}", f"2. {expected[1]}"] and len(questions) == 3
+    assert questions[:2] == [f"1. {display_locations(expected[0])}", f"2. {display_locations(expected[1])}"]
+    assert len(questions) == 3
     assert questions[2] == awaiting_line(again) and text.rstrip().endswith(awaiting_line(again))
 
 

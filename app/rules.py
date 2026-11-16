@@ -73,7 +73,7 @@ def unclear_basis(conn: sqlite3.Connection, company_id: int) -> list[dict]:
     for m in get_metrics(conn, company_id):
         reasons = []
         if m["as_of_date"] is None:
-            reasons.append("no as-of date stated")
+            reasons.append("no date stated")
         if m["value"] is None:
             reasons.append("value could not be read as a number")
         if reasons:

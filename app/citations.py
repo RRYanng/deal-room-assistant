@@ -8,6 +8,14 @@ import re
 import sqlite3
 
 _WS = re.compile(r"\s+")
+_PAGE_PARA = re.compile(r"(p\.\d+) ¶(\d+)")
+_PARA = re.compile(r"¶(\d+)")
+
+
+def display_locations(text: str) -> str:
+    """Locations in words for people: "p.5 ¶2" -> "p.5, para 2", "¶3" -> "para 3"; CSV "row 3" stays.
+    Display only: stored labels keep the ¶ form, and every check works on those."""
+    return _PARA.sub(r"para \1", _PAGE_PARA.sub(r"\1, para \2", text))
 
 
 def normalize_ws(text: str) -> str:

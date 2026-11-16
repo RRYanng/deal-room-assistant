@@ -141,7 +141,7 @@ def test_enter_shows_which_files_mention_the_words_and_how_often(db, library):
     assert html.index(DECK) < html.index("clearclaim_meeting_notes.md")
     text = " ".join(html.split())
     assert "2 files mention “gross margin”" in text
-    assert "2 mentions" in text and "1 mention" in text and "p.5 ¶2, p.9 ¶3" in text
+    assert "2 mentions" in text and "1 mention" in text and "p.5, para 2, p.9, para 3" in text
     none = library_page(db, "librarySearchHtml()", "submarine", {"query": "submarine", "results": []})
     assert "No file mentions “submarine”" in " ".join(none.split())
 
