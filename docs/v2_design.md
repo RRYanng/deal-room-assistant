@@ -556,3 +556,16 @@ statuses, evidence and fingerprints are unchanged.
 - Data checks: "Unclear basis" is now "Numbers without a date", and the reason "no as-of date stated" is
   "no date stated"; the same wording in answers, the Brief and the Library key metrics ("no date" badge).
 
+
+## 31. A second look: warm sidebar layout (branch feature/claude-style, 2026-11-15)
+
+- Runs beside the v2.2 version: worktree `../deal-room-claude-style`, port 8004; main and 8002 (v2.2)
+  are untouched. Only `static/index.html` and `static/style.css` change; every element id, the page script,
+  the back end and the data are as in v2.2.
+- Layout: a narrow sidebar (brand, Library, Data checks, Deck check, Portfolio, company, Generate Brief) and the
+  conversation in one centred column, with the input as a rounded card at the bottom. Below 860px the sidebar
+  becomes a bar across the top.
+- Look: warm off-white paper, dark grey text, one terracotta accent for buttons, links and the selected item;
+  serif headings (system serif) and sans-serif text; fewer borders, softer corners. Dark mode uses the same
+  roles on warm charcoal. Status colours (red, amber, green, teal) keep their meaning; the runway line is
+  neutral ink so amber and red mark only Warning and High. Own simple line icons; no third-party logos or names.
