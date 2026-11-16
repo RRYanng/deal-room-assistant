@@ -594,3 +594,9 @@ statuses, evidence and fingerprints are unchanged.
 - 2026-11-15, under an answer, "Numbers without a date" and "Open items" start folded to one clickable line with
   their count, "Numbers without a date (8) ▸"; a click opens the list in place (as "Show evidence" does) and the
   answer remembers it. "Conflicting information" stays open.
+- 2026-11-15, the upload confirmation dialog chooses no company when none is found in the file, not even the one
+  selected in the sidebar: the list starts on "Choose a company or add a new one" (with "+ New company…" kept),
+  the hint says "No company found in this file.", and Add stays "Add" and disabled until a company is chosen,
+  then reads "Add to <company>". A company found in the file is still chosen for you. When the material type is
+  guessed from the extension alone (PDF or text file), it starts on "Other – choose a type" and Add waits for a
+  choice; nothing is stored as "Other", since the server knows only Pitch deck, Meeting notes and CRM records.

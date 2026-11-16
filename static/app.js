@@ -381,7 +381,7 @@ async function analyzeFile(file) {
 
 function companyHint(c) {
   if (c.model_error) return "The file could not be checked for a company. You can still choose one.";
-  if (c.source === "none") return "No company recognized in this file. Please choose one.";
+  if (c.source === "none") return "No company found in this file.";
   const from = { "file name": "from the file name", "file content": "from the file's content", model: "by the model, from the file's content" };
   return `Suggested: ${c.name} (${from[c.source]}).`;
 }
@@ -400,14 +400,22 @@ function dateHint(s, date, edited, kept) {
   return "No date found. Add one if you know it.";
 }
 
+// The server guesses the material type from the extension alone when the file name and content say nothing
+// ("PDF file", "text file"). Then the dialog starts on "Other – choose a type" and Add waits for a choice.
+const TYPE_FROM_EXTENSION = ["PDF file", "text file"];
+
+function typeHint(s) {
+  if (!$("upload-type").value) return "The file name and content do not say. Choose a type.";
+  return TYPE_FROM_EXTENSION.includes(s.doc_type_why) ? "" : `Suggested from: ${s.doc_type_why}.`;  // "" once you choose
+}
+
 function openUploadDialog(file, s) {
-  state.upload = { file, suggestion: s, dateEdited: false };
+  state.upload = { file, suggestion: s, dateEdited: false, warnings: [] };
   const options = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("upload-company").innerHTML = `<option value="">Choose a company…</option>${options}
+  $("upload-company").innerHTML = `<option value="">Choose a company or add a new one</option>${options}
     <option value="${NEW_COMPANY}">+ New company…</option>`;
-  // With nothing recognized in the file, start from the company selected at the top of the page.
-  const fallback = state.current ? String(state.current.id) : "";
-  $("upload-company").value = s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : fallback;
+  // With no company found in the file, nothing is chosen: not even the company selected in the sidebar.
+  $("upload-company").value = s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : "";
   $("upload-new-company").value = s.company.existing ? "" : s.company.name || "";
   $("upload-filename").textContent = s.filename;
   $("upload-company-why").textContent = companyHint(s.company);
@@ -415,8 +423,8 @@ function openUploadDialog(file, s) {
   // A CSV can only be CRM records, and CRM records can only be a CSV.
   const isCsv = s.filename.toLowerCase().endsWith(".csv");
   for (const option of $("upload-type").options) option.disabled = (option.value === "crm") !== isCsv;
-  $("upload-type").value = s.doc_type;
-  $("upload-type-why").textContent = `Suggested from: ${s.doc_type_why}.`;
+  $("upload-type").value = TYPE_FROM_EXTENSION.includes(s.doc_type_why) ? "" : s.doc_type;
+  $("upload-type-why").textContent = typeHint(s);
   $("upload-date").value = s.doc_date || "";
 
   syncNewCompanyField();
@@ -441,8 +449,15 @@ function renderUploadWarnings(warnings) {
   const notices = (modelError ? [{ kind: "model_error", message: modelError }] : []).concat(warnings);
   $("upload-warnings").innerHTML = notices.map((w) =>
     `<div class="warning" role="alert" data-kind="${esc(w.kind)}">${esc(w.message)}</div>`).join("");
+  if (state.upload) state.upload.warnings = warnings;
+  syncUploadConfirm();
+}
+
+// "Add" and disabled until a company is chosen, then "Add to <company>"; it also waits for a material type.
+function syncUploadConfirm() {
   const name = chosenCompanyName();
-  $("upload-confirm").disabled = !name;
+  const warnings = state.upload?.warnings || [];
+  $("upload-confirm").disabled = !name || !$("upload-type").value;
   $("upload-confirm").textContent = !name ? "Add" : warnings.length ? "Add anyway" : `Add to ${name}`;
 }
 
@@ -471,6 +486,11 @@ function applyReplacedDate(warnings) {
 }
 
 $("upload-company").onchange = () => { syncNewCompanyField(); refreshUploadWarnings(); };
+$("upload-type").onchange = () => {
+  if (!state.upload) return;
+  $("upload-type-why").textContent = typeHint(state.upload.suggestion);
+  syncUploadConfirm();
+};
 $("upload-date").addEventListener("input", () => {
   if (!state.upload) return;
   state.upload.dateEdited = true;
@@ -493,7 +513,7 @@ $("upload-dialog").addEventListener("cancel", closeUploadDialog); // Escape
 $("upload-form").onsubmit = (e) => {
   e.preventDefault();
   const name = chosenCompanyName();
-  if (!name || !state.upload) return;
+  if (!name || !$("upload-type").value || !state.upload) return;
   const details = {
     file: state.upload.file,
     companyValue: $("upload-company").value,
