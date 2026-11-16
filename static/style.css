@@ -1,6 +1,7 @@
-/* Black and white: white paper, black and dark grey ink, light grey rules. Buttons, links and the selected
-   item are black. Only the status labels keep colour (red, amber, green, blue-grey), at low saturation.
-   Dark mode: the same roles, white on black. Serif headings, sans-serif text, generous space. */
+/* Black and white with one accent: white paper, black and dark grey ink, light grey rules. Navy marks what you
+   act on or have chosen: the "D" mark, the selected sidebar item, links, primary buttons and the selected tab.
+   Only the status labels keep their own colours (red, amber, green, blue-grey), at low saturation.
+   Dark mode: the same roles, white on black, with a brighter blue for contrast. */
 :root {
   --bg: #ffffff;           /* page */
   --sidebar: #f9f9f8;
@@ -12,10 +13,11 @@
   --text: #141414;
   --muted: #6b6b6b;
   --border: #e5e5e4;
-  --accent: #141414;       /* black: buttons, links, selected */
-  --accent-hover: #3a3a3a;
+  --accent: #1e3a8a;       /* navy: primary buttons, the mark, focus */
+  --accent-hover: #172f70;
   --accent-text: #ffffff;
-  --accent-soft: #f0f0ef;
+  --accent-soft: #e9eef9;  /* the selected sidebar item */
+  --link: #1e3a8a;         /* links, selected text, the selected tab's underline */
   --danger: #a24339;
   --danger-soft: #f6e8e6;
   --warn: #85671f;
@@ -49,10 +51,11 @@
     --text: #f2f2f2;
     --muted: #a3a3a3;
     --border: #2f2f2f;
-    --accent: #f2f2f2;
-    --accent-hover: #d4d4d4;
-    --accent-text: #121212;
-    --accent-soft: #262626;
+    --accent: #3d5fd9;
+    --accent-hover: #4d6ee3;
+    --accent-text: #ffffff;
+    --accent-soft: #1c2545;
+    --link: #a7b9ff;
     --danger: #e0968d;
     --danger-soft: #3a2422;
     --warn: #d6bb78;
@@ -97,7 +100,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-weight: 450; white-space: nowrap;
 }
 .nav-item:hover { background: var(--tint); }
-.nav-item.active { background: var(--select); color: var(--text); font-weight: 600; }
+.nav-item.active { background: var(--accent-soft); color: var(--link); font-weight: 600; }
 .nav-icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5;
   stroke-linecap: round; stroke-linejoin: round; opacity: .85; }
 .count { margin-left: auto; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px;
@@ -112,7 +115,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--text); padding: 7px 10px; font-weight: 400; line-height: 1.35; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; }
 .company-item:hover { background: var(--tint); }
-.company-item.active { background: var(--select); font-weight: 600; }
+.company-item.active { background: var(--accent-soft); color: var(--link); font-weight: 600; }
 .company-item-count { color: var(--muted); font-weight: 400; }
 .workspace { position: relative; flex: 1; display: flex; min-width: 0; min-height: 0; }
 
@@ -135,12 +138,14 @@ button {
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.secondary { background: transparent; color: var(--text); border-color: var(--border); }
 button.secondary:hover:not(:disabled) { background: var(--tint); border-color: var(--border); }
-button.link { background: none; border: 0; padding: 0; color: var(--text); font-weight: 500;
-  text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+button.link { background: none; border: 0; padding: 0; color: var(--link); font-weight: 500;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--link) 35%, transparent);
+  text-underline-offset: 3px; }
 button.link:hover:not(:disabled) { background: none; text-decoration-color: currentColor; }
 /* Delete and Remove stay black and white too: the dialog that follows says what will happen */
 button.danger-link { color: var(--muted); }
-button.danger-button { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.danger-button { background: var(--text); border-color: var(--text); color: var(--bg); }
+button.danger-button:hover:not(:disabled) { background: var(--text); border-color: var(--text); opacity: .85; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .stack { display: grid; gap: 12px; }
 .hint { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); }
@@ -184,7 +189,7 @@ mark { background: var(--mark); color: inherit; padding: 0 1px; border-radius: 2
 .box.warn .box-title { color: var(--warn); }
 .box ul { margin: 0; padding-left: 18px; }
 .answer-foot { margin-top: 10px; font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
-.answer-foot a { color: var(--muted); }
+.answer-foot a { color: var(--link); text-underline-offset: 3px; }
 .choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .note-line + .note-line { margin-top: 4px; }
 
@@ -389,7 +394,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .claim-tab { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted);
   padding: 8px 12px; margin-bottom: -1px; font: inherit; cursor: pointer; white-space: nowrap; }
 .claim-tab:hover:not(:disabled) { background: none; color: var(--text); }
-.claim-tab.active, .claim-tab.active:hover:not(:disabled) { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
+.claim-tab.active, .claim-tab.active:hover:not(:disabled) { color: var(--text); border-bottom-color: var(--link); font-weight: 600; }
 /* The quarter table scrolls inside its own box on narrow windows; the page itself never scrolls sideways. */
 .table-scroll { overflow-x: auto; margin: 12px 0 6px; max-width: 100%; }
 .monitor-table { min-width: 640px; }
@@ -422,7 +427,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .signal-review { margin-top: 6px; }
 .issue-card.changes { margin: 12px 0; border-left: 3px solid var(--warn); display: grid; gap: 6px; }
 .ev-kind { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-.ev a, .claims-body li a { color: var(--text); text-underline-offset: 3px; }
+.ev a, .claims-body li a { color: var(--link); text-underline-offset: 3px; }
 .review-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 button.small-button { padding: 4px 11px; font-size: 12px; border-radius: 8px; }
 .review-done.confirmed b { color: var(--ok); }
@@ -462,7 +467,7 @@ button.small-button { padding: 4px 11px; font-size: 12px; border-radius: 8px; }
 .brief-body .memo-doc li ul { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
 .memo-doc li li { margin: 3px 0; }
 .memo-doc li li b { color: var(--text); }
-.memo-doc a { color: var(--text); text-underline-offset: 3px; }
+.memo-doc a { color: var(--link); text-underline-offset: 3px; }
 .memo-notes-editor { max-width: 700px; margin: 18px auto 0; }
 .memo-notes-label { font-family: var(--serif); font-size: 17px; font-weight: 500; color: var(--text); }
 .memo-notes-editor textarea { margin-top: 8px; font-size: 14.5px; line-height: 1.55; background: var(--raised); }
@@ -472,8 +477,8 @@ button.small-button { padding: 4px 11px; font-size: 12px; border-radius: 8px; }
 .memo-note { padding: 0; border: 0; background: none; color: var(--muted); font-weight: 400; text-align: left;
   cursor: pointer; }
 .memo-note:hover:not(:disabled) { background: none; color: var(--text); text-decoration: underline; }
-.memo-note-add { color: var(--text); text-decoration: underline; text-decoration-color: var(--border);
-  text-underline-offset: 3px; }
+.memo-note-add { color: var(--link); text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 35%, transparent); text-underline-offset: 3px; }
 .memo-remove { font-size: 13px; }
 .memo-note-form { display: flex; gap: 6px; align-items: flex-start; width: 100%; }
 .memo-note-form textarea { flex: 1; font-size: 13.5px; }
@@ -517,7 +522,7 @@ button.small-button { padding: 4px 11px; font-size: 12px; border-radius: 8px; }
 /* Printing (or saving as PDF) while the memo is open prints the memo alone, in black on white. */
 @media print {
   :root { --bg: #fff; --panel: #fff; --raised: #fff; --tint: #fff; --text: #111; --muted: #555; --border: #ccc;
-    --accent: #111; --danger: #a51c12; --warn: #7a4f00; --ok: #1b6b43; --teal: #0b6e75; --shadow: none; }
+    --accent: #111; --link: #111; --danger: #a51c12; --warn: #7a4f00; --ok: #1b6b43; --teal: #0b6e75; --shadow: none; }
   @page { margin: 18mm 16mm; }
   body.memo-open { background: #fff; }
   body.memo-open .app, body.memo-open .overlay:not(#claims-overlay), body.memo-open #startup-error,

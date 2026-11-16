@@ -579,3 +579,8 @@ statuses, evidence and fingerprints are unchanged.
   last showed). A question that names another company moves the highlight.
 - The line above Deck check and Portfolio gives the date and time only ("Checked Nov 9, 2026 · 3 min"); calls,
   tokens and searches stay in its hover text.
+- 2026-11-15, third pass: one accent on the black and white, navy (#1e3a8a; #3d5fd9 for buttons and #a7b9ff
+  for links in dark mode). It marks the "D", the selected sidebar item (views and Companies), links, primary
+  buttons (Ask, Generate Brief, Run, Confirm) and the selected tab's underline. Everything else stays black and
+  white; the status labels keep their colours (the blue-grey of "consistent" is greyer and lighter than navy).
+  Delete and Remove keep a neutral black button.
