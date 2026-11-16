@@ -569,3 +569,13 @@ statuses, evidence and fingerprints are unchanged.
   serif headings (system serif) and sans-serif text; fewer borders, softer corners. Dark mode uses the same
   roles on warm charcoal. Status colours (red, amber, green, teal) keep their meaning; the runway line is
   neutral ink so amber and red mark only Warning and High. Own simple line icons; no third-party logos or names.
+- 2026-11-15, second pass: black and white. White paper, black and dark grey text, light grey rules; buttons,
+  links, the selected item and the "D" mark are black (white in dark mode, on black). Only status labels keep
+  colour, softened: red (contradicted), amber (possibly overstated), green (confirmed, supported) and blue-grey
+  (consistent with company data). Delete and Remove links are grey and their confirm buttons black.
+- The company dropdown is now a "Companies" list in the sidebar: "All companies" (the old Auto-detect) and each
+  company with its file count; the highlighted row is the company in use. Picking one sets it for questions and
+  the Brief as before, and also moves Deck check and Portfolio to it (the dropdown left them on the company they
+  last showed). A question that names another company moves the highlight.
+- The line above Deck check and Portfolio gives the date and time only ("Checked Nov 9, 2026 · 3 min"); calls,
+  tokens and searches stay in its hover text.

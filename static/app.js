@@ -89,23 +89,41 @@ function sourceSpan(s) {
 
 function setCurrent(company) {
   state.current = company;
-  $("company-select").value = company ? String(company.id) : "";
+  renderCompanyList();
 }
 
-function renderCompanySelect() {
-  $("company-select").innerHTML = '<option value="">Auto-detect</option>' +
-    state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("company-select").value = state.current ? String(state.current.id) : "";
+// The sidebar's company list: "All companies" (questions choose the company, as Auto-detect did), then each
+// company with its number of files. The highlighted row is state.current.
+function renderCompanyList() {
+  const current = state.current ? state.current.id : null;
+  const rows = [{ id: null, name: "All companies" }, ...state.companies];
+  $("company-list").innerHTML = rows.map((c) => {
+    const active = c.id === current;
+    return `<li><button type="button" class="company-item${active ? " active" : ""}" data-company="${c.id ?? ""}" aria-pressed="${active}">
+        <span class="company-item-name">${esc(c.name)}</span>${c.id == null ? ""
+          : `<span class="company-item-count"> · ${plural(c.documents, "file")}</span>`}</button></li>`;
+  }).join("");
 }
 
-$("company-select").onchange = () => {
-  const company = state.companies.find((c) => String(c.id) === $("company-select").value);
+// A company picked here is the one questions, the Brief, Deck check and Portfolio use.
+function pickCompany(value) {
+  const company = state.companies.find((c) => String(c.id) === value);
   state.current = company ? { id: company.id, name: company.name } : null;
-};
+  if (company) {
+    claims.companyId = company.id;
+    mon.companyId = company.id;
+  }
+  renderCompanyList();
+}
+
+$("company-list").addEventListener("click", (e) => {
+  const button = e.target.closest("[data-company]");
+  if (button) pickCompany(button.dataset.company);
+});
 
 async function loadCompanies() {
   state.companies = await api("/api/companies");
-  renderCompanySelect();
+  renderCompanyList();
 }
 
 async function loadIssues() {
@@ -1653,11 +1671,10 @@ function runSummaryHtml(d) {
 
 const minutesText = (seconds) => (seconds < 60 ? "under 1 min" : `${Math.round(seconds / 60)} min`);
 
-// "Checked Nov 9, 2026 · about $0.62 · 3 min"; calls, tokens and searches are in the hover text.
+// "Checked Nov 9, 2026 · 3 min"; calls, tokens and searches are in the hover text.
 function runLineHtml(run, first) {
   const u = run.usage;
   const parts = [`Checked ${localTime(run.finished_at, { dateStyle: "medium" })}`];
-  if (u && u.estimated_usd != null) parts.push(`about $${u.estimated_usd.toFixed(2)}`);
   if (u) parts.push(minutesText(u.seconds));
   const details = [first, `Finished ${localTime(run.finished_at)}`];
   if (u) {
@@ -1666,7 +1683,6 @@ function runLineHtml(run, first) {
       + u.tokens.cache_creation_input_tokens).toLocaleString()} input / ${u.tokens.output_tokens.toLocaleString()} output tokens`);
     if (u.web_searches != null) details.push(`${u.web_searches} web search${u.web_searches === 1 ? "" : "es"}`);
     details.push(`${Math.round(u.seconds)} s`);
-    if (u.estimated_usd != null) details.push("The cost is an estimate from token counts.");
   }
   return `<div class="run-line" tabindex="0" title="${esc(details.join("\n"))}">${esc(parts.join(" · "))}</div>`;
 }

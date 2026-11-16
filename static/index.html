@@ -44,12 +44,11 @@
           <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16.5h14M4.5 13l3.5-4 3 2.5 4.5-6"/></svg>
           <span>Portfolio</span></button>
       </nav>
-      <div class="sidebar-tools">
-        <label class="company-picker">Company
-          <select id="company-select"><option value="">Auto-detect</option></select>
-        </label>
-        <button type="button" id="brief-button" class="brief-button">Generate Brief</button>
-      </div>
+      <button type="button" id="brief-button" class="brief-button">Generate Brief</button>
+      <section class="sidebar-companies" aria-labelledby="companies-title">
+        <h2 id="companies-title" class="sidebar-heading">Companies</h2>
+        <ul id="company-list" class="company-list"></ul>
+      </section>
     </aside>
 
     <div class="workspace">
