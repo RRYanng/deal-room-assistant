@@ -318,7 +318,7 @@ def list_metrics(company_id: int, conn=Depends(get_db)):
 
 @app.get("/api/companies/{company_id}/checks")
 def get_checks(company_id: int, conn=Depends(get_db)):
-    """Conflicts, unclear-basis metrics and missing key metrics, all decided by program rules."""
+    """Conflicts, numbers that need review, changes over time and missing key metrics, all by program rules."""
     require_company(conn, company_id)
     return company_checks(conn, company_id)
 

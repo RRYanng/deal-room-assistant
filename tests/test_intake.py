@@ -263,12 +263,12 @@ def test_issue_counts_follow_uploads_and_deletes(client):
     upload_sample(client, cid, "company_a/tidewell_meeting_notes.md", "notes")
     upload_sample(client, cid, "company_a/tidewell_crm.csv", "crm")
     before = counts()
-    assert (before["conflicts"], before["missing"], before["unclear_basis"]) == (0, 1, 1)  # revenue; $1.2M
-    assert before["total"] == 2
+    assert (before["conflicts"], before["missing"], before["needs_review"]) == (0, 1, 0)  # revenue
+    assert before["total"] == 1
 
     fourth = upload_sample(client, cid, "company_a/tidewell_update_2026-08.txt", "notes")
     after = counts()
-    assert (after["conflicts"], after["missing"], after["unclear_basis"]) == (1, 1, 1)  # 60 vs 80
+    assert (after["conflicts"], after["missing"], after["needs_review"]) == (1, 1, 0)  # 60 vs 80
     assert after["total"] == before["total"] + 1
 
     client.delete(f"/api/documents/{fourth['document_id']}")
@@ -282,7 +282,7 @@ def test_issue_details_have_value_file_location_and_quote(client):
                            ("company_a/tidewell_update_2026-08.txt", "notes")]:
         upload_sample(client, cid, path, doc_type)
     checks = client.get(f"/api/companies/{cid}/checks").json()
-    entries = [s for c in checks["conflicts"] for s in c["sources"]] + checks["unclear_basis"]
-    assert len(entries) == 3
+    entries = [s for c in checks["conflicts"] for s in c["sources"]]
+    assert len(entries) == 2
     for entry in entries:
-        assert entry["value_raw"] and entry["filename"] and entry["loc_label"] and entry["quote"]
+        assert entry["value_raw"] and entry["filename"] and entry["loc_label"] and entry["quote"] and entry["where"]

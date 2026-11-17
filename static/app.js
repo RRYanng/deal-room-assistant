@@ -12,6 +12,7 @@ const state = {
   librarySearch: null,  // after Enter: {query, results} from the keyword search, or {query, loading/error}
   openSummaries: new Set(),  // files whose summary is shown in full
   openEvidence: new Set(),
+  openBoxes: new Set(),  // the opened "Needs review" and "Open items" boxes under answers
   upload: null,         // the file and suggestions behind the open confirmation dialog
   batch: null,          // the files in the batch table
   lastBrief: null,
@@ -89,23 +90,41 @@ function sourceSpan(s) {
 
 function setCurrent(company) {
   state.current = company;
-  $("company-select").value = company ? String(company.id) : "";
+  renderCompanyList();
 }
 
-function renderCompanySelect() {
-  $("company-select").innerHTML = '<option value="">Auto-detect</option>' +
-    state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("company-select").value = state.current ? String(state.current.id) : "";
+// The sidebar's company list: "All companies" (questions choose the company, as Auto-detect did), then each
+// company with its number of files. The highlighted row is state.current.
+function renderCompanyList() {
+  const current = state.current ? state.current.id : null;
+  const rows = [{ id: null, name: "All companies" }, ...state.companies];
+  $("company-list").innerHTML = rows.map((c) => {
+    const active = c.id === current;
+    return `<li><button type="button" class="company-item${active ? " active" : ""}" data-company="${c.id ?? ""}" aria-pressed="${active}">
+        <span class="company-item-name">${esc(c.name)}</span>${c.id == null ? ""
+          : `<span class="company-item-count"> · ${plural(c.documents, "file")}</span>`}</button></li>`;
+  }).join("");
 }
 
-$("company-select").onchange = () => {
-  const company = state.companies.find((c) => String(c.id) === $("company-select").value);
+// A company picked here is the one questions, the Brief, Deck check and Portfolio use.
+function pickCompany(value) {
+  const company = state.companies.find((c) => String(c.id) === value);
   state.current = company ? { id: company.id, name: company.name } : null;
-};
+  if (company) {
+    claims.companyId = company.id;
+    mon.companyId = company.id;
+  }
+  renderCompanyList();
+}
+
+$("company-list").addEventListener("click", (e) => {
+  const button = e.target.closest("[data-company]");
+  if (button) pickCompany(button.dataset.company);
+});
 
 async function loadCompanies() {
   state.companies = await api("/api/companies");
-  renderCompanySelect();
+  renderCompanyList();
 }
 
 async function loadIssues() {
@@ -206,26 +225,54 @@ function claimGroupHtml(a, group, id) {
     <div class="evidence" id="${id}" ${open ? "" : "hidden"}>${evidenceHtml(group.evidence, supports)}</div></div>`;
 }
 
-function conflictHtml(c) {
-  const sources = c.sources.map((s) => `
-    <div class="conflict-source"><b>${esc(s.display_value)}</b> — ${sourceSpan(s)}
+// A Data checks entry, from app/rules.py: the summary with every value and its source ("250,000 (Sep 2025 deck,
+// p.3) vs 400,000 (Dec 2025 deck, p.3)"), why it is listed, then each value with its quote (hover: exact text).
+function checkSources(c) {
+  return c.sources.map((s) => `
+    <div class="conflict-source"><b>${esc(s.value_raw)}</b> — <span class="src" title="${esc(s.quote)}">${esc(s.where)}</span>
       <div class="quote">“${esc(s.quote)}”</div></div>`).join("");
-  return `<div><b>${esc(metricName(c.metric, c.metric_label))}</b> as of ${esc(c.as_of_date)}:
-    ${c.values.length} different values. Not resolved — check the sources.${sources}</div>`;
+}
+
+function checkHtml(c, why) {
+  return `<div><b>${esc(metricName(c.metric, c.metric_label))}</b>: ${esc(c.summary)}
+    ${why ? `<div class="muted small">${esc(why)}</div>` : ""}${checkSources(c)}</div>`;
+}
+
+const conflictHtml = (c) => checkHtml(c, `${c.reason}. Not resolved — check the sources.`);
+const reviewHtml = (r) => checkHtml(r, r.note);
+const changedHtml = (c) => checkHtml(c, "");
+
+// "Needs review (2) ▸": folded to its title line until clicked (Conflicting information stays open).
+function foldedBoxHtml(id, title, items) {
+  const open = state.openBoxes.has(id);
+  return `<div class="box warn box-folded${open ? " open" : ""}">
+    <button type="button" class="box-title box-fold" data-box="${id}" aria-expanded="${open}" aria-controls="${id}">${esc(title)} (${items.length})
+      <span class="box-arrow" aria-hidden="true">${open ? "▾" : "▸"}</span></button>
+    <ul id="${id}" ${open ? "" : "hidden"}>${items.join("")}</ul></div>`;
+}
+
+// A click on the title line opens or closes the list in place, as "Show evidence" does.
+function toggleBox(button) {
+  const list = document.getElementById(button.dataset.box);
+  list.hidden = !list.hidden;
+  button.setAttribute("aria-expanded", String(!list.hidden));
+  button.querySelector(".box-arrow").textContent = list.hidden ? "▸" : "▾";
+  button.parentElement.classList.toggle("open", !list.hidden);
+  if (list.hidden) state.openBoxes.delete(button.dataset.box); else state.openBoxes.add(button.dataset.box);
 }
 
 function answerHtml(a, entryId) {
   const claims = a.evidence_groups.map((g, j) => claimGroupHtml(a, g, `ev-${entryId}-${j}`)).join("");
-  const open = a.open_items.length ? `<div class="box warn"><div class="box-title">Open items</div>
-    <ul>${a.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>` : "";
-  const conflicts = a.conflicts.length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
+  const open = a.open_items.length ? foldedBoxHtml(`open-${entryId}`, "Open items",
+    a.open_items.map((o) => `<li>${esc(o)}</li>`)) : "";
+  const conflicts = (a.conflicts || []).length ? `<div class="box danger"><div class="box-title">Conflicting information</div>
     ${a.conflicts.map(conflictHtml).join("<hr>")}</div>` : "";
-  const unclear = a.unclear_basis.length ? `<div class="box warn"><div class="box-title">Numbers without a date</div>
-    <ul>${a.unclear_basis.map((u) => `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)}</li>`).join("")}</ul></div>` : "";
+  const review = (a.needs_review || []).length ? foldedBoxHtml(`review-${entryId}`, "Needs review",
+    a.needs_review.map((r) => `<li>${esc(metricName(r.metric, r.metric_label))}: ${esc(r.summary)} — ${esc(r.note)}</li>`)) : "";
   const tools = [...new Set(a.tool_calls.map((t) => t.tool))].join(", ") || "none";
   return `<div class="answer">
     ${claims || '<div class="muted">No answer found in this company\'s materials.</div>'}
-    ${conflicts}${unclear}${open}
+    ${conflicts}${review}${open}
     <div class="answer-foot"><span>Tools: ${esc(tools)}</span>
       <a href="/api/runs/${esc(a.run_id)}/log" target="_blank" rel="noopener">View agent log</a></div>
   </div>`;
@@ -240,6 +287,8 @@ $("chat").addEventListener("click", (e) => {
     button.textContent = box.hidden ? button.dataset.show : "Hide evidence";
     if (box.hidden) state.openEvidence.delete(button.dataset.toggle);
     else state.openEvidence.add(button.dataset.toggle);
+  } else if (button.dataset.box) {
+    toggleBox(button);
   } else if (button.dataset.choose) {
     chooseCompany(Number(button.dataset.choose), Number(button.dataset.company));
   } else if (button.dataset.openIssues) {
@@ -341,7 +390,7 @@ async function analyzeFile(file) {
 
 function companyHint(c) {
   if (c.model_error) return "The file could not be checked for a company. You can still choose one.";
-  if (c.source === "none") return "No company recognized in this file. Please choose one.";
+  if (c.source === "none") return "No company found in this file.";
   const from = { "file name": "from the file name", "file content": "from the file's content", model: "by the model, from the file's content" };
   return `Suggested: ${c.name} (${from[c.source]}).`;
 }
@@ -360,14 +409,22 @@ function dateHint(s, date, edited, kept) {
   return "No date found. Add one if you know it.";
 }
 
+// The server guesses the material type from the extension alone when the file name and content say nothing
+// ("PDF file", "text file"). Then the dialog starts on "Other – choose a type" and Add waits for a choice.
+const TYPE_FROM_EXTENSION = ["PDF file", "text file"];
+
+function typeHint(s) {
+  if (!$("upload-type").value) return "The file name and content do not say. Choose a type.";
+  return TYPE_FROM_EXTENSION.includes(s.doc_type_why) ? "" : `Suggested from: ${s.doc_type_why}.`;  // "" once you choose
+}
+
 function openUploadDialog(file, s) {
-  state.upload = { file, suggestion: s, dateEdited: false };
+  state.upload = { file, suggestion: s, dateEdited: false, warnings: [] };
   const options = state.companies.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  $("upload-company").innerHTML = `<option value="">Choose a company…</option>${options}
+  $("upload-company").innerHTML = `<option value="">Choose a company or add a new one</option>${options}
     <option value="${NEW_COMPANY}">+ New company…</option>`;
-  // With nothing recognized in the file, start from the company selected at the top of the page.
-  const fallback = state.current ? String(state.current.id) : "";
-  $("upload-company").value = s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : fallback;
+  // With no company found in the file, nothing is chosen: not even the company selected in the sidebar.
+  $("upload-company").value = s.company.existing ? String(s.company.id) : s.company.name ? NEW_COMPANY : "";
   $("upload-new-company").value = s.company.existing ? "" : s.company.name || "";
   $("upload-filename").textContent = s.filename;
   $("upload-company-why").textContent = companyHint(s.company);
@@ -375,8 +432,8 @@ function openUploadDialog(file, s) {
   // A CSV can only be CRM records, and CRM records can only be a CSV.
   const isCsv = s.filename.toLowerCase().endsWith(".csv");
   for (const option of $("upload-type").options) option.disabled = (option.value === "crm") !== isCsv;
-  $("upload-type").value = s.doc_type;
-  $("upload-type-why").textContent = `Suggested from: ${s.doc_type_why}.`;
+  $("upload-type").value = TYPE_FROM_EXTENSION.includes(s.doc_type_why) ? "" : s.doc_type;
+  $("upload-type-why").textContent = typeHint(s);
   $("upload-date").value = s.doc_date || "";
 
   syncNewCompanyField();
@@ -401,8 +458,15 @@ function renderUploadWarnings(warnings) {
   const notices = (modelError ? [{ kind: "model_error", message: modelError }] : []).concat(warnings);
   $("upload-warnings").innerHTML = notices.map((w) =>
     `<div class="warning" role="alert" data-kind="${esc(w.kind)}">${esc(w.message)}</div>`).join("");
+  if (state.upload) state.upload.warnings = warnings;
+  syncUploadConfirm();
+}
+
+// "Add" and disabled until a company is chosen, then "Add to <company>"; it also waits for a material type.
+function syncUploadConfirm() {
   const name = chosenCompanyName();
-  $("upload-confirm").disabled = !name;
+  const warnings = state.upload?.warnings || [];
+  $("upload-confirm").disabled = !name || !$("upload-type").value;
   $("upload-confirm").textContent = !name ? "Add" : warnings.length ? "Add anyway" : `Add to ${name}`;
 }
 
@@ -431,6 +495,11 @@ function applyReplacedDate(warnings) {
 }
 
 $("upload-company").onchange = () => { syncNewCompanyField(); refreshUploadWarnings(); };
+$("upload-type").onchange = () => {
+  if (!state.upload) return;
+  $("upload-type-why").textContent = typeHint(state.upload.suggestion);
+  syncUploadConfirm();
+};
 $("upload-date").addEventListener("input", () => {
   if (!state.upload) return;
   state.upload.dateEdited = true;
@@ -453,7 +522,7 @@ $("upload-dialog").addEventListener("cancel", closeUploadDialog); // Escape
 $("upload-form").onsubmit = (e) => {
   e.preventDefault();
   const name = chosenCompanyName();
-  if (!name || !state.upload) return;
+  if (!name || !$("upload-type").value || !state.upload) return;
   const details = {
     file: state.upload.file,
     companyValue: $("upload-company").value,
@@ -1119,45 +1188,33 @@ async function issueListHtml() {
   return state.issues.map((c) => `
     <button type="button" class="issue-row" data-issues-company="${c.id}">
       <span>${esc(c.name)} · ${plural(c.total, "issue")}</span>
-      <span class="muted">${plural(c.conflicts, "conflict")}, ${c.missing} missing, ${c.unclear_basis} without a date</span>
+      <span class="muted">${plural(c.conflicts, "conflict")}, ${c.needs_review} to review, ${c.missing} missing</span>
     </button>`).join("");
-}
-
-function sourceLine(s, extra = "") {
-  return `<div class="source-line">
-    <span class="source-value">${esc(s.display_value)}</span> ${extra}
-    <div class="source-loc">${esc(s.filename)} · ${esc(locationOf(s))}</div>
-    <div class="quote">“${esc(s.quote)}”</div>
-  </div>`;
 }
 
 async function issueDetailHtml(companyId) {
   const [checks] = await Promise.all([api(`/api/companies/${companyId}/checks`), loadIssues()]);
   const company = state.issues.find((c) => c.id === companyId);
-  const conflicts = checks.conflicts.map((c) => `
-    <div class="issue-card conflict">
-      <div class="issue-title">${esc(metricName(c.metric, c.metric_label))} as of ${esc(c.as_of_date)}</div>
-      <div class="muted small">${c.values.length} different values. Not resolved — check the sources.</div>
-      ${c.sources.map((s) => sourceLine(s)).join("")}
-    </div>`).join("");
+  const card = (kind, html) => `<div class="issue-card ${kind}">${html}</div>`;
+  const conflicts = checks.conflicts.map((c) => card("conflict", conflictHtml(c))).join("");
+  const review = checks.needs_review.map((r) => card("review", reviewHtml(r))).join("");
+  const changed = checks.changed.map((c) => card("changed", changedHtml(c))).join("");
   const missing = checks.missing.map((m) => `
     <div class="issue-card">
       <div class="issue-title">${esc(metricName(m))}</div>
       <div class="muted small">Not found in the provided materials.</div>
-    </div>`).join("");
-  const unclear = checks.unclear_basis.map((u) => `
-    <div class="issue-card unclear">
-      <div class="issue-title">${esc(metricName(u.metric, u.metric_label))}</div>
-      <div class="muted small">${esc(u.reason)}</div>
-      ${sourceLine(u)}
     </div>`).join("");
   const group = (title, count, body) => `<div class="drawer-section">
     <div class="section-title">${title} (${count})</div>${body || '<div class="muted small">None.</div>'}</div>`;
   return `<button type="button" class="link small" data-issues-back="1">← All companies</button>
     <h2 class="dialog-title" style="margin:10px 0 14px">${esc(company.name)} · ${plural(company.total, "issue")}</h2>
     ${group("Conflicts", checks.conflicts.length, conflicts)}
-    ${group("Missing", checks.missing.length, missing)}
-    ${group("Numbers without a date", checks.unclear_basis.length, unclear)}`;
+    ${group("Needs review", checks.needs_review.length, review)}
+    <details class="drawer-section drawer-fold"><summary class="section-title">Changed over time (${checks.changed.length})
+      <span class="fold-arrow" aria-hidden="true"></span></summary>
+      <div class="muted small fold-note">Values that changed between dates more than 31 days apart. Not counted as issues.</div>
+      ${changed || '<div class="muted small">None.</div>'}</details>
+    ${group("Missing", checks.missing.length, missing)}`;
 }
 
 $("drawer-body").addEventListener("input", (e) => {
@@ -1289,8 +1346,8 @@ function showBrief(b) {
   const missing = b.missing.length ? `<ul>${b.missing.map((m) => `<li>${esc(metricName(m.metric))}: Not found in the provided materials</li>`).join("")}</ul>`
     : '<div class="muted">None of the key metrics are missing.</div>';
   const conflicts = b.conflicts.length ? b.conflicts.map(conflictHtml).join("<hr>") : '<div class="muted">No conflicts detected.</div>';
-  const unclear = b.unclear_basis.length ? `<h3>Numbers without a date</h3><ul>${b.unclear_basis.map((u) =>
-    `<li>${esc(metricName(u.metric, u.metric_label))}: ${esc(u.display_value)} — ${esc(u.reason)} <span class="cite">[${sourceSpan(u)}]</span></li>`).join("")}</ul>` : "";
+  const review = (b.needs_review || []).length ? `<h3>Needs review</h3>${b.needs_review.map(reviewHtml).join("<hr>")}` : "";
+  const changed = (b.changed || []).length ? `<h3>Changed over time</h3>${b.changed.map(changedHtml).join("<hr>")}` : "";
   const open = b.open_items.length ? `<h3>Open items</h3><ul>${b.open_items.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>` : "";
 
   $("brief-title").textContent = `Company brief: ${b.company}`;
@@ -1301,7 +1358,7 @@ function showBrief(b) {
     <h3>Recent communications</h3>${comms}
     <h3>Missing information</h3>${missing}
     <h3>Conflicting information</h3>${conflicts}
-    ${unclear}${open}`;
+    ${review}${changed}${open}`;
   $("brief-overlay").hidden = false;
 }
 
@@ -1346,7 +1403,7 @@ const EVIDENCE_STANCE = { supports: "supports", contradicts: "contradicts", over
 const CLAIM_POLL_MS = 1000;
 
 const claims = { companyId: null, data: null, view: "claims", tab: "issues", showDismissed: false, showOther: false,
-  timer: null, memo: null, reviewing: null, openSources: new Set(), openCards: new Set() };
+  timer: null, memo: null, reviewing: null, openSources: new Set(), openCards: new Set(), memoOpen: new Set() };
 const CLAIM_TABS = [["issues", "Issues"], ["all", "All claims"], ["alignment", "Alignment"]];
 const ISSUE_STATUSES = ["contradicted", "possibly_overstated"];
 // Parts switched off in the UI config file ("changes", "regulatory"). The server still computes them; the page
@@ -1653,11 +1710,10 @@ function runSummaryHtml(d) {
 
 const minutesText = (seconds) => (seconds < 60 ? "under 1 min" : `${Math.round(seconds / 60)} min`);
 
-// "Checked Nov 9, 2026 · about $0.62 · 3 min"; calls, tokens and searches are in the hover text.
+// "Checked Nov 9, 2026 · 3 min"; calls, tokens and searches are in the hover text.
 function runLineHtml(run, first) {
   const u = run.usage;
   const parts = [`Checked ${localTime(run.finished_at, { dateStyle: "medium" })}`];
-  if (u && u.estimated_usd != null) parts.push(`about $${u.estimated_usd.toFixed(2)}`);
   if (u) parts.push(minutesText(u.seconds));
   const details = [first, `Finished ${localTime(run.finished_at)}`];
   if (u) {
@@ -1666,7 +1722,6 @@ function runLineHtml(run, first) {
       + u.tokens.cache_creation_input_tokens).toLocaleString()} input / ${u.tokens.output_tokens.toLocaleString()} output tokens`);
     if (u.web_searches != null) details.push(`${u.web_searches} web search${u.web_searches === 1 ? "" : "es"}`);
     details.push(`${Math.round(u.seconds)} s`);
-    if (u.estimated_usd != null) details.push("The cost is an estimate from token counts.");
   }
   return `<div class="run-line" tabindex="0" title="${esc(details.join("\n"))}">${esc(parts.join(" · "))}</div>`;
 }
@@ -1932,10 +1987,96 @@ function memoInline(text) {
   }).join("");
 }
 
+// On the memo page each confirmed item is one line, "Contradicted · Market size: 400,000 × $3,600 = $1.44B,
+// not $12B", the same conclusion as its folded card on the Deck check page. ▸ opens the quotes, the evidence
+// with its sources, the investor's note and Remove. Printing shows every item in full, as written in the
+// Markdown (Copy and Download use the Markdown itself), because a reader of the PDF cannot open anything.
+const MEMO_CATEGORIES = ["Market", "Financials", "Competition", "Team", "Regulatory"];  // app/presentation.py
+
+function memoRow(memo, item) {
+  const fp = item.fingerprints[0];
+  if (item.item_type === "claim") return (memo.findings || []).find((r) => membersOf(r)[0].fingerprint === fp);
+  if (item.item_type === "drift") return (memo.changes || []).find((c) => c.fingerprint === fp);
+  return (memo.signals || []).find((s) => s.fingerprint === fp);
+}
+
+function memoLine(item, row) {
+  const word = (label) => `<b class="${MEMO_TONES[label] || ""}">${esc(label)}</b>`;
+  if (item.item_type === "claim") return `${word(CLAIM_STATUS[row.status][0])} · ${esc(row.label)}: ${esc(conclusionOf(row))}`;
+  if (item.item_type === "drift") {
+    return `${row.kind === "changed" ? word("Changed") : "Updated"} · ${esc(row.label)}: ${esc(row.old.value_raw)} → ${esc(row.new.value_raw)}`;
+  }
+  const level = row.level.charAt(0).toUpperCase() + row.level.slice(1);
+  return `${word(level)} · ${esc(row.title)} <span class="memo-line-date">(${esc(row.period_end)})</span>`;
+}
+
+// What ▸ opens: the quote and its place (the folded line has the conclusion), the change with the two decks,
+// or the signal's calculation; then the evidence lines of the Markdown, the note and Remove.
+function memoDetail(it, item, row) {
+  let lead = "";
+  if (item.item_type === "claim" && !row.members) {
+    const quote = it.text.search(/ ["“]/);
+    lead = quote >= 0 ? it.text.slice(quote + 1) : "";
+  } else if (item.item_type === "drift") lead = it.text.slice(it.text.indexOf("): ") + 3);
+  else if (item.item_type === "signal") lead = memoText(row.detail);
+  const lines = [lead, ...it.sub.filter((x) => !x.startsWith("Investor note: "))].filter(Boolean);
+  return lines.length ? `<ul>${lines.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : "";
+}
+
+function memoSubList(sub) {
+  return sub.length ? `<ul>${sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : "";
+}
+
+function foldedMemoItem(it, item, index, memo) {
+  const row = memoRow(memo, item);
+  const full = `${memoInline(it.text)}${memoSubList(it.sub)}`;
+  if (!row) {  // not in the memo's data: shown as before
+    return `<li>${memoInline(it.text)}${memoSubList(it.sub.filter((x) => !x.startsWith("Investor note: ")))}${
+      memoItemControls(item, index)}</li>`;
+  }
+  const key = item.fingerprints.join(" ");
+  const open = claims.memoOpen.has(key);
+  return `<li class="memo-item${open ? " open" : ""}"><div class="memo-screen">
+      <button type="button" class="memo-fold" data-memo-fold="${esc(key)}" aria-expanded="${open}">
+        <span class="memo-fold-arrow" aria-hidden="true">${open ? "▾" : "▸"}</span><span class="memo-line">${memoLine(item, row)}</span></button>
+      ${open ? `<div class="memo-detail">${memoDetail(it, item, row)}${memoItemControls(item, index)}</div>` : ""}
+    </div><div class="memo-print">${full}</div></li>`;
+}
+
+// The topic of each question for the founder, in the order app/memo.py founder_questions lists them, so two
+// questions worded alike ("What changed: the definition, the source, or the business?") can be told apart.
+function founderTopics(memo) {
+  const topics = [], seen = new Set();
+  const add = (q, topic) => { if (q && !seen.has(q.text)) { seen.add(q.text); topics.push(topic); } };
+  for (const category of MEMO_CATEGORIES) {
+    for (const row of memo.findings || []) for (const m of membersOf(row)) if (m.category === category) add(m.question, row.label);
+  }
+  for (const c of memo.changes || []) if (c.review_state === "confirmed") add(c.question, c.label);
+  for (const s of memo.signals || []) if (s.review_state === "confirmed") add(s.question, s.title);
+  return topics;
+}
+
+// "ADA reports 202,401 … (p.3, para 2). How was 400,000 counted, and from which source?" -> the question
+// itself, from the sentence holding the first "?".
+function questionOnly(text) {
+  const mark = text.indexOf("?");
+  if (mark < 0) return text;
+  let start = 0;
+  for (const m of text.slice(0, mark).matchAll(/[.!?]["”]?\)?\s+(?=[A-Z"“])/g)) start = m.index + m[0].length;
+  return text.slice(start);
+}
+
+function memoQuestion(it, topic) {
+  const ask = questionOnly(it.text);
+  return `<li class="memo-question"><span class="memo-screen"${ask === it.text ? "" : ` title="${esc(it.text)}"`}>${
+    topic ? `<span class="memo-q-topic">${esc(topic)}:</span> ` : ""}${memoInline(ask)}</span><span class="memo-print">${
+    memoInline(it.text)}</span></li>`;
+}
+
 // The memo's Markdown as a document: headings, paragraphs, lists with one level of sub-items.
-// With the memo's data (on the memo page), each item of Verified findings and Portfolio signals gets its note
-// and Remove (memo.items is in the same order), and the Investor notes section is only printed: the box above
-// the memo shows it on screen.
+// With the memo's data (on the memo page), each item of Verified findings and Portfolio signals is one line
+// that opens to its details, note and Remove (memo.items is in the same order); Questions for the founder show
+// the question alone; the Investor notes section is only printed: the box above the memo shows it on screen.
 function memoHtml(markdown, memo = null) {
   const blocks = [];
   for (const line of markdown.split("\n")) {
@@ -1961,12 +2102,14 @@ function memoHtml(markdown, memo = null) {
       if (printOnly) out += '<div class="print-only">';
     }
     const controlled = items && b.tag === "ul" && /^(Verified findings|Portfolio signals)/.test(section);
+    const asked = items && b.tag === "ol" && section === "Questions for the founder";
     if (b.items) {
-      out += `<${b.tag}>${b.items.map((it) => {
+      const topics = asked ? founderTopics(memo) : [];
+      out += `<${b.tag}${controlled ? ' class="memo-folds"' : asked ? ' class="memo-questions"' : ""}>${b.items.map((it, n) => {
+        if (asked) return memoQuestion(it, topics.length === b.items.length ? topics[n] : "");
         const index = controlled ? next++ : -1;
-        const sub = index >= 0 ? it.sub.filter((x) => !x.startsWith("Investor note: ")) : it.sub;
-        return `<li>${memoInline(it.text)}${sub.length ? `<ul>${sub.map((x) => `<li>${memoInline(x)}</li>`).join("")}</ul>` : ""}${
-          index >= 0 && items[index] ? memoItemControls(items[index], index) : ""}</li>`;
+        if (index >= 0 && items[index]) return foldedMemoItem(it, items[index], index, memo);
+        return `<li>${memoInline(it.text)}${memoSubList(it.sub)}</li>`;
       }).join("")}</${b.tag}>`;
     } else if (b.lines) out += `<p>${b.lines.map(memoInline).join("<br>")}</p>`;
     else if (b.text != null) out += `<${b.tag}>${memoInline(b.text)}</${b.tag}>`;
@@ -2050,6 +2193,12 @@ $("claims-body").addEventListener("click", async (e) => {
   }
   if (e.target.closest("[data-note-cancel]")) {
     claims.memo.editingNote = null;
+    return renderMemo();
+  }
+  const fold = e.target.closest("[data-memo-fold]");
+  if (fold) {
+    const key = fold.dataset.memoFold;
+    if (claims.memoOpen.has(key)) claims.memoOpen.delete(key); else claims.memoOpen.add(key);
     return renderMemo();
   }
   const remove = e.target.closest("[data-memo-remove]");

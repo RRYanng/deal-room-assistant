@@ -190,7 +190,8 @@ def main() -> None:
             t = time.time()
             brief = client.post(f"/api/companies/{a}/brief", json={"requirements": "focus on traction and risks"}).json()
             entries = ([x for s in brief["sections"] for i in s["items"] for x in i["citations"]]
-                       + brief["key_metrics"] + brief["recent_communications"] + brief["unclear_basis"]
+                       + brief["key_metrics"] + brief["recent_communications"]
+                       + [s for g in ("needs_review", "changed") for c in brief[g] for s in c["sources"]]
                        + [s for c in brief["conflicts"] for s in c["sources"]])
             sourced = all(e.get("loc_label") and e.get("quote") and quote_in_text(e["quote"], chunk_text(e["chunk_id"]))
                           for e in entries)

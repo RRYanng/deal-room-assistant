@@ -556,3 +556,56 @@ statuses, evidence and fingerprints are unchanged.
 - Data checks: "Unclear basis" is now "Numbers without a date", and the reason "no as-of date stated" is
   "no date stated"; the same wording in answers, the Brief and the Library key metrics ("no date" badge).
 
+
+## 31. A second look: warm sidebar layout (branch feature/claude-style, 2026-11-15)
+
+- Runs beside the v2.2 version: worktree `../deal-room-claude-style`, port 8004; main and 8002 (v2.2)
+  are untouched. Only `static/index.html` and `static/style.css` change; every element id, the page script,
+  the back end and the data are as in v2.2.
+- Layout: a narrow sidebar (brand, Library, Data checks, Deck check, Portfolio, company, Generate Brief) and the
+  conversation in one centred column, with the input as a rounded card at the bottom. Below 860px the sidebar
+  becomes a bar across the top.
+- Look: warm off-white paper, dark grey text, one terracotta accent for buttons, links and the selected item;
+  serif headings (system serif) and sans-serif text; fewer borders, softer corners. Dark mode uses the same
+  roles on warm charcoal. Status colours (red, amber, green, teal) keep their meaning; the runway line is
+  neutral ink so amber and red mark only Warning and High. Own simple line icons; no third-party logos or names.
+- 2026-11-15, second pass: black and white. White paper, black and dark grey text, light grey rules; buttons,
+  links, the selected item and the "D" mark are black (white in dark mode, on black). Only status labels keep
+  colour, softened: red (contradicted), amber (possibly overstated), green (confirmed, supported) and blue-grey
+  (consistent with company data). Delete and Remove links are grey and their confirm buttons black.
+- The company dropdown is now a "Companies" list in the sidebar: "All companies" (the old Auto-detect) and each
+  company with its file count; the highlighted row is the company in use. Picking one sets it for questions and
+  the Brief as before, and also moves Deck check and Portfolio to it (the dropdown left them on the company they
+  last showed). A question that names another company moves the highlight.
+- The line above Deck check and Portfolio gives the date and time only ("Checked Nov 9, 2026 · 3 min"); calls,
+  tokens and searches stay in its hover text.
+- 2026-11-15, third pass: one accent on the black and white, navy (#1e3a8a; #3d5fd9 for buttons and #a7b9ff
+  for links in dark mode). It marks the "D", the selected sidebar item (views and Companies), links, primary
+  buttons (Ask, Generate Brief, Run, Confirm) and the selected tab's underline. Everything else stays black and
+  white; the status labels keep their colours (the blue-grey of "consistent" is greyer and lighter than navy).
+  Delete and Remove keep a neutral black button.
+- 2026-11-15, shorter memo page. Each confirmed item is one line, "Contradicted · Market size: 400,000 × $3,600 =
+  $1.44B, not $12B": the same conclusion as its folded card on Deck check (a change reads "Changed · Number of
+  target customers: 250,000 → 400,000", a signal "High · Cash runway 7.0 months (2026-09-30)"). ▸ opens the
+  quotes with their place, the evidence with its sources, the investor's note and Remove; an item stays open
+  after a note is saved. Questions for the founder show the question alone, after the topic it comes from (two
+  questions can be worded alike); the full question is its hover text. Investor notes stay on top. Print / Save
+  as PDF prints every item and question in full, and Copy and Download use the memo's Markdown, unchanged.
+- 2026-11-15, under an answer, "Numbers without a date" and "Open items" start folded to one clickable line with
+  their count, "Numbers without a date (8) ▸"; a click opens the list in place (as "Show evidence" does) and the
+  answer remembers it. "Conflicting information" stays open.
+- 2026-11-15, the upload confirmation dialog chooses no company when none is found in the file, not even the one
+  selected in the sidebar: the list starts on "Choose a company or add a new one" (with "+ New company…" kept),
+  the hint says "No company found in this file.", and Add stays "Add" and disabled until a company is chosen,
+  then reads "Add to <company>". A company found in the file is still chosen for you. When the material type is
+  guessed from the extension alone (PDF or text file), it starts on "Other – choose a type" and Add waits for a
+  choice; nothing is stored as "Other", since the server knows only Pitch deck, Meeting notes and CRM records.
+- 2026-11-15, Data checks compare numbers by period. A number's date is its own as-of date, else its file's date,
+  else "date unknown". Within one metric (labels written differently are mapped in `app/data_checks.json`), two
+  different values are a Conflict when they are in the same file, when the metric is a market fact (listed in the
+  same file) and two files disagree, or when their dates are at most 31 days apart; "Needs review" when a date is
+  unknown ("Dates unknown, can't tell if this is growth or a conflict."); otherwise "Changed over time", folded
+  and not counted as an issue: "Paying customers: 40 (Aug 2025) → 85 (Nov 2025) → 120 (Apr 2026, file date)".
+  Every entry shows each value with its file and page. "Numbers without a date" is gone, in the drawer, under
+  answers and in the Brief. On ClearClaim: 3 conflicts (dental practices, TAM, gross margin), 0 to review, 6
+  changes, 2 missing, 5 issues instead of 34.

@@ -28,19 +28,28 @@
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
-      <div class="brand" id="brand">Deal Room Assistant</div>
+    <aside class="sidebar" aria-label="Navigation">
+      <div class="brand" id="brand"><span class="brand-mark" aria-hidden="true">D</span><span>Deal Room Assistant</span></div>
       <nav class="nav">
-        <button type="button" id="nav-library" class="nav-item">Library</button>
-        <button type="button" id="nav-issues" class="nav-item">Data checks <span id="issues-badge" class="count" hidden></span></button>
-        <button type="button" id="nav-claims" class="nav-item">Deck check</button>
-        <button type="button" id="nav-monitor" class="nav-item">Portfolio</button>
+        <button type="button" id="nav-library" class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h3.5v13H4zM9.5 3.5H13v13H9.5zM14.6 4.4l2.9-.8 2 11.9-2.9.8z"/></svg>
+          <span>Library</span></button>
+        <button type="button" id="nav-issues" class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5l1.5 1.5 3-3M3.5 12.5l1.5 1.5 3-3M10.5 5.5h6M10.5 12.5h6"/></svg>
+          <span>Data checks</span> <span id="issues-badge" class="count" hidden></span></button>
+        <button type="button" id="nav-claims" class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h6.5L15 6v3M5 2.5v15h5M11.5 2.5V6H15"/><circle cx="13.5" cy="13.5" r="2.8"/><path d="M15.5 15.5l2 2"/></svg>
+          <span>Deck check</span></button>
+        <button type="button" id="nav-monitor" class="nav-item">
+          <svg class="nav-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16.5h14M4.5 13l3.5-4 3 2.5 4.5-6"/></svg>
+          <span>Portfolio</span></button>
       </nav>
-      <label class="company-picker">Company:
-        <select id="company-select"><option value="">Auto-detect</option></select>
-      </label>
       <button type="button" id="brief-button" class="brief-button">Generate Brief</button>
-    </header>
+      <section class="sidebar-companies" aria-labelledby="companies-title">
+        <h2 id="companies-title" class="sidebar-heading">Companies</h2>
+        <ul id="company-list" class="company-list"></ul>
+      </section>
+    </aside>
 
     <div class="workspace">
     <section id="drawer" class="drawer" aria-labelledby="drawer-title" hidden>
@@ -55,6 +64,7 @@
       <div id="chat" class="chat" aria-live="polite"></div>
 
       <div class="composer">
+        <div class="composer-card">
         <div class="mode-switch" role="group" aria-label="Choose what to do">
           <button type="button" id="mode-upload" class="mode">Upload</button>
           <button type="button" id="mode-ask" class="mode">Ask</button>
@@ -73,6 +83,7 @@
             <span id="dropzone-text" class="dropzone-text"><b>Choose files</b> or drop them here</span>
             <span class="muted small">PDF, TXT or MD, or CRM records as CSV. You confirm the details before it is stored.</span>
           </label>
+        </div>
         </div>
       </div>
     </main>
@@ -94,6 +105,7 @@
       </label>
       <label>Material type
         <select id="upload-type">
+          <option value="">Other – choose a type</option>
           <option value="deck">Pitch deck</option>
           <option value="notes">Meeting notes</option>
           <option value="crm">CRM records</option>

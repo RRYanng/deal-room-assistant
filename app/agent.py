@@ -7,7 +7,7 @@ One question:
   3. loop until the model gives its final JSON answer or MAX steps is reached
   4. the program keeps only citations whose quote is verbatim in a chunk of this company;
      claims left without a valid citation are dropped (and logged)
-  5. program-detected conflicts / unclear-basis metrics touching the cited chunks are attached
+  5. program-detected conflicts / numbers that need review touching the cited chunks are attached
 """
 
 import json
@@ -21,7 +21,7 @@ from app.config import get_settings
 from app.llm import LLMClient, ToolResult, ToolSpec
 from app.logs import log_event
 from app.rag import search
-from app.rules import find_conflicts, get_metrics, unclear_basis
+from app.rules import data_checks, get_metrics
 
 NOT_FOUND = "Not found in the provided materials"
 OUT_OF_SCOPE_MESSAGE = "I can only answer questions about the uploaded company materials."
@@ -90,8 +90,9 @@ TOOLS = [
                  "type": "string", "description": "Optional: only this metric.",
                  "enum": ["registered_customers", "paying_customers", "revenue", "funding_raised", "other"]}}}),
     ToolSpec("get_conflicts",
-             "Contradictions detected by the system (same metric, same as-of date, different values), "
-             "with every value and source, plus metrics whose basis is unclear (no as-of date).",
+             "The system's data checks, with every value and source: conflicts (same metric, different values "
+             "in one file, across files for a market fact, or within 31 days), needs_review (a date is unknown, "
+             "so growth cannot be told from a conflict) and changed (values that changed over time, not conflicts).",
              {"type": "object", "properties": {}}),
     ToolSpec("get_crm_history",
              "The CRM communication log for the company, ordered by date (oldest first), with "
@@ -114,7 +115,7 @@ def run_tool(conn: sqlite3.Connection, company_id: int, name: str, args: dict[st
                 "chunk_id", "quote", "loc_label", "filename")
         return [{k: m[k] for k in keys} for m in get_metrics(conn, company_id, args.get("metric") or None)]
     if name == "get_conflicts":
-        return {"conflicts": find_conflicts(conn, company_id), "unclear_basis": unclear_basis(conn, company_id)}
+        return data_checks(conn, company_id)
     if name == "get_crm_history":
         rows = conn.execute(
             "SELECT r.date, r.contact, r.summary, r.next_steps, r.chunk_id, ch.text, ch.loc_label"
@@ -229,11 +230,10 @@ def verify_items(conn: sqlite3.Connection, company_id: int, run_id: str, items: 
 
 
 def related_checks(conn: sqlite3.Connection, company_id: int, chunk_ids: set[int]) -> dict:
-    """Program-detected conflicts and unclear-basis metrics that involve any of the cited chunks."""
-    conflicts = [c for c in find_conflicts(conn, company_id)
-                 if any(s["chunk_id"] in chunk_ids for s in c["sources"])]
-    unclear = [u for u in unclear_basis(conn, company_id) if u["chunk_id"] in chunk_ids]
-    return {"conflicts": conflicts, "unclear_basis": unclear}
+    """Program-detected conflicts and numbers that need review that involve any of the cited chunks."""
+    checks = data_checks(conn, company_id)
+    return {group: [c for c in checks[group] if any(s["chunk_id"] in chunk_ids for s in c["sources"])]
+            for group in ("conflicts", "needs_review")}
 
 
 def group_evidence(claims: list[dict]) -> list[dict]:

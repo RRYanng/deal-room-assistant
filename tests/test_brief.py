@@ -58,14 +58,15 @@ def test_program_sections(tidewell):
     assert [c["date"] for c in brief["recent_communications"]] == ["2026-07-22", "2026-07-15", "2026-06-05"]
     assert brief["missing"] == [{"metric": "revenue", "text": "revenue: Not found in the provided materials"}]
     assert [(c["metric"], c["values"]) for c in brief["conflicts"]] == [("paying_customers", [60, 80])]
-    assert [u["metric"] for u in brief["unclear_basis"]] == ["funding_raised"]
+    assert brief["needs_review"] == brief["changed"] == []  # funding $1.2M is stated once: nothing to compare
+    assert "unclear_basis" not in brief
 
 
 def test_every_brief_entry_has_a_source(tidewell):
     conn, cid = tidewell
     brief = generate_brief(conn, cid, "", fake_brief_llm())
     sourced = ([c for s in brief["sections"] for i in s["items"] for c in i["citations"]]
-               + brief["key_metrics"] + brief["recent_communications"] + brief["unclear_basis"]
+               + brief["key_metrics"] + brief["recent_communications"]
                + [s for c in brief["conflicts"] for s in c["sources"]])
     assert sourced
     for entry in sourced:
@@ -255,7 +256,9 @@ def test_markdown_shows_values_with_units(tidewell):
     md = brief_to_markdown(generate_brief(conn, cid, "", fake_brief_llm()))
     assert "- paying_customers: 60 customers as of 2026-06-30" in md
     assert "  - 80 customers [tidewell_update_2026-08.txt" in md
-    assert "- funding_raised: USD 1,200,000 (no date stated)" in md
+    assert ("- paying_customers: 60 (Jul 2026 notes, para 3) vs 80 (Aug 2026 notes, para 2). "
+            "Dates within 31 days: the same period; not resolved:") in md
+    assert "Numbers without a date" not in md
 
 
 # --- no repeats between model and program sections --------------------------------------------
