@@ -29,16 +29,28 @@ brief that flags **missing** and **conflicting** information instead of hiding i
    materials", and conflicting values are listed side by side with their sources. The system never
    picks a winner. The **Data checks** panel lists these per company and updates after every upload or delete.
 
-The screen is one conversation, with an Upload / Ask switch above the input. The top bar has
+The screen is one conversation, with an Upload / Ask switch above the input. The sidebar has
 **Library** (files and key metrics per company, a one-line summary under each file, and a search box:
 typing filters by name, company, type or summary; Enter lists the files whose text mentions the words, and
 how often, from the BM25 keyword index, with no model call), **Data checks** (conflicts and gaps in the files
-themselves), an optional **Company** selector and
-**Generate Brief**.
+themselves), **Deck check**, **Portfolio**, **Generate Brief** and a **Companies** list.
 
 ## v2: diligence co-pilot
 
 Released as tag `v2.0` on `main`; `v2.1` adds Library summaries and search, and a memo of confirmed items with editable notes; `v2.2` shows locations in words ("p.5, para 2") and renames unclear basis to "Numbers without a date". Design and decisions: [docs/v2_design.md](docs/v2_design.md).
+
+`v2.3` changes the page and the Data checks:
+
+- **New page:** black and white with a navy accent, and a sidebar with a **Companies** list.
+- **Data checks by period:** two values for the same metric are a conflict when they are in the same file, when
+  the metric is a market fact (such as market size or the number of dental practices), or when their dates are
+  at most 31 days apart. Values with an unknown date go to **Needs review**; values more than 31 days apart are
+  shown as **Changed over time**, not as conflicts. The market facts, other names for the same metric and the
+  31-day window are set in [app/data_checks.json](app/data_checks.json).
+- **Shorter memo:** each memo item is one line that opens to its details, and the boxes under an answer fold to
+  one line each.
+- **Upload dialog:** when the file names no company, none is chosen (not even the one in the sidebar) and Add
+  waits for a choice; a type guessed from the extension alone starts on "Other – choose a type".
 
 v2 checks a pitch deck the way an associate would before a partner meeting: what does the deck
 claim, what do the company's other files and public sources say, what changed since the last deck,
