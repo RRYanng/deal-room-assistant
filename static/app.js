@@ -166,7 +166,7 @@ function renderChat({ keepScroll = false } = {}) {
   const chat = $("chat");
   const scrollTop = chat.scrollTop;
   if (!state.entries.length) {
-    chat.innerHTML = '<div class="empty-state">Upload files or ask about a company by name</div>';
+    chat.innerHTML = `<div class="empty-state">${ui.demo ? "Ask about a company by name" : "Upload files or ask about a company by name"}</div>`;
     return;
   }
   chat.innerHTML = state.entries.map(entryHtml).join("");
@@ -576,6 +576,7 @@ function extractionText(x) {
 
 // One file keeps the single-file dialog. Several files go to the batch table.
 function chooseFiles(fileList) {
+  if (ui.demo) return;  // turned off in the demo
   const files = [...fileList];
   if (files.length === 1) analyzeFile(files[0]);
   else if (files.length > 1) openBatch(files);
@@ -1160,8 +1161,8 @@ function documentHtml(d) {
     <div class="muted small">
       <span class="badge">${esc(DOC_TYPES[d.doc_type] || d.doc_type)}</span>
       ${esc(d.doc_date || "no date")} ·
-      <button type="button" class="link small" data-reextract="${d.id}" data-name="${esc(d.filename)}">re-extract</button> ·
-      <button type="button" class="link small danger-link" data-delete="${d.id}" data-name="${esc(d.filename)}">delete</button>
+      <button type="button" class="link small" data-reextract="${d.id}" data-name="${esc(d.filename)}"${demoOff()}>re-extract</button> ·
+      <button type="button" class="link small danger-link" data-delete="${d.id}" data-name="${esc(d.filename)}"${demoOff()}>delete</button>
     </div>
   </li>`;
 }
@@ -1408,11 +1409,27 @@ const CLAIM_TABS = [["issues", "Issues"], ["all", "All claims"], ["alignment", "
 const ISSUE_STATUSES = ["contradicted", "possibly_overstated"];
 // Parts switched off in the UI config file ("changes", "regulatory"). The server still computes them; the page
 // asks for results without them, so the counts, the summary and the memo leave them out too.
-const ui = { hidden: [], loaded: null };
+// In the public demo (DEMO_MODE on the server) upload, delete, re-extract and the runs are turned off.
+const ui = { hidden: [], demo: false, loaded: null };
+const DEMO_OFF = "Turned off in the demo";
 function loadUi() {
-  ui.loaded ||= api("/api/ui").then((u) => { ui.hidden = u.hidden; }).catch(() => {});
+  ui.loaded ||= api("/api/ui").then((u) => { ui.hidden = u.hidden; ui.demo = !!u.demo; }).catch(() => {});
   return ui.loaded;
 }
+
+function applyDemo() {
+  document.body.classList.toggle("demo", ui.demo);
+  $("demo-banner").hidden = !ui.demo;
+  $("mode-upload").disabled = ui.demo;
+  $("mode-upload").title = ui.demo ? DEMO_OFF : "";
+  for (const id of ["claims-run", "monitor-run"]) {
+    $(id).title = ui.demo ? DEMO_OFF : "";
+    if (ui.demo) $(id).disabled = true;
+  }
+  if (ui.demo) setMode("ask");
+  renderChat();
+}
+const demoOff = () => (ui.demo ? ` disabled title="${DEMO_OFF}"` : "");
 const hideQuery = () => (ui.hidden.length ? `?hide=${encodeURIComponent(ui.hidden.join(","))}` : "");
 const shows = (part) => !ui.hidden.includes(part);
 // Flags first: contradicted, then possibly overstated, then the rest in the order of CLAIM_STATUS.
@@ -1478,7 +1495,7 @@ async function pollClaimRun(companyId, runId) {
 
 function syncClaimButtons() {
   const running = !!(claims.data && claims.data.running);
-  $("claims-run").disabled = !claims.companyId || running;
+  $("claims-run").disabled = ui.demo || !claims.companyId || running;
   $("claims-run").textContent = running ? "Checking…" : "Run deck check";
   $("claims-memo").textContent = claims.view === "memo" ? "Back to claims" : "Memo";
   $("claims-memo").disabled = !claims.data || !claims.data.run;
@@ -2388,7 +2405,7 @@ function runwayChartHtml(periods, byPeriod) {
 function renderMonitor() {
   const d = mon.data;
   const running = !!d.running;
-  $("monitor-run").disabled = !mon.companyId || running;
+  $("monitor-run").disabled = ui.demo || !mon.companyId || running;
   $("monitor-run").textContent = running ? "Reading…" : "Run monitoring";
   const head = [];
   if (running) head.push(`<div class="answer pending">${esc(d.running.stage || "Starting")}…</div>`);
@@ -2534,9 +2551,11 @@ async function start() {
   setMode("ask");
   loadHealth();
   window.appStarted = true;
+  await loadUi();
+  applyDemo();
   try {
     await Promise.all([loadCompanies(), loadIssues()]);
-    if (!state.companies.length) setMode("upload");
+    if (!state.companies.length && !ui.demo) setMode("upload");
   } catch (err) {
     pushEntry({ kind: "note", error: err.message });
   }
