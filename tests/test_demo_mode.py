@@ -3,6 +3,7 @@ runs turned off, and limits on questions and briefs per IP and for the whole sit
 changes."""
 
 import hashlib
+import sqlite3
 from datetime import datetime, timezone
 
 import pytest
@@ -241,3 +242,28 @@ def test_the_banner_text_is_in_the_page():
     html = (PROJECT_ROOT / "static" / "index.html").read_text()
     assert ">Demo with synthetic data. Upload and Run are turned off.</div>" in html
     assert html.count('<span class="demo-off">Turned off in the demo</span>') == 2
+
+
+# --- the public demo database --------------------------------------------------------------------------------
+
+def test_the_demo_reads_the_public_database_by_default(monkeypatch):
+    monkeypatch.delenv("DEMO_SOURCE_DB", raising=False)
+    assert demo.source_db().name == "demo_public.db"
+
+
+def test_the_public_database_has_the_demo_content_and_no_question_logs():
+    from app.rules import company_checks
+    from app.config import PROJECT_ROOT
+    path = PROJECT_ROOT / "data" / "demo_public.db"
+    conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro&immutable=1", uri=True)
+    conn.row_factory = sqlite3.Row
+    count = lambda sql: conn.execute(sql).fetchone()[0]
+    assert {r[0] for r in conn.execute("SELECT DISTINCT run_id FROM agent_logs")} == \
+        {"claims-run1", "claims-run1-competitors", "monitor-run1"}  # Deck check and Portfolio only
+    assert count("SELECT COUNT(*) FROM reviews") == 0
+    clearclaim = conn.execute("SELECT id FROM companies WHERE name = 'ClearClaim AI'").fetchone()[0]
+    assert count(f"SELECT COUNT(*) FROM documents WHERE company_id = {clearclaim}") == 7
+    assert count("SELECT COUNT(*) FROM claim_runs WHERE status = 'done'") == 1
+    assert count("SELECT COUNT(*) FROM signals") == 4
+    assert len(company_checks(conn, clearclaim)["conflicts"]) == 3
+    conn.close()

@@ -5,6 +5,7 @@ __pycache__/
 .env
 data/*
 !data/.gitkeep
+!data/demo_public.db
 .claude/
 docs/walkthrough_zh.md
 docs/DEV_NOTES.md

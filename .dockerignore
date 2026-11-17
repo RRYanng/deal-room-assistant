@@ -8,7 +8,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/*
-!data/demo_v2.db
+!data/demo_public.db
 docs/
 tests/
 samples/

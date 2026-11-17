@@ -1,7 +1,7 @@
 """Public read-only demo: DEMO_MODE=true turns this on; without it nothing here runs.
 
 - Data: every start, and every day at 00:00 UTC, the working database (DB_PATH) is overwritten with a clean copy
-  of DEMO_SOURCE_DB (default data/demo_v2.db). The source file is opened read-only and never changed.
+  of DEMO_SOURCE_DB (default data/demo_public.db). The source file is opened read-only and never changed.
 - Turned off: upload, new companies, delete, re-extract, Run deck check and Run monitoring answer 403.
 - Limited: questions and briefs call the model, so each IP gets DEMO_ASKS_PER_IP questions (5) and
   DEMO_BRIEFS_PER_IP briefs (1) a day, and the whole site DEMO_MODEL_CALLS_PER_DAY of both together (100).
@@ -54,7 +54,7 @@ def demo_mode() -> bool:
 
 
 def source_db() -> Path:
-    path = Path(os.getenv("DEMO_SOURCE_DB", "data/demo_v2.db"))
+    path = Path(os.getenv("DEMO_SOURCE_DB", "data/demo_public.db"))
     return path if path.is_absolute() else PROJECT_ROOT / path
 
 

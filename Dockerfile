@@ -21,15 +21,15 @@ COPY app ./app
 COPY static ./static
 COPY config ./config
 COPY skills ./skills
-COPY data/demo_v2.db ./data/demo_v2.db
+COPY data/demo_public.db ./data/demo_public.db
 
 RUN useradd --create-home demo && chown -R demo /app/data /app/.cache
 USER demo
 
 # Demo defaults; Railway Variables override them. DB_PATH is the working copy the demo overwrites on every start
-# and every day at 00:00 UTC; data/demo_v2.db itself is only read.
+# and every day at 00:00 UTC; data/demo_public.db itself is only read.
 ENV DEMO_MODE=true \
-    DEMO_SOURCE_DB=data/demo_v2.db \
+    DEMO_SOURCE_DB=data/demo_public.db \
     DB_PATH=data/demo_session.db \
     WEB_SEARCH_PROVIDER="" \
     HF_HUB_OFFLINE=1

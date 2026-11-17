@@ -7,7 +7,7 @@ The public demo is the normal app started with `DEMO_MODE=true`. Local developme
 
 | | |
 |---|---|
-| Data | `data/demo_v2.db` (ClearClaim AI with Deck check and Portfolio results, plus Kitebridge and Tidewell). On every start, and every day at 00:00 UTC, the working copy (`DB_PATH`) is overwritten with a clean copy. The source file is only read. |
+| Data | `data/demo_public.db`: a copy of `data/demo_v2.db` without the logs of past questions, briefs and extractions (ClearClaim AI with Deck check and Portfolio results, plus Kitebridge and Tidewell). On every start, and every day at 00:00 UTC, the working copy (`DB_PATH`) is overwritten with a clean copy. The source file is only read. |
 | Turned off | Upload, new company, delete, re-extract, Run deck check, Run monitoring. The buttons are greyed out with "Turned off in the demo"; the server answers 403 if they are called directly. |
 | Kept | Every page, Confirm / Dismiss, Memo and memo notes. They cost nothing and are wiped by the daily reset. |
 | Limited | Questions and Generate Brief call the model: 5 questions and 1 brief per IP per day, and 100 of both together per day for the whole site. Over a limit the page shows "Demo limit reached. Watch the walkthrough video instead." |
@@ -37,7 +37,7 @@ Keys are read only from environment variables. Nothing secret is in the code, th
 
 The Dockerfile already sets these, and you can leave them:
 - `DEMO_MODE=true`
-- `DEMO_SOURCE_DB=data/demo_v2.db`
+- `DEMO_SOURCE_DB=data/demo_public.db`
 - `DB_PATH=data/demo_session.db`
 - `WEB_SEARCH_PROVIDER=` (empty)
 - `HF_HUB_OFFLINE=1`
@@ -70,20 +70,18 @@ Also set a monthly spend limit in the Anthropic Console as a second guard.
 
 ## Steps (you do these; nothing here logs in to Railway)
 
-1. **Get the demo database into the repo.** Railway builds from GitHub, and `data/` is gitignored, so
-   `data/demo_v2.db` must be committed (`.gitignore` gets an exception for this one file). It holds synthetic
-   companies only.
-2. Merge `feature/demo-mode` into `main` and push.
-3. On railway.com: **New Project → Deploy from GitHub repo**, choose this repository, branch `main`. Railway reads
+1. Merge `feature/demo-mode` into `main` and push. Railway builds from GitHub: `data/demo_public.db` is the one
+   database in the repo (`.gitignore` lets this file through); every other database stays ignored.
+2. On railway.com: **New Project → Deploy from GitHub repo**, choose this repository, branch `main`. Railway reads
    `railway.json` and builds the `Dockerfile`; the first build takes a few minutes because it installs PyTorch and
    downloads the embedding model.
-4. Open the service, then **Variables**: add `ANTHROPIC_API_KEY`. Add any optional variables from the table above.
-5. Open **Settings**:
+3. Open the service, then **Variables**: add `ANTHROPIC_API_KEY`. Add any optional variables from the table above.
+4. Open **Settings**:
    - **Networking → Generate Domain**, to get a public URL.
    - **Resource limits**: memory 1 GB.
    - **Replicas**: 1. The limits are counted in memory, so a second replica would double them.
-6. Wait for the deploy to turn green. The health check is `/api/health`.
-7. Check the live site:
+5. Wait for the deploy to turn green. The health check is `/api/health`.
+6. Check the live site:
    - The banner shows.
    - Upload is greyed out.
    - Library, Data checks, Deck check and Portfolio open.
@@ -94,7 +92,7 @@ Also set a monthly spend limit in the Anthropic Console as a second guard.
 From the project folder, with your key in the shell's environment:
 
 ```bash
-DEMO_MODE=true DEMO_SOURCE_DB=data/demo_v2.db DB_PATH=data/demo_mode_session.db .venv/bin/uvicorn app.main:app --port 8006
+DEMO_MODE=true DB_PATH=data/demo_mode_session.db .venv/bin/uvicorn app.main:app --port 8006
 ```
 
 To check the image itself:
