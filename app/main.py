@@ -1,17 +1,19 @@
 """FastAPI app: JSON API under /api, single-page UI served from /static."""
 
+import asyncio
 import hashlib
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app.config import PROJECT_ROOT, get_settings
 from app.db import connect, init_db
+from app import demo
 from app.agent import OUT_OF_SCOPE_MESSAGE, answer_question, is_out_of_scope
 from app.batch import BatchFile, get_batch, start_batch
 from app.brief import brief_to_markdown, generate_brief
@@ -38,12 +40,19 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.db_path = get_settings().db_path
+    reset = None
+    if demo.demo_mode():  # a clean copy of the demo data on every start and every day at 00:00 UTC
+        demo.restore(demo.source_db(), app.state.db_path)
+        app.state.demo_limiter = demo.Limiter(demo.Limits.from_env())
+        reset = asyncio.create_task(demo.reset_daily(demo.source_db(), app.state.db_path))
     conn = connect(app.state.db_path)
     init_db(conn)
     fail_interrupted_runs(conn)
     monitor.fail_interrupted_runs(conn)
     conn.close()
     yield
+    if reset:
+        reset.cancel()
 
 
 app = FastAPI(title="Deal Room Assistant", lifespan=lifespan)
@@ -57,6 +66,24 @@ async def revalidate_ui_files(request: Request, call_next):
     if not request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+@app.middleware("http")
+async def demo_guard(request: Request, call_next):
+    """With DEMO_MODE on: refuse upload, delete and runs; count questions and briefs against the demo limits."""
+    if demo.demo_mode():
+        method, path = request.method, request.url.path
+        if demo.turned_off(method, path):
+            return JSONResponse({"detail": demo.OFF_MESSAGE}, status_code=403)
+        kind = demo.limited_kind(method, path)
+        if kind:
+            limiter = getattr(request.app.state, "demo_limiter", None)
+            if limiter is None:
+                limiter = request.app.state.demo_limiter = demo.Limiter(demo.Limits.from_env())
+            ip = demo.client_ip(request.headers, request.client.host if request.client else None)
+            if not limiter.take(ip, kind):
+                return JSONResponse({"detail": demo.LIMIT_MESSAGE}, status_code=429)
+    return await call_next(request)
 
 
 def get_db(request: Request):
@@ -106,8 +133,9 @@ def health():
 
 @app.get("/api/ui")
 def ui_config():
-    """Parts of the page switched off in config/ui.toml; the page passes them back as ?hide=."""
-    return {"hidden": hidden_by_config()}
+    """Parts of the page switched off in config/ui.toml (the page passes them back as ?hide=), and whether this
+    is the public demo, where upload and runs are turned off."""
+    return {"hidden": hidden_by_config(), "demo": demo.demo_mode()}
 
 
 # --- companies ----------------------------------------------------------------

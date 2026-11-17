@@ -52,6 +52,10 @@ Released as tag `v2.0` on `main`; `v2.1` adds Library summaries and search, and 
 - **Upload dialog:** when the file names no company, none is chosen (not even the one in the sidebar) and Add
   waits for a choice; a type guessed from the extension alone starts on "Other – choose a type".
 
+A public read-only demo runs the same app with `DEMO_MODE=true`: upload and runs are turned off, questions and
+briefs are limited per visitor and per day, and the demo data is reset daily. Setup, memory and cost:
+[docs/deploy_railway.md](docs/deploy_railway.md).
+
 v2 checks a pitch deck the way an associate would before a partner meeting: what does the deck
 claim, what do the company's other files and public sources say, what changed since the last deck,
 and what should we ask the founder. The models read and find evidence; **the program decides every

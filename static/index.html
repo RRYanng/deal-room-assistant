@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <div id="demo-banner" class="demo-banner" role="note" hidden>Demo with synthetic data. Upload and Run are turned off.</div>
   <div class="app">
     <aside class="sidebar" aria-label="Navigation">
       <div class="brand" id="brand"><span class="brand-mark" aria-hidden="true">D</span><span>Deal Room Assistant</span></div>
@@ -220,6 +221,7 @@
         <h2 id="claims-title">Deck check</h2>
         <div class="overlay-actions">
           <select id="claims-company" aria-label="Company"></select>
+          <span class="demo-off">Turned off in the demo</span>
           <button type="button" id="claims-run" class="secondary">Run deck check</button>
           <button type="button" id="claims-memo" class="secondary">Memo</button>
           <button type="button" id="claims-close" class="secondary">Close</button>
@@ -236,6 +238,7 @@
         <h2 id="monitor-title">Portfolio monitoring</h2>
         <div class="overlay-actions">
           <select id="monitor-company" aria-label="Company"></select>
+          <span class="demo-off">Turned off in the demo</span>
           <button type="button" id="monitor-run" class="secondary">Run monitoring</button>
           <button type="button" id="monitor-close" class="secondary">Close</button>
         </div>

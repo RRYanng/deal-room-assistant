@@ -1,0 +1,16 @@
+# Never send keys or local data to the image build
+.env
+.env.*
+.venv/
+.git/
+.claude/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*
+!data/demo_v2.db
+docs/
+tests/
+samples/
+scripts/
+NIGHT_REPORT.md
